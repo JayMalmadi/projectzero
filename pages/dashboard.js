@@ -32,18 +32,22 @@ const PZ_STRATEGIES = [
 ]
 
 const DARK = {
-  bg:'#07090f', surface:'#0d1117', card:'#111827', border:'#1f2937', border2:'#374151',
-  text:'#f9fafb', text2:'#9ca3af', muted:'#4b5563',
-  green:'#10f59e', red:'#ff4466', blue:'#3b9eff', amber:'#fbbf24', purple:'#a78bfa', teal:'#2dd4bf',
-  accent:'linear-gradient(135deg,#3b9eff,#a78bfa)', accentC:'#3b9eff',
-  glow:'0 0 0 1px #1f2937,0 4px 24px rgba(0,0,0,0.5)', tickBg:'#060c18',
+  // Deep navy dark theme — premium feel
+  bg:'#080c14', surface:'#0e1420', card:'#111927', border:'#1c2535', border2:'#243040',
+  text:'#f0f4fc', text2:'#8b95a8', muted:'#4a5568',
+  green:'#00d17a', red:'#ff4060', blue:'#4da6ff', amber:'#ffaa00', purple:'#9f7eff', teal:'#00cdb8',
+  orange:'#ff7a00',
+  accent:'linear-gradient(135deg,#ff7a00,#ffaa00)', accentC:'#ff7a00',
+  glow:'0 0 0 1px #1c2535,0 8px 32px rgba(0,0,0,0.6)', tickBg:'#060a12',
 }
 const LIGHT = {
-  bg:'#f0f4ff', surface:'#ffffff', card:'#ffffff', border:'#e5e7eb', border2:'#d1d5db',
-  text:'#111827', text2:'#6b7280', muted:'#9ca3af',
-  green:'#059669', red:'#dc2626', blue:'#2563eb', amber:'#d97706', purple:'#7c3aed', teal:'#0d9488',
-  accent:'linear-gradient(135deg,#2563eb,#7c3aed)', accentC:'#2563eb',
-  glow:'0 1px 3px rgba(0,0,0,0.1),0 4px 16px rgba(0,0,0,0.06)', tickBg:'#e8eeff',
+  // Crisp white + orange — clean, modern, easy on eyes
+  bg:'#fafafa', surface:'#ffffff', card:'#ffffff', border:'#ebebeb', border2:'#d8d8d8',
+  text:'#1a1a2e', text2:'#555e6e', muted:'#9aa0ad',
+  green:'#00b068', red:'#e8334a', blue:'#0066ff', amber:'#ff8c00', purple:'#7c4dff', teal:'#00a896',
+  orange:'#ff6600',
+  accent:'linear-gradient(135deg,#ff6600,#ff9500)', accentC:'#ff6600',
+  glow:'0 1px 4px rgba(0,0,0,0.08),0 4px 20px rgba(0,0,0,0.05)', tickBg:'#f5f5f5',
 }
 
 function Badge({children,color}) {
@@ -176,17 +180,17 @@ function PZChart({symbol, t, h=420, accessToken}) {
           <span style={{color:t.muted,fontSize:10}}>{source==='kite'?'🟢 Live':'⚪ Yahoo'}{secAgo!==null?` · ${secAgo}s ago`:''}</span>
         </div>
         <div style={{display:'flex',gap:6}}>
-          <button onClick={()=>setLive(v=>!v)} style={{padding:'3px 10px',borderRadius:6,fontSize:11,fontWeight:700,background:live?t.green+'22':t.surface,border:`1px solid ${live?t.green:t.border}`,color:live?t.green:t.muted,cursor:'pointer',fontFamily:'Space Grotesk,sans-serif'}}>
+          <button onClick={()=>setLive(v=>!v)} style={{padding:'3px 10px',borderRadius:6,fontSize:11,fontWeight:700,background:live?t.green+'22':t.surface,border:`1px solid ${live?t.green:t.border}`,color:live?t.green:t.muted,cursor:'pointer',fontFamily:'Inter,sans-serif'}}>
             {live?`⚡ Auto (${cfg.refresh}s)`:'⏸ Paused'}
           </button>
           <button onClick={()=>loadData()} style={{padding:'3px 8px',borderRadius:6,fontSize:13,background:'none',border:`1px solid ${t.border}`,color:t.muted,cursor:'pointer'}}>↻</button>
-          {KITE_SEARCH[symbol]&&<button onClick={()=>window.open(`/chart?symbol=${symbol}&market=crypto`,'_blank','width=1440,height=860')} style={{padding:'3px 10px',borderRadius:6,fontSize:11,background:'none',border:`1px solid ${t.border}`,color:t.blue,cursor:'pointer',fontFamily:'Space Grotesk,sans-serif',fontWeight:600}}>Kite ↗</button>}
+          {KITE_SEARCH[symbol]&&<button onClick={()=>window.open(`/chart?symbol=${symbol}&market=crypto`,'_blank','width=1440,height=860')} style={{padding:'3px 10px',borderRadius:6,fontSize:11,background:'none',border:`1px solid ${t.border}`,color:t.blue,cursor:'pointer',fontFamily:'Inter,sans-serif',fontWeight:600}}>Kite ↗</button>}
         </div>
       </div>
       {/* Row 2: interval selector */}
       <div style={{padding:'8px 14px',display:'flex',gap:4,flexWrap:'wrap',borderBottom:`1px solid ${t.border}`,background:t.surface+'55'}}>
         {INTERVALS.map(i=>(
-          <button key={i.v} onClick={()=>setIntv(i.v)} style={{padding:'4px 10px',borderRadius:6,fontSize:12,fontWeight:700,background:intv===i.v?t.accentC:t.surface,border:`1px solid ${intv===i.v?t.accentC:t.border}`,color:intv===i.v?'#fff':t.muted,cursor:'pointer',fontFamily:'Space Grotesk,sans-serif',transition:'all 0.1s'}}>{i.l}</button>
+          <button key={i.v} onClick={()=>setIntv(i.v)} style={{padding:'4px 10px',borderRadius:6,fontSize:12,fontWeight:700,background:intv===i.v?t.accentC:t.surface,border:`1px solid ${intv===i.v?t.accentC:t.border}`,color:intv===i.v?'#fff':t.muted,cursor:'pointer',fontFamily:'Inter,sans-serif',transition:'all 0.1s'}}>{i.l}</button>
         ))}
       </div>
       {/* Chart */}
@@ -321,7 +325,7 @@ function ExecModal({data, strat, sym, at, onClose, onDone, t}) {
             </div>
             <div>
               <p style={{color:t.muted,fontSize:11,fontWeight:600,marginBottom:8}}>PRODUCT</p>
-              <select value={prod} onChange={e=>setProd(e.target.value)} style={{background:t.card,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,fontSize:12,padding:'8px 10px',fontFamily:'Space Grotesk,sans-serif',width:'100%'}}>
+              <select value={prod} onChange={e=>setProd(e.target.value)} style={{background:t.card,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,fontSize:12,padding:'8px 10px',fontFamily:'Inter,sans-serif',width:'100%'}}>
                 <option value="MIS">MIS — Intraday (auto sq-off)</option>
                 <option value="CNC">CNC — Delivery</option>
                 <option value="NRML">NRML — F&O overnight</option>
@@ -413,7 +417,7 @@ function ExecModal({data, strat, sym, at, onClose, onDone, t}) {
                 {result.det.target_order_id && <p style={{color:t.muted}}>Target Order: <span style={{color:t.green,fontFamily:'monospace'}}>{result.det.target_order_id}</span></p>}
               </div>
             )}
-            <button onClick={onClose} style={{padding:'8px 28px',background:t.surface,border:`1px solid ${t.border}`,borderRadius:10,color:t.text,cursor:'pointer',fontFamily:'Space Grotesk,sans-serif',fontSize:13}}>Close</button>
+            <button onClick={onClose} style={{padding:'8px 28px',background:t.surface,border:`1px solid ${t.border}`,borderRadius:10,color:t.text,cursor:'pointer',fontFamily:'Inter,sans-serif',fontSize:13}}>Close</button>
           </div>
         ) : (
           <button onClick={place} disabled={placing} style={{
@@ -424,7 +428,7 @@ function ExecModal({data, strat, sym, at, onClose, onDone, t}) {
             color: placing ? t.muted : '#fff',
             fontWeight:800,fontSize:16,
             cursor: placing?'not-allowed':'pointer',
-            fontFamily:'Space Grotesk,sans-serif',
+            fontFamily:'Inter,sans-serif',
             boxShadow: !placing ? `0 4px 24px ${sc}44` : 'none',
             transition:'all 0.2s',
           }}>
@@ -507,11 +511,11 @@ function SignalCard({strat,at,onTrade,t}) {
             </div>
             <p style={{color:t.muted,fontSize:12}}>{strat.desc}</p>
           </div>
-          {data&&!loading&&<div style={{background:sc+'22',border:`2px solid ${sc}55`,borderRadius:12,padding:'6px 14px',color:sc,fontWeight:900,fontSize:14,flexShrink:0}}>{data.signal}</div>}
+          {data&&!loading&&<div style={{background:sc+'18',border:`1.5px solid ${sc}55`,borderRadius:8,padding:'5px 12px',color:sc,fontWeight:800,fontSize:13,letterSpacing:'0.05em',flexShrink:0}}>{data.signal}</div>}
         </div>
 
         <div style={{display:'flex',gap:6}}>
-          {strat.symbols.map(s=><button key={s} onClick={()=>setSym(s)} style={{padding:'5px 14px',borderRadius:20,fontSize:12,fontWeight:700,background:sym===s?t.accentC+'22':t.surface,border:`1.5px solid ${sym===s?t.accentC:t.border}`,color:sym===s?t.accentC:t.muted,cursor:'pointer',fontFamily:'Space Grotesk,sans-serif',transition:'all 0.15s'}}>{s}</button>)}
+          {strat.symbols.map(s=><button key={s} onClick={()=>setSym(s)} style={{padding:'5px 14px',borderRadius:20,fontSize:12,fontWeight:700,background:sym===s?t.accentC+'22':t.surface,border:`1.5px solid ${sym===s?t.accentC:t.border}`,color:sym===s?t.accentC:t.muted,cursor:'pointer',fontFamily:'Inter,sans-serif',transition:'all 0.15s'}}>{s}</button>)}
         </div>
 
         {loading&&<div style={{textAlign:'center',padding:20}}><div style={{width:30,height:30,border:`3px solid ${t.border}`,borderTopColor:t.accentC,borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'0 auto 8px'}} /><p style={{color:t.muted,fontSize:12}}>Fetching live data...</p></div>}
@@ -566,8 +570,8 @@ function SignalCard({strat,at,onTrade,t}) {
           {data.chartData&&<div style={{height:75}}><ResponsiveContainer width="100%" height="100%"><AreaChart data={data.chartData}><defs><linearGradient id={`g${strat.id}`} x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={sc} stopOpacity={0.3}/><stop offset="95%" stopColor={sc} stopOpacity={0}/></linearGradient></defs><XAxis dataKey="date" hide/><YAxis domain={['auto','auto']} hide/><Tooltip contentStyle={{background:t.card,border:`1px solid ${t.border}`,borderRadius:8,fontSize:11,color:t.text}}/><Area type="monotone" dataKey="close" stroke={sc} fill={`url(#g${strat.id})`} dot={false} strokeWidth={2}/></AreaChart></ResponsiveContainer></div>}
 
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-            <button onClick={()=>setChart(!chart)} style={{padding:'11px',background:t.surface,border:`1.5px solid ${chart?t.blue:t.border}`,borderRadius:10,color:t.blue,cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:'Space Grotesk,sans-serif',transition:'all 0.15s'}}>{chart?'✕ Close Chart':'📈 Kite Chart'}</button>
-            <button onClick={()=>setModal(true)} disabled={data.signal==='HOLD'} style={{padding:'11px',border:'none',borderRadius:10,fontWeight:800,fontSize:12,cursor:data.signal==='HOLD'?'not-allowed':'pointer',background:data.signal==='HOLD'?t.surface:data.signal==='BUY'?`linear-gradient(135deg,${t.green},${t.teal})`:`linear-gradient(135deg,${t.red},#ff6688)`,color:data.signal==='HOLD'?t.muted:'#fff',fontFamily:'Space Grotesk,sans-serif',opacity:data.signal==='HOLD'?0.5:1,boxShadow:data.signal!=='HOLD'?`0 2px 12px ${sc}44`:'none'}}>
+            <button onClick={()=>setChart(!chart)} style={{padding:'11px',background:t.surface,border:`1.5px solid ${chart?t.blue:t.border}`,borderRadius:10,color:t.blue,cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:'Inter,sans-serif',transition:'all 0.15s'}}>{chart?'✕ Close Chart':'📈 Kite Chart'}</button>
+            <button onClick={()=>setModal(true)} disabled={data.signal==='HOLD'} style={{padding:'11px',border:'none',borderRadius:10,fontWeight:800,fontSize:12,cursor:data.signal==='HOLD'?'not-allowed':'pointer',background:data.signal==='HOLD'?t.surface:data.signal==='BUY'?`linear-gradient(135deg,${t.green},${t.teal})`:`linear-gradient(135deg,${t.red},#ff6688)`,color:data.signal==='HOLD'?t.muted:'#fff',fontFamily:'Inter,sans-serif',opacity:data.signal==='HOLD'?0.5:1,boxShadow:data.signal!=='HOLD'?`0 2px 12px ${sc}44`:'none'}}>
               {data.signal==='HOLD'?'Hold':'⚡ '+data.signal+' + SL + Target'}
             </button>
           </div>
@@ -612,9 +616,9 @@ function Positions({at,t}) {
       <div>
         <p style={{color:t.muted,fontSize:11,fontWeight:700,letterSpacing:'0.1em',marginBottom:12}}>OPEN POSITIONS ({pos.length})</p>
         {pos.length===0?<div style={{background:t.surface,borderRadius:14,padding:24,textAlign:'center',color:t.muted,border:`1px solid ${t.border}`,fontSize:13}}>No open positions</div>
-        :<div style={{overflowX:'auto',borderRadius:14,border:`1px solid ${t.border}`}}><table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead><tr style={{background:t.surface}}>{['Symbol','Qty','Avg','LTP','P&L','Chart'].map(h=><th key={h} style={{padding:'12px 16px',textAlign:'left',color:t.muted,fontWeight:700,borderBottom:`1px solid ${t.border}`}}>{h}</th>)}</tr></thead><tbody>{pos.map((p,i)=>{const pl=p.pnl||p.unrealised||0;return <tr key={i} style={{borderBottom:`1px solid ${t.border}22`}}><td style={{padding:'12px 16px',fontWeight:800,color:t.text}}>{p.tradingsymbol}</td><td style={{padding:'12px 16px',color:(p.quantity||0)>0?t.green:t.red,fontWeight:700}}>{(p.quantity||0)>0?'+':''}{p.quantity}</td><td style={{padding:'12px 16px',fontFamily:'monospace',color:t.text2}}>₹{fmt(p.average_price)}</td><td style={{padding:'12px 16px',fontFamily:'monospace',color:t.text}}>₹{fmt(p.last_price)}</td><td style={{padding:'12px 16px',color:clr(pl,t),fontWeight:800,fontFamily:'monospace'}}>{pl>=0?'+':''}₹{fmt(pl)}</td><td style={{padding:'12px 16px'}}><button onClick={()=>window.open(KITE_SEARCH[p.tradingsymbol]||`https://kite.zerodha.com/chart/web/ciq/NSE/${p.tradingsymbol}/EQ`,'_blank')} style={{padding:'4px 10px',background:t.blue+'22',border:`1px solid ${t.blue}44`,borderRadius:6,color:t.blue,cursor:'pointer',fontSize:11,fontFamily:'Space Grotesk,sans-serif',fontWeight:600}}>↗</button></td></tr>})}</tbody></table></div>}
+        :<div style={{overflowX:'auto',borderRadius:14,border:`1px solid ${t.border}`}}><table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead><tr style={{background:t.surface}}>{['Symbol','Qty','Avg','LTP','P&L','Chart'].map(h=><th key={h} style={{padding:'12px 16px',textAlign:'left',color:t.muted,fontWeight:700,borderBottom:`1px solid ${t.border}`}}>{h}</th>)}</tr></thead><tbody>{pos.map((p,i)=>{const pl=p.pnl||p.unrealised||0;return <tr key={i} style={{borderBottom:`1px solid ${t.border}22`}}><td style={{padding:'12px 16px',fontWeight:800,color:t.text}}>{p.tradingsymbol}</td><td style={{padding:'12px 16px',color:(p.quantity||0)>0?t.green:t.red,fontWeight:700}}>{(p.quantity||0)>0?'+':''}{p.quantity}</td><td style={{padding:'12px 16px',fontFamily:'monospace',color:t.text2}}>₹{fmt(p.average_price)}</td><td style={{padding:'12px 16px',fontFamily:'monospace',color:t.text}}>₹{fmt(p.last_price)}</td><td style={{padding:'12px 16px',color:clr(pl,t),fontWeight:800,fontFamily:'monospace'}}>{pl>=0?'+':''}₹{fmt(pl)}</td><td style={{padding:'12px 16px'}}><button onClick={()=>window.open(KITE_SEARCH[p.tradingsymbol]||`https://kite.zerodha.com/chart/web/ciq/NSE/${p.tradingsymbol}/EQ`,'_blank')} style={{padding:'4px 10px',background:t.blue+'22',border:`1px solid ${t.blue}44`,borderRadius:6,color:t.blue,cursor:'pointer',fontSize:11,fontFamily:'Inter,sans-serif',fontWeight:600}}>↗</button></td></tr>})}</tbody></table></div>}
       </div>
-      {orders.length>0&&<div><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}><p style={{color:t.muted,fontSize:11,fontWeight:700,letterSpacing:'0.1em'}}>TODAY'S ORDERS ({orders.length})</p><button onClick={load} style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,color:t.muted,cursor:'pointer',fontSize:11,padding:'4px 10px',fontFamily:'Space Grotesk,sans-serif'}}>🔄</button></div><div style={{overflowX:'auto',borderRadius:14,border:`1px solid ${t.border}`}}><table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead><tr style={{background:t.surface}}>{['Time','Symbol','Type','Qty','Price','Status'].map(h=><th key={h} style={{padding:'12px 16px',textAlign:'left',color:t.muted,fontWeight:700,borderBottom:`1px solid ${t.border}`}}>{h}</th>)}</tr></thead><tbody>{orders.map((o,i)=>{const time=o.order_timestamp?new Date(o.order_timestamp).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:true}):'—';const sc2=o.status==='COMPLETE'?t.green:o.status==='REJECTED'?t.red:o.status==='OPEN'?t.amber:t.muted;return <tr key={i} style={{borderBottom:`1px solid ${t.border}22`}}><td style={{padding:'12px 16px',color:t.muted}}>{time}</td><td style={{padding:'12px 16px',fontWeight:800,color:t.text}}>{o.tradingsymbol}</td><td style={{padding:'12px 16px'}}><span style={{color:o.transaction_type==='BUY'?t.green:t.red,fontWeight:700}}>{o.transaction_type}</span></td><td style={{padding:'12px 16px',fontFamily:'monospace',color:t.text2}}>{o.filled_quantity}/{o.quantity}</td><td style={{padding:'12px 16px',fontFamily:'monospace',color:t.text}}>₹{fmt(o.average_price||o.price)}</td><td style={{padding:'12px 16px'}}><Badge color={sc2}>{o.status}</Badge></td></tr>})}</tbody></table></div></div>}
+      {orders.length>0&&<div><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}><p style={{color:t.muted,fontSize:11,fontWeight:700,letterSpacing:'0.1em'}}>TODAY'S ORDERS ({orders.length})</p><button onClick={load} style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,color:t.muted,cursor:'pointer',fontSize:11,padding:'4px 10px',fontFamily:'Inter,sans-serif'}}>🔄</button></div><div style={{overflowX:'auto',borderRadius:14,border:`1px solid ${t.border}`}}><table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead><tr style={{background:t.surface}}>{['Time','Symbol','Type','Qty','Price','Status'].map(h=><th key={h} style={{padding:'12px 16px',textAlign:'left',color:t.muted,fontWeight:700,borderBottom:`1px solid ${t.border}`}}>{h}</th>)}</tr></thead><tbody>{orders.map((o,i)=>{const time=o.order_timestamp?new Date(o.order_timestamp).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:true}):'—';const sc2=o.status==='COMPLETE'?t.green:o.status==='REJECTED'?t.red:o.status==='OPEN'?t.amber:t.muted;return <tr key={i} style={{borderBottom:`1px solid ${t.border}22`}}><td style={{padding:'12px 16px',color:t.muted}}>{time}</td><td style={{padding:'12px 16px',fontWeight:800,color:t.text}}>{o.tradingsymbol}</td><td style={{padding:'12px 16px'}}><span style={{color:o.transaction_type==='BUY'?t.green:t.red,fontWeight:700}}>{o.transaction_type}</span></td><td style={{padding:'12px 16px',fontFamily:'monospace',color:t.text2}}>{o.filled_quantity}/{o.quantity}</td><td style={{padding:'12px 16px',fontFamily:'monospace',color:t.text}}>₹{fmt(o.average_price||o.price)}</td><td style={{padding:'12px 16px'}}><Badge color={sc2}>{o.status}</Badge></td></tr>})}</tbody></table></div></div>}
     </div>
   )
 }
@@ -626,14 +630,14 @@ function Charts({t, at}) {
     <div>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
         <div><h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Live Charts</h2><p style={{color:t.muted,fontSize:13,marginTop:4}}>Click any symbol to view chart · All 9 timeframes · Open in Kite for full view</p></div>
-        <button onClick={()=>window.open(`/chart?symbol=${sel}`,'_blank','width=1400,height=800,menubar=no,toolbar=no')} style={{padding:'8px 18px',background:t.accent,border:'none',borderRadius:10,color:'#fff',fontWeight:700,cursor:'pointer',fontSize:13,fontFamily:'Space Grotesk,sans-serif'}} onClick={()=>window.open(`/chart?symbol=${sel}`,'_blank','width=1400,height=800')}>⛶ Full Screen</button>
+        <button onClick={()=>window.open(`/chart?symbol=${sel}`,'_blank','width=1400,height=800,menubar=no,toolbar=no')} style={{padding:'8px 18px',background:t.accent,border:'none',borderRadius:10,color:'#fff',fontWeight:700,cursor:'pointer',fontSize:13,fontFamily:'Inter,sans-serif'}} onClick={()=>window.open(`/chart?symbol=${sel}`,'_blank','width=1400,height=800')}>⛶ Full Screen</button>
       </div>
       <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>
-        {syms.map(s=><button key={s} onClick={()=>setSel(s)} style={{padding:'7px 16px',borderRadius:20,fontSize:13,fontWeight:700,background:sel===s?t.accentC:t.surface,border:`1.5px solid ${sel===s?t.accentC:t.border}`,color:sel===s?'#fff':t.muted,cursor:'pointer',fontFamily:'Space Grotesk,sans-serif',transition:'all 0.15s'}}>{s}</button>)}
+        {syms.map(s=><button key={s} onClick={()=>setSel(s)} style={{padding:'7px 16px',borderRadius:20,fontSize:13,fontWeight:700,background:sel===s?t.accentC:t.surface,border:`1.5px solid ${sel===s?t.accentC:t.border}`,color:sel===s?'#fff':t.muted,cursor:'pointer',fontFamily:'Inter,sans-serif',transition:'all 0.15s'}}>{s}</button>)}
       </div>
       <PZChart symbol={sel} t={t} h={520} accessToken={at} key={sel} />
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(120px,1fr))',gap:8,marginTop:14}}>
-        {syms.filter(s=>s!==sel).map(s=><button key={s} onClick={()=>setSel(s)} style={{padding:'10px',background:t.card,border:`1px solid ${t.border}`,borderRadius:12,cursor:'pointer',fontFamily:'Space Grotesk,sans-serif',textAlign:'left',transition:'all 0.15s'}}><span style={{color:t.muted,fontSize:10,fontWeight:700,display:'block',marginBottom:3}}>CHART</span><span style={{color:t.text,fontSize:13,fontWeight:800}}>{s}</span></button>)}
+        {syms.filter(s=>s!==sel).map(s=><button key={s} onClick={()=>setSel(s)} style={{padding:'10px',background:t.card,border:`1px solid ${t.border}`,borderRadius:12,cursor:'pointer',fontFamily:'Inter,sans-serif',textAlign:'left',transition:'all 0.15s'}}><span style={{color:t.muted,fontSize:10,fontWeight:700,display:'block',marginBottom:3}}>CHART</span><span style={{color:t.text,fontSize:13,fontWeight:800}}>{s}</span></button>)}
       </div>
     </div>
   )
@@ -663,7 +667,7 @@ function History({refresh,t}) {
       </div>
       {loading&&<div style={{textAlign:'center',padding:30}}><div style={{width:32,height:32,border:`3px solid ${t.border}`,borderTopColor:t.blue,borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'0 auto'}} /></div>}
       {!loading&&trades.length===0&&<div style={{textAlign:'center',padding:50,background:t.surface,borderRadius:16,border:`1px solid ${t.border}`}}><p style={{fontSize:40,marginBottom:10}}>📋</p><p style={{color:t.text,fontWeight:700}}>No trades yet</p><p style={{color:t.muted,fontSize:13,marginTop:4}}>Execute a signal to start</p></div>}
-      {!loading&&trades.length>0&&<div style={{overflowX:'auto',borderRadius:16,border:`1px solid ${t.border}`}}><table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead><tr style={{background:t.surface}}>{['Date','Symbol','Strategy','Dir','Qty','Entry','Exit','P&L','Status',''].map(h=><th key={h} style={{padding:'12px 16px',textAlign:'left',color:t.muted,fontWeight:700,borderBottom:`1px solid ${t.border}`,whiteSpace:'nowrap'}}>{h}</th>)}</tr></thead><tbody>{trades.map((x,i)=>{const pc=clr(x.pnl||0,t),date=new Date(x.created_at).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',hour12:true});return <tr key={x.id} style={{borderBottom:`1px solid ${t.border}22`,background:i%2?t.surface+'44':'transparent'}}><td style={{padding:'12px 16px',color:t.muted,whiteSpace:'nowrap'}}>{date}</td><td style={{padding:'12px 16px',fontWeight:800,color:t.text}}>{x.symbol}</td><td style={{padding:'12px 16px',color:t.muted,maxWidth:120,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{x.strategy}</td><td style={{padding:'12px 16px'}}><Badge color={x.direction==='BUY'?t.green:t.red}>{x.direction}</Badge></td><td style={{padding:'12px 16px',fontFamily:'monospace',color:t.text2}}>{x.quantity}</td><td style={{padding:'12px 16px',fontFamily:'monospace',color:t.text}}>₹{fmt(x.entry_price)}</td><td style={{padding:'12px 16px',fontFamily:'monospace',color:t.text2}}>{x.exit_price?`₹${fmt(x.exit_price)}`:'—'}</td><td style={{padding:'12px 16px',color:pc,fontWeight:800,fontFamily:'monospace'}}>{x.pnl!=null?`${x.pnl>=0?'+':''}₹${fmt(x.pnl)}`:'—'}</td><td style={{padding:'12px 16px'}}><Badge color={x.status==='OPEN'?t.amber:x.status==='CLOSED'?t.green:t.red}>{x.status}</Badge></td><td style={{padding:'12px 16px'}}>{x.status==='OPEN'&&<button onClick={()=>close(x.id,x.entry_price,x.direction)} style={{padding:'5px 12px',background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,cursor:'pointer',fontSize:11,fontFamily:'Space Grotesk,sans-serif',fontWeight:600}}>Close</button>}</td></tr>})}</tbody></table></div>}
+      {!loading&&trades.length>0&&<div style={{overflowX:'auto',borderRadius:16,border:`1px solid ${t.border}`}}><table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead><tr style={{background:t.surface}}>{['Date','Symbol','Strategy','Dir','Qty','Entry','Exit','P&L','Status',''].map(h=><th key={h} style={{padding:'12px 16px',textAlign:'left',color:t.muted,fontWeight:700,borderBottom:`1px solid ${t.border}`,whiteSpace:'nowrap'}}>{h}</th>)}</tr></thead><tbody>{trades.map((x,i)=>{const pc=clr(x.pnl||0,t),date=new Date(x.created_at).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',hour12:true});return <tr key={x.id} style={{borderBottom:`1px solid ${t.border}22`,background:i%2?t.surface+'44':'transparent'}}><td style={{padding:'12px 16px',color:t.muted,whiteSpace:'nowrap'}}>{date}</td><td style={{padding:'12px 16px',fontWeight:800,color:t.text}}>{x.symbol}</td><td style={{padding:'12px 16px',color:t.muted,maxWidth:120,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{x.strategy}</td><td style={{padding:'12px 16px'}}><Badge color={x.direction==='BUY'?t.green:t.red}>{x.direction}</Badge></td><td style={{padding:'12px 16px',fontFamily:'monospace',color:t.text2}}>{x.quantity}</td><td style={{padding:'12px 16px',fontFamily:'monospace',color:t.text}}>₹{fmt(x.entry_price)}</td><td style={{padding:'12px 16px',fontFamily:'monospace',color:t.text2}}>{x.exit_price?`₹${fmt(x.exit_price)}`:'—'}</td><td style={{padding:'12px 16px',color:pc,fontWeight:800,fontFamily:'monospace'}}>{x.pnl!=null?`${x.pnl>=0?'+':''}₹${fmt(x.pnl)}`:'—'}</td><td style={{padding:'12px 16px'}}><Badge color={x.status==='OPEN'?t.amber:x.status==='CLOSED'?t.green:t.red}>{x.status}</Badge></td><td style={{padding:'12px 16px'}}>{x.status==='OPEN'&&<button onClick={()=>close(x.id,x.entry_price,x.direction)} style={{padding:'5px 12px',background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,cursor:'pointer',fontSize:11,fontFamily:'Inter,sans-serif',fontWeight:600}}>Close</button>}</td></tr>})}</tbody></table></div>}
     </div>
   )
 }
@@ -882,7 +886,7 @@ function CryptoExecModal({data, sym, stratName, onClose, onDone, t}) {
                 {result.det.tp_order_id   && <p style={{color:t.muted}}>TP: <span style={{color:t.green,fontFamily:'monospace'}}>{result.det.tp_order_id}</span></p>}
               </div>
             )}
-            <button onClick={onClose} style={{padding:'8px 28px',background:t.surface,border:`1px solid ${t.border}`,borderRadius:10,color:t.text,cursor:'pointer',fontFamily:'Space Grotesk,sans-serif',fontSize:13}}>Close</button>
+            <button onClick={onClose} style={{padding:'8px 28px',background:t.surface,border:`1px solid ${t.border}`,borderRadius:10,color:t.text,cursor:'pointer',fontFamily:'Inter,sans-serif',fontSize:13}}>Close</button>
           </div>
         ) : (
           <button onClick={place} disabled={placing} style={{
@@ -892,7 +896,7 @@ function CryptoExecModal({data, sym, stratName, onClose, onDone, t}) {
               : `linear-gradient(135deg,${t.red},#ff6688)`,
             color: placing?t.muted:'#fff',
             fontWeight:800,fontSize:16,cursor:placing?'not-allowed':'pointer',
-            fontFamily:'Space Grotesk,sans-serif',
+            fontFamily:'Inter,sans-serif',
             boxShadow:!placing?`0 4px 24px ${sc}44`:'none',
             transition:'all 0.2s',
           }}>
@@ -983,7 +987,15 @@ function CryptoSignalCard({symbol, strategy, stratName, t}) {
         />
       )}
 
-      <div style={{background:t.card,borderRadius:20,padding:22,border:`1px solid ${t.border}`,display:'flex',flexDirection:'column',gap:12}}>
+      <div className="card-enter" style={{
+        background:t.card,
+        borderRadius:16,
+        padding:20,
+        border:`1px solid ${t.border}`,
+        display:'flex',flexDirection:'column',gap:12,
+        boxShadow:dark?'0 2px 12px rgba(0,0,0,0.3)':'0 2px 12px rgba(0,0,0,0.06)',
+        transition:'box-shadow 0.2s,border-color 0.2s',
+      }}>
 
         {/* Header */}
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
@@ -998,7 +1010,7 @@ function CryptoSignalCard({symbol, strategy, stratName, t}) {
           <div style={{display:'flex',alignItems:'center',gap:8}}>
             <button onClick={load} style={{background:'none',border:`1px solid ${t.border}`,borderRadius:6,color:t.muted,cursor:'pointer',fontSize:13,padding:'2px 6px'}}>↻</button>
             {data && !loading && (
-              <div style={{background:sc+'22',border:`2px solid ${sc}55`,borderRadius:12,padding:'6px 14px',color:sc,fontWeight:900,fontSize:14}}>{data.signal}</div>
+              <div style={{background:sc+'18',border:`1.5px solid ${sc}55`,borderRadius:8,padding:'5px 12px',color:sc,fontWeight:800,fontSize:13,letterSpacing:'0.05em'}}>{data.signal}</div>
             )}
           </div>
         </div>
@@ -1120,7 +1132,7 @@ function CryptoSignalCard({symbol, strategy, stratName, t}) {
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
             <button
               onClick={()=>window.open(`/chart?symbol=${symbol}&market=crypto`,'_blank','width=1440,height=860')}
-              style={{padding:'11px',background:t.surface,border:`1.5px solid ${t.border}`,borderRadius:10,color:t.amber,cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:'Space Grotesk,sans-serif'}}
+              style={{padding:'11px',background:t.surface,border:`1.5px solid ${t.border}`,borderRadius:10,color:t.amber,cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:'Inter,sans-serif'}}
             >
               📈 Binance Chart
             </button>
@@ -1134,7 +1146,7 @@ function CryptoSignalCard({symbol, strategy, stratName, t}) {
                   ?`linear-gradient(135deg,${t.green},${t.teal})`
                   :`linear-gradient(135deg,${t.red},#ff6688)`,
                 color:data.signal==='HOLD'?t.muted:'#fff',
-                fontFamily:'Space Grotesk,sans-serif',
+                fontFamily:'Inter,sans-serif',
                 opacity:data.signal==='HOLD'?0.5:1,
                 boxShadow:data.signal!=='HOLD'?`0 2px 12px ${sc}44`:'none',
               }}
@@ -1509,7 +1521,7 @@ function AlertsTab({t}) {
           <div>
             <p style={{color:t.muted,fontSize:11,fontWeight:600,marginBottom:6}}>MARKET</p>
             <select value={form.market} onChange={e=>setForm(f=>({...f,market:e.target.value,symbol:e.target.value==='crypto'?'BTC':'NIFTY'}))}
-              style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,fontSize:13,padding:'8px 10px',width:'100%',fontFamily:'Space Grotesk,sans-serif'}}>
+              style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,fontSize:13,padding:'8px 10px',width:'100%',fontFamily:'Inter,sans-serif'}}>
               <option value="india">🇮🇳 Indian</option>
               <option value="crypto">🪙 Crypto</option>
             </select>
@@ -1517,14 +1529,14 @@ function AlertsTab({t}) {
           <div>
             <p style={{color:t.muted,fontSize:11,fontWeight:600,marginBottom:6}}>SYMBOL</p>
             <select value={form.symbol} onChange={e=>setForm(f=>({...f,symbol:e.target.value}))}
-              style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,fontSize:13,padding:'8px 10px',width:'100%',fontFamily:'Space Grotesk,sans-serif'}}>
+              style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,fontSize:13,padding:'8px 10px',width:'100%',fontFamily:'Inter,sans-serif'}}>
               {syms.map(s=><option key={s} value={s}>{s}</option>)}
             </select>
           </div>
           <div>
             <p style={{color:t.muted,fontSize:11,fontWeight:600,marginBottom:6}}>CONDITION</p>
             <select value={form.condition} onChange={e=>setForm(f=>({...f,condition:e.target.value}))}
-              style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,fontSize:13,padding:'8px 10px',width:'100%',fontFamily:'Space Grotesk,sans-serif'}}>
+              style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,fontSize:13,padding:'8px 10px',width:'100%',fontFamily:'Inter,sans-serif'}}>
               <option value="above">↑ Price goes above</option>
               <option value="below">↓ Price goes below</option>
             </select>
@@ -1541,13 +1553,13 @@ function AlertsTab({t}) {
           <p style={{color:t.muted,fontSize:11,fontWeight:600,marginBottom:6}}>NOTE (optional)</p>
           <input value={form.note} onChange={e=>setForm(f=>({...f,note:e.target.value}))}
             placeholder="e.g. ORB breakout level, resistance zone..."
-            style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,fontSize:13,padding:'8px 12px',width:'100%',fontFamily:'Space Grotesk,sans-serif',boxSizing:'border-box'}}/>
+            style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,fontSize:13,padding:'8px 12px',width:'100%',fontFamily:'Inter,sans-serif',boxSizing:'border-box'}}/>
         </div>
 
         {msg&&<p style={{color:msg.includes('✅')?t.green:t.red,fontSize:13,marginBottom:10,fontWeight:600}}>{msg}</p>}
 
         <button onClick={create} disabled={saving}
-          style={{padding:'12px 28px',background:`linear-gradient(135deg,${t.blue},${t.purple})`,border:'none',borderRadius:12,color:'#fff',fontWeight:700,cursor:saving?'not-allowed':'pointer',fontFamily:'Space Grotesk,sans-serif',fontSize:14,boxShadow:`0 4px 16px ${t.blue}33`}}>
+          style={{padding:'12px 28px',background:`linear-gradient(135deg,${t.blue},${t.purple})`,border:'none',borderRadius:12,color:'#fff',fontWeight:700,cursor:saving?'not-allowed':'pointer',fontFamily:'Inter,sans-serif',fontSize:14,boxShadow:`0 4px 16px ${t.blue}33`}}>
           {saving?'Creating...':'🔔 Create Alert'}
         </button>
       </div>
@@ -1711,7 +1723,7 @@ function OptionsTab({t}) {
         <div style={{display:'flex',gap:8,alignItems:'center'}}>
           {['NIFTY','BANKNIFTY'].map(s=>(
             <button key={s} onClick={()=>setSymbol(s)}
-              style={{padding:'8px 20px',borderRadius:10,border:`1px solid ${symbol===s?t.blue:t.border}`,background:symbol===s?t.blue+'22':t.surface,color:symbol===s?t.blue:t.muted,fontWeight:700,cursor:'pointer',fontSize:13,fontFamily:'Space Grotesk,sans-serif'}}>
+              style={{padding:'8px 20px',borderRadius:10,border:`1px solid ${symbol===s?t.blue:t.border}`,background:symbol===s?t.blue+'22':t.surface,color:symbol===s?t.blue:t.muted,fontWeight:700,cursor:'pointer',fontSize:13,fontFamily:'Inter,sans-serif'}}>
               {s}
             </button>
           ))}
@@ -1727,7 +1739,7 @@ function OptionsTab({t}) {
           <p style={{color:t.red,fontWeight:700,marginBottom:6}}>NSE Connection Issue</p>
           <p style={{color:t.muted,fontSize:13,marginBottom:16}}>{error}</p>
           <p style={{color:t.muted,fontSize:12}}>NSE blocks automated requests during market hours. Try again after 3:30 PM or outside market hours. The data is available on the NSE website directly.</p>
-          <button onClick={()=>window.open(`https://www.nseindia.com/option-chain`,'_blank')} style={{marginTop:12,padding:'10px 24px',background:t.blue+'22',border:`1px solid ${t.blue}44`,borderRadius:10,color:t.blue,cursor:'pointer',fontWeight:700,fontFamily:'Space Grotesk,sans-serif'}}>Open NSE Options Chain ↗</button>
+          <button onClick={()=>window.open(`https://www.nseindia.com/option-chain`,'_blank')} style={{marginTop:12,padding:'10px 24px',background:t.blue+'22',border:`1px solid ${t.blue}44`,borderRadius:10,color:t.blue,cursor:'pointer',fontWeight:700,fontFamily:'Inter,sans-serif'}}>Open NSE Options Chain ↗</button>
         </div>
       )}
 
@@ -1793,8 +1805,10 @@ function TickerBar({mkt, t, setTab, isConn}) {
         const up = (d?.pct||0) >= 0
         const pctStr = d ? (up ? '+' : '') + fmt(d.pct, 2) + '%' : ''
         return (
-          <div key={sym} onClick={() => setTab('charts')} style={{display:'flex',gap:10,alignItems:'center',flexShrink:0,cursor:'pointer'}}>
-            <span style={{color:t.muted,fontSize:11,fontWeight:700}}>{sym}</span>
+          <div key={sym} onClick={() => setTab('charts')} style={{display:'flex',gap:8,alignItems:'center',flexShrink:0,cursor:'pointer',padding:'4px 10px',borderRadius:8,transition:'background 0.15s'}}
+            onMouseEnter={e=>e.currentTarget.style.background=t.surface}
+            onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+            <span style={{color:t.muted,fontSize:10,fontWeight:600,letterSpacing:'0.04em'}}>{sym}</span>
             <span style={{fontFamily:'JetBrains Mono,monospace',fontSize:13,color:t.text,fontWeight:700}}>{d ? fmt(d.price) : '—'}</span>
             {d && <span style={{fontSize:11,fontWeight:700,color:up?t.green:t.red,background:(up?t.green:t.red)+'18',borderRadius:6,padding:'1px 6px'}}>{pctStr}</span>}
           </div>
@@ -1854,57 +1868,195 @@ export default function Dashboard() {
         <title>Projectzero</title>
         <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
       </Head>
-      <div style={{minHeight:'100vh',background:t.bg,fontFamily:'Space Grotesk,sans-serif',color:t.text,transition:'background 0.3s'}}>
+      <div style={{minHeight:'100vh',background:t.bg,fontFamily:'Inter,sans-serif',color:t.text,transition:'background 0.3s'}}>
         {dark&&<><div style={{position:'fixed',top:-150,left:-150,width:500,height:500,borderRadius:'50%',background:'radial-gradient(circle,rgba(59,158,255,0.06),transparent 70%)',pointerEvents:'none',zIndex:0}}/><div style={{position:'fixed',bottom:-150,right:-150,width:400,height:400,borderRadius:'50%',background:'radial-gradient(circle,rgba(167,139,250,0.06),transparent 70%)',pointerEvents:'none',zIndex:0}}/></>}
 
-        <header style={{background:dark?'rgba(11,14,22,0.9)':'rgba(255,255,255,0.9)',backdropFilter:'blur(16px)',borderBottom:`1px solid ${t.border}`,padding:'0 28px',display:'flex',alignItems:'center',justifyContent:'space-between',height:64,position:'sticky',top:0,zIndex:100}}>
-          <div style={{display:'flex',alignItems:'center',gap:14}}>
-            <div style={{width:38,height:38,borderRadius:12,background:'linear-gradient(135deg,#3b9eff,#a78bfa)',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:900,fontSize:14,color:'#fff',boxShadow:'0 0 24px rgba(59,158,255,0.35)'}}>P0</div>
-            <div><span style={{fontWeight:900,fontSize:17,color:t.text}}>Projectzero</span><span style={{color:t.muted,fontSize:11,marginLeft:8}}>FHP228</span></div>
-            <Badge color={t.purple}>Connect</Badge>
-          </div>
-          <div style={{display:'flex',alignItems:'center',gap:10}}>
-            <span style={{color:t.muted,fontSize:11,fontFamily:'JetBrains Mono,monospace'}}>{time}</span>
-            <button onClick={()=>router.push('/ai')} style={{display:'flex',alignItems:'center',gap:6,padding:'5px 14px',background:t.purple+'22',border:`1px solid ${t.purple}44`,borderRadius:20,cursor:'pointer',fontSize:13,color:t.purple,fontFamily:'Space Grotesk,sans-serif',fontWeight:700}}>🤖 AI</button>
-          <button onClick={()=>router.push('/morning')} style={{display:'flex',alignItems:'center',gap:6,padding:'5px 14px',background:t.amber+'22',border:`1px solid ${t.amber}44`,borderRadius:20,cursor:'pointer',fontSize:13,color:t.amber,fontFamily:'Space Grotesk,sans-serif',fontWeight:700}}>☀️ Morning</button>
-            <button onClick={toggleDark} style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:20,padding:'5px 14px',cursor:'pointer',fontSize:13,color:t.text,fontFamily:'Space Grotesk,sans-serif',fontWeight:500}}>{dark?'☀️ Light':'🌙 Dark'}</button>
-            {isConn
-              ? <div style={{display:'flex',alignItems:'center',gap:8}}>
-                  <div style={{display:'flex',alignItems:'center',gap:7,background:t.green+'15',border:`1px solid ${t.green}33`,borderRadius:10,padding:'6px 14px'}}>
-                    <span style={{width:7,height:7,borderRadius:'50%',background:t.green,display:'inline-block',animation:'pulse 1.5s infinite'}}/>
-                    <span style={{color:t.green,fontSize:12,fontWeight:700}}>Zerodha Live</span>
-                    {kiteUser&&<span style={{color:t.green+'55',fontSize:11}}>· {kiteUser.user_id}</span>}
-                  </div>
-                  <button onClick={disc} style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,color:t.muted,cursor:'pointer',fontSize:11,padding:'6px 10px',fontFamily:'Space Grotesk,sans-serif'}}>Disconnect</button>
+        <header style={{
+            background: dark ? 'rgba(8,12,20,0.92)' : 'rgba(255,255,255,0.95)',
+            backdropFilter: 'blur(20px)',
+            WebkitBackdropFilter: 'blur(20px)',
+            borderBottom: `1px solid ${t.border}`,
+            padding: '0 24px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            height: 60,
+            position: 'sticky',
+            top: 0,
+            zIndex: 100,
+            boxShadow: dark ? '0 1px 0 rgba(255,255,255,0.04)' : '0 1px 0 rgba(0,0,0,0.06)',
+          }}>
+            {/* Logo */}
+            <div style={{display:'flex',alignItems:'center',gap:10,cursor:'pointer'}} onClick={()=>router.push('/dashboard')}>
+              <div style={{
+                width:32,height:32,borderRadius:9,
+                background:'linear-gradient(135deg,#ff6600,#ff9500)',
+                display:'flex',alignItems:'center',justifyContent:'center',
+                fontSize:16,fontWeight:900,color:'#fff',
+                boxShadow:'0 2px 8px #ff660040',
+                flexShrink:0,
+              }}>P</div>
+              <div>
+                <span style={{fontWeight:800,fontSize:15,color:t.text,letterSpacing:'-0.3px'}}>Projectzero</span>
+                <span style={{
+                  fontSize:9,fontWeight:600,color:'#ff6600',
+                  background:'#ff660014',border:'1px solid #ff660033',
+                  borderRadius:4,padding:'1px 5px',marginLeft:6,letterSpacing:'0.05em',
+                }}>BETA</span>
+              </div>
+            </div>
+
+            {/* Center — market status */}
+            <div style={{display:'flex',alignItems:'center',gap:20}}>
+              {mkt.NIFTY && (
+                <div style={{display:'flex',alignItems:'center',gap:6,cursor:'pointer'}} onClick={()=>setTab('signals')}>
+                  <span style={{fontSize:11,color:t.muted}}>NIFTY</span>
+                  <span style={{fontFamily:'JetBrains Mono,monospace',fontWeight:600,fontSize:13,color:t.text}}>₹{mkt.NIFTY?.price?.toLocaleString('en-IN',{maximumFractionDigits:0})}</span>
+                  <span style={{fontSize:11,fontWeight:600,color:(mkt.NIFTY?.pct||0)>=0?t.green:t.red}}>{(mkt.NIFTY?.pct||0)>=0?'+':''}{mkt.NIFTY?.pct?.toFixed(2)}%</span>
                 </div>
-              : <button onClick={()=>loginUrl&&window.location.assign(loginUrl)} style={{display:'flex',alignItems:'center',gap:7,padding:'9px 18px',background:'linear-gradient(135deg,#ff4466,#ff6688)',border:'none',borderRadius:10,cursor:'pointer',color:'#fff',fontSize:13,fontFamily:'Space Grotesk,sans-serif',fontWeight:700,boxShadow:'0 4px 20px rgba(255,68,102,0.4)'}}>🔐 Login with Zerodha</button>
-            }
-            <button onClick={()=>{localStorage.removeItem('pz_token');router.push('/')}} style={{background:'none',border:'none',color:t.muted,cursor:'pointer',fontSize:12,padding:'4px 8px'}}>Logout</button>
-          </div>
-        </header>
+              )}
+              {mkt.BTC && (
+                <div style={{display:'flex',alignItems:'center',gap:6,cursor:'pointer'}} onClick={()=>setTab('crypto')}>
+                  <span style={{fontSize:11,color:t.muted}}>BTC</span>
+                  <span style={{fontFamily:'JetBrains Mono,monospace',fontWeight:600,fontSize:13,color:t.text}}>${mkt.BTC?.price?.toLocaleString('en-US',{maximumFractionDigits:0})}</span>
+                  <span style={{fontSize:11,fontWeight:600,color:(mkt.BTC?.pct||0)>=0?t.green:t.red}}>{(mkt.BTC?.pct||0)>=0?'+':''}{mkt.BTC?.pct?.toFixed(2)}%</span>
+                </div>
+              )}
+            </div>
+
+            {/* Right — actions */}
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              {/* Kite status */}
+              <div style={{
+                display:'flex',alignItems:'center',gap:6,
+                padding:'5px 12px',borderRadius:20,
+                background: at ? t.green+'14' : t.surface,
+                border:`1px solid ${at ? t.green+'44' : t.border}`,
+                cursor:'pointer',
+              }} onClick={()=>at ? disc() : loginUrl && window.location.assign(loginUrl)}>
+                <div style={{width:7,height:7,borderRadius:'50%',background:at?t.green:t.muted,flexShrink:0,boxShadow:at?`0 0 6px ${t.green}`:''}}/>
+                <span style={{fontSize:12,fontWeight:600,color:at?t.green:t.muted}}>{at ? 'Zerodha' : 'Connect'}</span>
+              </div>
+
+              {/* Morning brief */}
+              <button onClick={()=>router.push('/morning')}
+                style={{padding:'5px 12px',borderRadius:20,border:`1px solid ${t.amber}44`,background:t.amber+'14',color:t.amber,cursor:'pointer',fontSize:12,fontWeight:600,fontFamily:'Inter,sans-serif'}}>
+                ☀️
+              </button>
+
+              {/* AI */}
+              <button onClick={()=>router.push('/ai')}
+                style={{padding:'5px 12px',borderRadius:20,border:`1px solid ${t.purple}44`,background:t.purple+'14',color:t.purple,cursor:'pointer',fontSize:12,fontWeight:600,fontFamily:'Inter,sans-serif'}}>
+                🤖 AI
+              </button>
+
+              {/* Dark mode toggle */}
+              <button onClick={toggleDark}
+                style={{width:36,height:36,borderRadius:10,border:`1px solid ${t.border}`,background:t.surface,cursor:'pointer',fontSize:16,display:'flex',alignItems:'center',justifyContent:'center'}}>
+                {dark ? '☀️' : '🌙'}
+              </button>
+            </div>
+          </header>
 
         <TickerBar mkt={mkt} t={t} setTab={setTab} isConn={isConn} />
 
-        <div style={{padding:'18px 28px 0',display:'flex',gap:4}}>
-          {tabs.map(tb=><button key={tb.id} onClick={()=>setTab(tb.id)} style={{padding:'9px 20px',borderRadius:'10px 10px 0 0',fontSize:13,fontWeight:600,background:tab===tb.id?t.card:t.surface+'88',border:`1px solid ${tab===tb.id?t.border:'transparent'}`,borderBottom:tab===tb.id?`1px solid ${t.card}`:'none',color:tab===tb.id?t.text:t.muted,cursor:'pointer',fontFamily:'Space Grotesk,sans-serif',transition:'all 0.15s'}}>{tb.l}</button>)}
+        <div style={{padding:'0 24px',display:'flex',gap:1,borderBottom:`1px solid ${t.border}`,background:dark?'rgba(8,12,20,0.6)':'rgba(255,255,255,0.8)',backdropFilter:'blur(10px)',position:'sticky',top:60,zIndex:90}}>
+          {tabs.map(tb=>(
+            <button key={tb.id} onClick={()=>setTab(tb.id)} style={{
+              padding:'13px 18px',
+              fontSize:12,fontWeight:tab===tb.id?700:500,
+              background:'transparent',
+              border:'none',
+              borderBottom:tab===tb.id?`2px solid #ff6600`:'2px solid transparent',
+              color:tab===tb.id?'#ff6600':t.muted,
+              cursor:'pointer',
+              fontFamily:'Inter,sans-serif',
+              transition:'all 0.2s',
+              letterSpacing:'-0.1px',
+              whiteSpace:'nowrap',
+            }}>{tb.l}</button>
+          ))}
         </div>
 
         <main style={{padding:'0 28px 60px',maxWidth:1440,margin:'0 auto',position:'relative',zIndex:1}}>
           <div style={{background:t.card,border:`1px solid ${t.border}`,borderRadius:'0 16px 16px 16px',padding:28}}>
-            {!isConn&&tab!=='charts'&&<div style={{background:dark?t.blue+'0d':t.blue+'0a',border:`1px solid ${t.blue}33`,borderRadius:16,padding:18,marginBottom:24,display:'flex',alignItems:'center',justifyContent:'space-between',gap:16}}><div><p style={{color:t.blue,fontWeight:700,fontSize:14}}>🔐 Login with Zerodha for live data & 1-click execution</p><p style={{color:t.muted,fontSize:12,marginTop:3}}>Live prices · Real positions · Auto stop loss · SL + Target in one click</p></div><button onClick={()=>loginUrl&&window.location.assign(loginUrl)} style={{padding:'10px 22px',background:`linear-gradient(135deg,${t.green},${t.teal})`,border:'none',borderRadius:12,color:'#fff',fontWeight:700,cursor:'pointer',fontSize:13,fontFamily:'Space Grotesk,sans-serif',flexShrink:0,boxShadow:`0 4px 20px ${t.green}33`}}>Connect Now →</button></div>}
+            {!isConn&&tab!=='charts'&&<div style={{background:dark?t.blue+'0d':t.blue+'0a',border:`1px solid ${t.blue}33`,borderRadius:16,padding:18,marginBottom:24,display:'flex',alignItems:'center',justifyContent:'space-between',gap:16}}><div><p style={{color:t.blue,fontWeight:700,fontSize:14}}>🔐 Login with Zerodha for live data & 1-click execution</p><p style={{color:t.muted,fontSize:12,marginTop:3}}>Live prices · Real positions · Auto stop loss · SL + Target in one click</p></div><button onClick={()=>loginUrl&&window.location.assign(loginUrl)} style={{padding:'10px 22px',background:`linear-gradient(135deg,${t.green},${t.teal})`,border:'none',borderRadius:12,color:'#fff',fontWeight:700,cursor:'pointer',fontSize:13,fontFamily:'Inter,sans-serif',flexShrink:0,boxShadow:`0 4px 20px ${t.green}33`}}>Connect Now →</button></div>}
 
-            {tab==='signals'&&<div><div style={{marginBottom:18,display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}><div><h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Live Signals</h2><p style={{color:t.muted,fontSize:13,marginTop:5}}>8 PZ strategies · ORB, Momentum, Supertrend, VWAP, Bollinger, MACD</p></div></div><MarketRegimeBanner t={t}/><NewsBar t={t} market='india'/><div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(370px,1fr))',gap:20,marginTop:20}}>{PZ_STRATEGIES.map(s=><SignalCard key={s.id} strat={s} at={at} onTrade={()=>setTr(r=>r+1)} t={t}/>)}</div></div>}
+            {tab==='signals'&&<div><div style={{marginBottom:18,display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}><div><h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Live Signals</h2><p style={{color:t.muted,fontSize:13,marginTop:5}}>8 PZ strategies · ORB, Momentum, Supertrend, VWAP, Bollinger, MACD</p></div></div><MarketRegimeBanner t={t}/><NewsBar t={t} market='india'/><div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(340px,1fr))',gap:20,marginTop:20}}>{PZ_STRATEGIES.map(s=><SignalCard key={s.id} strat={s} at={at} onTrade={()=>setTr(r=>r+1)} t={t}/>)}</div></div>}
             {tab==='crypto'&&<CryptoTab t={t} />}
             {tab==='alerts'&&<AlertsTab t={t}/>}
             {tab==='performance'&&<PerformanceTab t={t}/>}
             {tab==='options'&&<OptionsTab t={t}/>}
             {tab==='positions'&&<div><div style={{marginBottom:22}}><h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Portfolio</h2><p style={{color:t.muted,fontSize:13,marginTop:5}}>Live from Zerodha · Positions · Available Margin · Today's Orders</p></div><Positions at={at} t={t}/></div>}
-            {tab==='trades'&&<div><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:22}}><div><h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Trade History</h2><p style={{color:t.muted,fontSize:13,marginTop:5}}>All trades · Entry/Exit · P&L</p></div><button onClick={()=>setTr(r=>r+1)} style={{padding:'8px 16px',background:t.surface,border:`1px solid ${t.border}`,borderRadius:10,color:t.text,cursor:'pointer',fontSize:12,fontFamily:'Space Grotesk,sans-serif',fontWeight:600}}>🔄 Refresh</button></div><History refresh={tr} t={t}/></div>}
+            {tab==='trades'&&<div><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:22}}><div><h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Trade History</h2><p style={{color:t.muted,fontSize:13,marginTop:5}}>All trades · Entry/Exit · P&L</p></div><button onClick={()=>setTr(r=>r+1)} style={{padding:'8px 16px',background:t.surface,border:`1px solid ${t.border}`,borderRadius:10,color:t.text,cursor:'pointer',fontSize:12,fontFamily:'Inter,sans-serif',fontWeight:600}}>🔄 Refresh</button></div><History refresh={tr} t={t}/></div>}
             {tab==='charts'&&<Charts t={t} at={at}/>}
           </div>
         </main>
       </div>
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}}@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(1.3)}}*{box-sizing:border-box;margin:0;padding:0}::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:#374151;border-radius:2px}`}</style>
+      <style>{`
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+  @keyframes spin { to { transform: rotate(360deg) } }
+  @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(1.2)} }
+  @keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+  @keyframes slideIn { from{opacity:0;transform:translateX(-10px)} to{opacity:1;transform:translateX(0)} }
+  @keyframes shimmer { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
+
+  * { box-sizing: border-box; margin: 0; padding: 0 }
+
+  body {
+    font-family: 'Inter', 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::-webkit-scrollbar { width: 4px; height: 4px }
+  ::-webkit-scrollbar-track { background: transparent }
+  ::-webkit-scrollbar-thumb { background: #ff660044; border-radius: 99px }
+  ::-webkit-scrollbar-thumb:hover { background: #ff6600aa }
+
+  /* Cards animate in */
+  .card-enter { animation: fadeIn 0.3s ease forwards }
+
+  /* Smooth button hover */
+  button { transition: all 0.15s ease !important; outline: none !important }
+  button:hover:not(:disabled) { transform: translateY(-1px) }
+  button:active:not(:disabled) { transform: translateY(0) }
+
+  /* Signal strength bar animation */
+  .strength-bar { transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1) }
+
+  /* Tab active indicator */
+  .tab-active { position: relative }
+  .tab-active::after {
+    content: '';
+    position: absolute;
+    bottom: -1px;
+    left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, #ff6600, #ff9500);
+    border-radius: 2px 2px 0 0;
+  }
+
+  /* Loading skeleton */
+  .skeleton {
+    background: linear-gradient(90deg, #1c253500 0%, #2435501a 50%, #1c253500 100%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+  }
+
+  /* Price change colors */
+  .up { color: #00d17a }
+  .down { color: #ff4060 }
+
+  /* Monospace numbers */
+  .mono { font-family: 'JetBrains Mono', monospace }
+
+  select { outline: none; -webkit-appearance: none }
+  input { outline: none }
+  input::placeholder { opacity: 0.4 }
+  a { text-decoration: none }
+`}</style>
     </>
   )
 }
