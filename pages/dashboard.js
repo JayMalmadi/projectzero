@@ -2421,7 +2421,11 @@ export default function Dashboard() {
   function disc(){['kite_access_token','kite_user','kite_connected_date'].forEach(k=>localStorage.removeItem(k));setAt('');setKU(null)}
 
   // AI Toggle — persisted in localStorage
-  const [aiOn, setAiOn] = useState(() => localStorage.getItem('pz_ai_enabled') !== 'false')
+  useEffect(() => {
+    const saved = typeof window !== 'undefined' ? localStorage.getItem('pz_ai_enabled') : null
+    if (saved !== null) setAiOn(saved === 'true')
+  }, [])
+  const [aiOn, setAiOn] = useState(true)  // default ON, loaded after mount
   function toggleAI() {
     const next = !aiOn
     setAiOn(next)
