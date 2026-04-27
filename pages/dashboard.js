@@ -1967,12 +1967,20 @@ function DayStrategyHint({t}) {
 
 
 function MarketStatusBanner({t}) {
-  const [time, setTime] = useState(new Date())
+  const [mounted, setMounted] = useState(false)
+  const [time, setTime]       = useState(null)
 
   useEffect(() => {
+    setMounted(true)
+    setTime(new Date())
     const iv = setInterval(() => setTime(new Date()), 1000)
     return () => clearInterval(iv)
   }, [])
+
+  // Don't render on server — avoids hydration mismatch
+  if (!mounted || !time) return (
+    <div style={{height:44,background:'transparent',marginBottom:16}}/>
+  )
 
   const ist = new Date(time.toLocaleString('en-US', {timeZone:'Asia/Kolkata'}))
   const h   = ist.getHours()
