@@ -1,7 +1,7 @@
 // pages/chart.js
 // Fullscreen chart page — opens our own PZChart in full screen
 // No Kite iframe issues, works perfectly
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import Head from 'next/head'
 import { useRouter } from 'next/router'
 
@@ -38,11 +38,11 @@ export default function FullChart() {
   const [live,    setLive]    = useState(true)
   const [updated, setUpdated] = useState(null)
   const [source,  setSource]  = useState('')
-  const chartRef  = typeof window !== 'undefined' ? require('react').useRef(null) : null
-  const tvRef     = typeof window !== 'undefined' ? require('react').useRef(null) : null
-  const serRef    = typeof window !== 'undefined' ? require('react').useRef(null) : null
-  const volRef    = typeof window !== 'undefined' ? require('react').useRef(null) : null
-  const timerRef  = typeof window !== 'undefined' ? require('react').useRef(null) : null
+  const chartRef  = useRef(null)
+  const tvRef     = useRef(null)
+  const serRef    = useRef(null)
+  const volRef    = useRef(null)
+  const timerRef  = useRef(null)
   const cfg = INTERVALS.find(i=>i.v===intv) || INTERVALS[4]
   const t = DARK
 

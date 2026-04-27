@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import Head from 'next/head'
 import { useRouter } from 'next/router'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
@@ -71,18 +71,18 @@ function PZChart({symbol, t, h=420, accessToken}) {
     {v:'day',      l:'1D',  days:365, refresh:60},
     {v:'week',     l:'1W',  days:730, refresh:300},
   ]
-  const [candles, setCandles] = React.useState([])
-  const [loading, setLoading] = React.useState(false)
-  const [source,  setSource]  = React.useState('')
-  const [intv,    setIntv]    = React.useState('15minute')
-  const [last,    setLast]    = React.useState(null)
-  const [live,    setLive]    = React.useState(true)
-  const [updated, setUpdated] = React.useState(null)
-  const chartRef = React.useRef(null)
-  const tvRef    = React.useRef(null)
-  const serRef   = React.useRef(null)
-  const volRef   = React.useRef(null)
-  const timerRef = React.useRef(null)
+  const [candles, setCandles] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [source,  setSource]  = useState('')
+  const [intv,    setIntv]    = useState('15minute')
+  const [last,    setLast]    = useState(null)
+  const [live,    setLive]    = useState(true)
+  const [updated, setUpdated] = useState(null)
+  const chartRef = useRef(null)
+  const tvRef    = useRef(null)
+  const serRef   = useRef(null)
+  const volRef   = useRef(null)
+  const timerRef = useRef(null)
   const cfg = INTERVALS.find(i=>i.v===intv)||INTERVALS[4]
 
   async function loadData(silent=false) {
@@ -107,14 +107,14 @@ function PZChart({symbol, t, h=420, accessToken}) {
     if (!silent) setLoading(false)
   }
 
-  React.useEffect(()=>{
+  useEffect(()=>{
     loadData()
     if (timerRef.current) clearInterval(timerRef.current)
     if (live) timerRef.current=setInterval(()=>loadData(true), cfg.refresh*1000)
     return ()=>{ if (timerRef.current) clearInterval(timerRef.current) }
   },[symbol,intv,accessToken,live])
 
-  React.useEffect(()=>{
+  useEffect(()=>{
     if (!candles.length||!chartRef.current||loading) return
     if (!window.LightweightCharts) {
       const s=document.createElement('script')
@@ -199,8 +199,8 @@ function PZChart({symbol, t, h=420, accessToken}) {
 function SignalCard({strat,at,onTrade,t}) {
   const [sym,setSym]=useState(strat.symbols[0]),[data,setData]=useState(null),[loading,setLoading]=useState(false),[modal,setModal]=useState(false),[chart,setChart]=useState(false)
   useEffect(()=>{load()},[sym,strat.id])
-  const [aiAnalysis, setAiAnalysis] = React.useState ? React.useState('') : useState('')
-  const [aiLoading,  setAiLoading]  = React.useState ? React.useState(false) : useState(false)
+  const [aiAnalysis, setAiAnalysis] = useState('')
+  const [aiLoading,  setAiLoading]  = useState(false)
 
   async function load(){
     setLoading(true);setData(null)
