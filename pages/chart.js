@@ -38,11 +38,11 @@ export default function FullChart() {
   const [live,    setLive]    = useState(true)
   const [updated, setUpdated] = useState(null)
   const [source,  setSource]  = useState('')
-  const chartRef  = useRef(null)
-  const tvRef     = useRef(null)
-  const serRef    = useRef(null)
-  const volRef    = useRef(null)
-  const timerRef  = useRef(null)
+  const chartRef = useRef(null)
+  const tvRef = useRef(null)
+  const serRef = useRef(null)
+  const volRef = useRef(null)
+  const timerRef = useRef(null)
   const cfg = INTERVALS.find(i=>i.v===intv) || INTERVALS[4]
   const t = DARK
 

@@ -199,55 +199,7 @@ function PZChart({symbol, t, h=420, accessToken}) {
 function SignalCard({strat,at,onTrade,t}) {
   const [sym,setSym]=useState(strat.symbols[0]),[data,setData]=useState(null),[loading,setLoading]=useState(false),[modal,setModal]=useState(false),[chart,setChart]=useState(false)
   useEffect(()=>{load()},[sym,strat.id])
-  const [aiAnalysis, setAiAnalysis] = useState('')
-  const [aiLoading,  setAiLoading]  = useState(false)
-
-  async function load(){
-    setLoading(true);setData(null)
-    try{
-      const r=await fetch(`/api/pz-strategies?symbol=${sym}&strategy=${strat.id}`)
-      const d=await r.json()
-      setData(d)
-      // Auto-fetch AI analysis when signal loads
-      if (d.signal !== 'HOLD') {
-        fetchAiAnalysis(d)
-      } else {
-        setAiAnalysis('')
-      }
-    }catch{}
-    setLoading(false)
-  }
-
-  async function fetchAiAnalysis(signalData) {
-    setAiLoading(true)
-    setAiAnalysis('')
-    try {
-      const r = await fetch('/api/ai-analysis', {
-        method: 'POST',
-        headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({
-          type: 'signal_analysis',
-          data: {
-            symbol: sym,
-            signal: signalData.signal,
-            strategy: strat.name,
-            price: signalData.price,
-            stopLoss: signalData.stopLoss,
-            target: signalData.target,
-            rsi: signalData.rsi,
-            confidence: signalData.confidence,
-            reason: signalData.reason,
-            today: signalData.today,
-            marketContext: signalData.marketContext,
-            capital: 25000,
-          }
-        })
-      })
-      const d = await r.json()
-      if (d.analysis) setAiAnalysis(d.analysis)
-    } catch {}
-    setAiLoading(false)
-  }
+  async function load(){setLoading(true);setData(null);try{const r=await fetch(`/api/pz-strategies?symbol=${sym}&strategy=${strat.id}`);setData(await r.json())}catch{}setLoading(false)}
   const sc=data?.signal==='BUY'?t.green:data?.signal==='SELL'?t.red:t.amber
   return (
     <>
@@ -284,21 +236,6 @@ function SignalCard({strat,at,onTrade,t}) {
           <div style={{background:t.surface,borderRadius:10,padding:'10px 14px',border:`1px solid ${t.border}`}}>
             <p style={{color:t.text2,fontSize:12,lineHeight:1.7}}>{data.reason}</p>
           </div>
-
-          {/* Claude AI Analysis */}
-          {(aiAnalysis || aiLoading) && (
-            <div style={{background:t.purple+'0d',borderRadius:10,padding:'12px 14px',border:`1px solid ${t.purple}33`}}>
-              <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
-                <span style={{fontSize:14}}>🤖</span>
-                <span style={{color:t.purple,fontSize:11,fontWeight:700,letterSpacing:'0.08em'}}>CLAUDE AI ANALYSIS</span>
-                {aiLoading && <div style={{width:12,height:12,border:`2px solid ${t.purple}44`,borderTopColor:t.purple,borderRadius:'50%',animation:'spin 0.8s linear infinite',marginLeft:'auto'}} />}
-              </div>
-              {aiLoading
-                ? <p style={{color:t.muted,fontSize:11,fontStyle:'italic'}}>Analysing signal...</p>
-                : <p style={{color:t.text2,fontSize:12,lineHeight:1.8,whiteSpace:'pre-wrap'}}>{aiAnalysis}</p>
-              }
-            </div>
-          )}
 
           {data.chartData&&<div style={{height:75}}><ResponsiveContainer width="100%" height="100%"><AreaChart data={data.chartData}><defs><linearGradient id={`g${strat.id}`} x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={sc} stopOpacity={0.3}/><stop offset="95%" stopColor={sc} stopOpacity={0}/></linearGradient></defs><XAxis dataKey="date" hide/><YAxis domain={['auto','auto']} hide/><Tooltip contentStyle={{background:t.card,border:`1px solid ${t.border}`,borderRadius:8,fontSize:11,color:t.text}}/><Area type="monotone" dataKey="close" stroke={sc} fill={`url(#g${strat.id})`} dot={false} strokeWidth={2}/></AreaChart></ResponsiveContainer></div>}
 
@@ -405,11 +342,6 @@ function TickerBar({mkt, t, setTab, isConn}) {
 export default function Dashboard() {
   const router=useRouter()
   const [dark,setDark]=useState(true),[at,setAt]=useState(''),[kiteUser,setKU]=useState(null),[mkt,setMkt]=useState({}),[tab,setTab]=useState('signals'),[time,setTime]=useState(''),[tr,setTr]=useState(0),[loginUrl,setLoginUrl]=useState('')
-  const [briefing,    setBriefing]    = useState('')
-  const [briefingTime,setBriefingTime]= useState(null)
-  const [chatMsgs,    setChatMsgs]    = useState([{role:'assistant',content:'Hi Jay! I am your AI trading partner. Ask me anything about your trades, strategies, or the market.'}])
-  const [chatInput,   setChatInput]   = useState('')
-  const [chatLoading, setChatLoading] = useState(false)
   const t = dark ? DARK : LIGHT
 
   useEffect(()=>{
@@ -419,9 +351,6 @@ export default function Dashboard() {
     if(a&&d===new Date().toDateString()){setAt(a);if(u)setKU(JSON.parse(u))}
     else ['kite_access_token','kite_user','kite_connected_date'].forEach(k=>localStorage.removeItem(k))
     fetch('/api/kite-login').then(r=>r.json()).then(d=>setLoginUrl(d.loginUrl))
-
-    // Fetch morning briefing
-    fetchMorningBriefing()
     const tick=()=>setTime(new Date().toLocaleTimeString('en-IN',{hour12:true,timeZone:'Asia/Kolkata'})+' IST')
     tick();const ti=setInterval(tick,1000);return()=>clearInterval(ti)
   },[])
@@ -439,7 +368,7 @@ export default function Dashboard() {
 
   function disc(){['kite_access_token','kite_user','kite_connected_date'].forEach(k=>localStorage.removeItem(k));setAt('');setKU(null)}
 
-  const tabs=[{id:'signals',l:'📡 Signals'},{id:'positions',l:'💼 Portfolio'},{id:'trades',l:'📋 History'},{id:'charts',l:'📈 Charts'},{id:'ai',l:'🤖 AI'}]
+  const tabs=[{id:'signals',l:'📡 Signals'},{id:'positions',l:'💼 Portfolio'},{id:'trades',l:'📋 History'},{id:'charts',l:'📈 Charts'}]
   const isConn=!!at
 
   return (
@@ -459,6 +388,7 @@ export default function Dashboard() {
           </div>
           <div style={{display:'flex',alignItems:'center',gap:10}}>
             <span style={{color:t.muted,fontSize:11,fontFamily:'JetBrains Mono,monospace'}}>{time}</span>
+            <button onClick={()=>router.push('/ai')} style={{display:'flex',alignItems:'center',gap:6,padding:'5px 14px',background:t.purple+'22',border:`1px solid ${t.purple}44`,borderRadius:20,cursor:'pointer',fontSize:13,color:t.purple,fontFamily:'Space Grotesk,sans-serif',fontWeight:700}}>🤖 AI</button>
             <button onClick={toggleDark} style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:20,padding:'5px 14px',cursor:'pointer',fontSize:13,color:t.text,fontFamily:'Space Grotesk,sans-serif',fontWeight:500}}>{dark?'☀️ Light':'🌙 Dark'}</button>
             {isConn
               ? <div style={{display:'flex',alignItems:'center',gap:8}}>
@@ -489,102 +419,6 @@ export default function Dashboard() {
             {tab==='positions'&&<div><div style={{marginBottom:22}}><h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Portfolio</h2><p style={{color:t.muted,fontSize:13,marginTop:5}}>Live from Zerodha · Positions · Margins · Today's orders</p></div><Positions at={at} t={t}/></div>}
             {tab==='trades'&&<div><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:22}}><div><h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Trade History</h2><p style={{color:t.muted,fontSize:13,marginTop:5}}>All trades · Entry/Exit · P&L</p></div><button onClick={()=>setTr(r=>r+1)} style={{padding:'8px 16px',background:t.surface,border:`1px solid ${t.border}`,borderRadius:10,color:t.text,cursor:'pointer',fontSize:12,fontFamily:'Space Grotesk,sans-serif',fontWeight:600}}>🔄 Refresh</button></div><History refresh={tr} t={t}/></div>}
             {tab==='charts'&&<Charts t={t} at={at}/>}
-
-            {tab==='ai'&&(
-              <div style={{display:'flex',flexDirection:'column',gap:20}}>
-                <div>
-                  <h2 style={{fontSize:22,fontWeight:900,color:t.text}}>AI Trading Partner</h2>
-                  <p style={{color:t.muted,fontSize:13,marginTop:5}}>Claude AI analysis · Signal insights · Market briefings · Ask anything</p>
-                </div>
-
-                {/* Morning Briefing */}
-                <div style={{background:t.purple+'0d',border:`1px solid ${t.purple}33`,borderRadius:16,padding:20}}>
-                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
-                    <div style={{display:'flex',alignItems:'center',gap:8}}>
-                      <span style={{fontSize:18}}>☀️</span>
-                      <span style={{color:t.purple,fontWeight:700,fontSize:14}}>Morning Briefing</span>
-                      {briefingTime&&<span style={{color:t.muted,fontSize:11}}>· {briefingTime.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:true,timeZone:'Asia/Kolkata'})}</span>}
-                    </div>
-                    <button onClick={fetchMorningBriefing} style={{padding:'4px 12px',background:t.purple+'22',border:`1px solid ${t.purple}44`,borderRadius:8,color:t.purple,cursor:'pointer',fontSize:11,fontFamily:'Space Grotesk,sans-serif',fontWeight:600}}>
-                      🔄 Refresh
-                    </button>
-                  </div>
-                  {briefing
-                    ? <p style={{color:t.text2,fontSize:13,lineHeight:1.9,whiteSpace:'pre-wrap'}}>{briefing}</p>
-                    : <div style={{display:'flex',alignItems:'center',gap:10,color:t.muted,fontSize:13}}>
-                        <div style={{width:16,height:16,border:`2px solid ${t.purple}44`,borderTopColor:t.purple,borderRadius:'50%',animation:'spin 0.8s linear infinite'}} />
-                        Generating morning briefing...
-                      </div>
-                  }
-                </div>
-
-                {/* AI Chat */}
-                <div style={{background:t.card,border:`1px solid ${t.border}`,borderRadius:16,overflow:'hidden'}}>
-                  <div style={{padding:'14px 18px',borderBottom:`1px solid ${t.border}`,display:'flex',alignItems:'center',gap:8}}>
-                    <span style={{fontSize:16}}>🤖</span>
-                    <span style={{color:t.text,fontWeight:700,fontSize:14}}>Ask Claude</span>
-                    <span style={{color:t.muted,fontSize:11}}>· Has context of your strategies, capital, and trade history</span>
-                  </div>
-
-                  {/* Messages */}
-                  <div style={{height:380,overflowY:'auto',padding:16,display:'flex',flexDirection:'column',gap:12}}>
-                    {chatMsgs.map((m,i)=>(
-                      <div key={i} style={{display:'flex',justifyContent:m.role==='user'?'flex-end':'flex-start'}}>
-                        <div style={{
-                          maxWidth:'80%',padding:'10px 14px',borderRadius:m.role==='user'?'14px 14px 4px 14px':'14px 14px 14px 4px',
-                          background:m.role==='user'?`linear-gradient(135deg,${t.accentC},${t.purple})`:t.surface,
-                          border:m.role==='user'?'none':`1px solid ${t.border}`,
-                          color:m.role==='user'?'#fff':t.text2,
-                          fontSize:13,lineHeight:1.7,whiteSpace:'pre-wrap',
-                        }}>{m.content}</div>
-                      </div>
-                    ))}
-                    {chatLoading&&(
-                      <div style={{display:'flex',justifyContent:'flex-start'}}>
-                        <div style={{padding:'10px 14px',borderRadius:'14px 14px 14px 4px',background:t.surface,border:`1px solid ${t.border}`}}>
-                          <div style={{display:'flex',gap:4}}>
-                            {[0,1,2].map(i=><span key={i} style={{width:6,height:6,borderRadius:'50%',background:t.purple,display:'inline-block',animation:`pulse 1s ${i*0.2}s infinite`}} />)}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Input */}
-                  <div style={{padding:'12px 16px',borderTop:`1px solid ${t.border}`,display:'flex',gap:8}}>
-                    <input
-                      value={chatInput}
-                      onChange={e=>setChatInput(e.target.value)}
-                      onKeyDown={e=>e.key==='Enter'&&!e.shiftKey&&sendChat(chatInput)}
-                      placeholder="Ask anything: 'Should I trade today?', 'Why did my last trade fail?', 'Best strategy for choppy market?'"
-                      style={{flex:1,background:t.surface,border:`1px solid ${t.border}`,borderRadius:10,color:t.text,fontSize:13,padding:'10px 14px',fontFamily:'Space Grotesk,sans-serif',outline:'none'}}
-                    />
-                    <button onClick={()=>sendChat(chatInput)} disabled={!chatInput.trim()||chatLoading} style={{padding:'10px 18px',background:`linear-gradient(135deg,${t.accentC},${t.purple})`,border:'none',borderRadius:10,color:'#fff',fontWeight:700,cursor:!chatInput.trim()||chatLoading?'not-allowed':'pointer',fontSize:13,fontFamily:'Space Grotesk,sans-serif',opacity:!chatInput.trim()||chatLoading?0.5:1}}>
-                      Send
-                    </button>
-                  </div>
-                </div>
-
-                {/* Quick prompts */}
-                <div>
-                  <p style={{color:t.muted,fontSize:11,fontWeight:600,letterSpacing:'0.08em',marginBottom:10}}>QUICK QUESTIONS</p>
-                  <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
-                    {[
-                      'Should I trade today?',
-                      'Which strategy is best for current market?',
-                      'Explain the PZ-ORB strategy',
-                      'What is a good risk:reward ratio for my capital?',
-                      'How do I avoid overtrading?',
-                      'What are the best times to trade Nifty?',
-                    ].map(q=>(
-                      <button key={q} onClick={()=>sendChat(q)} style={{padding:'6px 14px',background:t.surface,border:`1px solid ${t.border}`,borderRadius:20,color:t.text2,cursor:'pointer',fontSize:12,fontFamily:'Space Grotesk,sans-serif',transition:'all 0.15s'}}>
-                        {q}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
         </main>
       </div>
