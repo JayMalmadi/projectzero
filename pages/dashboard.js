@@ -362,7 +362,7 @@ function CryptoSignalCard({symbol, strategy, stratName, t}) {
             {l:'PRICE',     v:`$${Number(data.price).toLocaleString('en-US',{maximumFractionDigits:2})}`, c:t.text},
             {l:'STOP LOSS', v:data.stopLoss?`$${data.stopLoss}`:'—', c:t.red},
             {l:'TARGET',    v:data.target?`$${data.target}`:'—',    c:t.green},
-            {l:'RSI',       v:data.indicators?.rsi||'—', c:data.indicators?.rsi>70?t.red:data.indicators?.rsi<30?t.green:t.amber},
+            {l:'RSI',       v:data.indicators?.rsi||'—', c:data.indicators?.rsi>65?t.red:data.indicators?.rsi<35?t.green:t.amber},
           ].map(x=>(
             <div key={x.l} style={{background:t.surface,borderRadius:10,padding:'9px 11px',border:`1px solid ${t.border}`}}>
               <p style={{color:t.muted,fontSize:9,fontWeight:700,letterSpacing:'0.07em',marginBottom:3}}>{x.l}</p>
@@ -370,6 +370,15 @@ function CryptoSignalCard({symbol, strategy, stratName, t}) {
             </div>
           ))}
         </div>
+        {/* R:R + indicators row */}
+        {data.rr && (
+          <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+            <span style={{background:t.blue+'18',color:t.blue,border:`1px solid ${t.blue}33`,borderRadius:6,padding:'2px 8px',fontSize:10,fontWeight:700}}>R:R 1:{data.rr}</span>
+            {data.indicators?.macdHist!==undefined&&<span style={{background:(data.indicators.macdHist>0?t.green:t.red)+'18',color:data.indicators.macdHist>0?t.green:t.red,border:`1px solid ${(data.indicators.macdHist>0?t.green:t.red)}33`,borderRadius:6,padding:'2px 8px',fontSize:10,fontWeight:700}}>MACD {data.indicators.macdHist>0?'▲':'▼'}</span>}
+            {data.indicators?.volRatio&&<span style={{background:t.amber+'18',color:t.amber,border:`1px solid ${t.amber}33`,borderRadius:6,padding:'2px 8px',fontSize:10,fontWeight:700}}>Vol {data.indicators.volRatio}x</span>}
+            <span style={{background:t.muted+'18',color:t.muted,borderRadius:6,padding:'2px 8px',fontSize:10,fontWeight:700}}>ATR ${data.indicators?.atr?.toLocaleString('en-US',{maximumFractionDigits:0})}</span>
+          </div>
+        )}
         <div style={{background:t.surface,borderRadius:10,padding:'9px 12px',border:`1px solid ${t.border}`}}>
           <p style={{color:t.text2,fontSize:11,lineHeight:1.7}}>{data.reason}</p>
         </div>
@@ -389,12 +398,14 @@ function CryptoSignalCard({symbol, strategy, stratName, t}) {
 // ── Crypto Tab ─────────────────────────────────────────────────
 function CryptoTab({t}) {
   const CRYPTO_STRATEGIES = [
-    {symbol:'BTC', strategy:'momentum',    name:'BTC Momentum (EMA Crossover)'},
-    {symbol:'ETH', strategy:'momentum',    name:'ETH Momentum (EMA Crossover)'},
-    {symbol:'SOL', strategy:'breakout',    name:'SOL Breakout (Range Break)'},
-    {symbol:'BNB', strategy:'rsi-reversal',name:'BNB RSI Reversal'},
-    {symbol:'BTC', strategy:'breakout',    name:'BTC Breakout (Range Break)'},
-    {symbol:'ETH', strategy:'rsi-reversal',name:'ETH RSI Reversal'},
+    {symbol:'BTC', strategy:'momentum',    name:'BTC EMA Momentum',     emoji:'₿'},
+    {symbol:'ETH', strategy:'macd-cross',  name:'ETH MACD Cross',       emoji:'Ξ'},
+    {symbol:'SOL', strategy:'rsi-reversal',name:'SOL RSI Reversal',     emoji:'◎'},
+    {symbol:'BNB', strategy:'bb-breakout', name:'BNB Bollinger Breakout',emoji:'🔶'},
+    {symbol:'ETH', strategy:'momentum',    name:'ETH EMA Momentum',     emoji:'Ξ'},
+    {symbol:'BTC', strategy:'macd-cross',  name:'BTC MACD Cross',       emoji:'₿'},
+    {symbol:'XRP', strategy:'rsi-reversal',name:'XRP RSI Reversal',     emoji:'◈'},
+    {symbol:'SOL', strategy:'bb-breakout', name:'SOL Bollinger Breakout',emoji:'◎'},
   ]
   const [prices, setPrices] = useState({})
 
