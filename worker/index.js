@@ -1,5 +1,5 @@
 // Projectzero 24/7 Automation Worker
-// Runs on Railway - monitors markets, fires signals, sends Telegram alerts
+// Runs on Railway — monitors markets, fires signals, Telegram alerts
 
 const https = require('https')
 const http  = require('http')
@@ -28,15 +28,15 @@ function fetchJSON(url, options={}) {
       })
     })
     req.on('error', reject)
-    req.setTimeout(10000, () => { req.destroy(); reject(new Error('Timeout')) })
+    req.setTimeout(15000, () => { req.destroy(); reject(new Error('Timeout')) })
   })
 }
 
 async function postJSON(url, body, headers={}) {
   return new Promise((resolve, reject) => {
-    const data = JSON.stringify(body)
+    const data   = JSON.stringify(body)
     const urlObj = new URL(url)
-    const opts = {
+    const opts   = {
       hostname: urlObj.hostname,
       path:     urlObj.pathname + urlObj.search,
       method:   'POST',
@@ -49,7 +49,7 @@ async function postJSON(url, body, headers={}) {
       res.on('end', () => { try { resolve(JSON.parse(d)) } catch(e) { resolve({text:d}) } })
     })
     req.on('error', reject)
-    req.setTimeout(15000, () => { req.destroy(); reject(new Error('Timeout')) })
+    req.setTimeout(20000, () => { req.destroy(); reject(new Error('Timeout')) })
     req.write(data)
     req.end()
   })
@@ -57,30 +57,59 @@ async function postJSON(url, body, headers={}) {
 
 // ── Telegram ───────────────────────────────────────────────────
 async function sendTelegram(message) {
-  if (!CONFIG.TELEGRAM_BOT_TOKEN || !CONFIG.TELEGRAM_CHAT_ID) {
-    console.log('[Telegram] Not configured yet:', message.slice(0, 50))
-    return
-  }
+  if (!CONFIG.TELEGRAM_BOT_TOKEN || !CONFIG.TELEGRAM_CHAT_ID) return
   try {
     await postJSON(
       `https://api.telegram.org/bot${CONFIG.TELEGRAM_BOT_TOKEN}/sendMessage`,
       { chat_id: CONFIG.TELEGRAM_CHAT_ID, text: message, parse_mode: 'HTML' }
     )
-    console.log('[Telegram] Sent:', message.slice(0, 50))
+    console.log('[Telegram] Sent:', message.slice(0, 60))
   } catch(e) {
     console.error('[Telegram] Error:', e.message)
   }
 }
 
-// ── Market monitoring ──────────────────────────────────────────
+// ── Market hours ──────────────────────────────────────────────
+function getNow() {
+  return new Date(new Date().toLocaleString('en-US', {timeZone:'Asia/Kolkata'}))
+}
+function isIndianMarketOpen() {
+  const now  = getNow()
+  const day  = now.getDay()
+  const mins = now.getHours() * 60 + now.getMinutes()
+  return day >= 1 && day <= 5 && mins >= 555 && mins <= 930
+}
+function getTimeStr() {
+  const n = getNow()
+  return `${n.getHours().toString().padStart(2,'0')}:${n.getMinutes().toString().padStart(2,'0')}`
+}
+
+// ── Signal monitoring ─────────────────────────────────────────
+const FIRED_SIGNALS = new Set() // prevent duplicate alerts
+
 async function checkSignals() {
-  const strategies = [
-    { symbol:'NIFTY',     strategy:'pz-orb',       market:'india'  },
-    { symbol:'BANKNIFTY', strategy:'pz-tuesday',    market:'india'  },
-    { symbol:'BTC',       strategy:'momentum',      market:'crypto' },
-    { symbol:'ETH',       strategy:'macd-cross',    market:'crypto' },
-    { symbol:'SOL',       strategy:'rsi-reversal',  market:'crypto' },
-  ]
+  const strategies = []
+
+  // Indian market strategies (only during market hours)
+  if (isIndianMarketOpen()) {
+    strategies.push(
+      { symbol:'NIFTY',     strategy:'pz-orb',      market:'india',  minConf:65 },
+      { symbol:'BANKNIFTY', strategy:'pz-tuesday',   market:'india',  minConf:60 },
+      { symbol:'NIFTY',     strategy:'supertrend',   market:'india',  minConf:65 },
+      { symbol:'BANKNIFTY', strategy:'vwap',         market:'india',  minConf:60 },
+      { symbol:'NIFTY',     strategy:'bollinger',    market:'india',  minConf:65 },
+      { symbol:'TCS',       strategy:'macd',         market:'india',  minConf:65 },
+    )
+  }
+
+  // Crypto strategies (24/7)
+  strategies.push(
+    { symbol:'BTC', strategy:'momentum',     market:'crypto', minConf:70 },
+    { symbol:'ETH', strategy:'macd-cross',   market:'crypto', minConf:70 },
+    { symbol:'SOL', strategy:'rsi-reversal', market:'crypto', minConf:70 },
+    { symbol:'XRP', strategy:'rsi-reversal', market:'crypto', minConf:75 },
+    { symbol:'BTC', strategy:'macd-cross',   market:'crypto', minConf:72 },
+  )
 
   for (const s of strategies) {
     try {
@@ -90,153 +119,275 @@ async function checkSignals() {
 
       const data = await fetchJSON(`${CONFIG.DASHBOARD_URL}${apiPath}`)
 
-      if (data.signal && data.signal !== 'HOLD' && data.confidence >= 65) {
-        const emoji  = data.signal === 'BUY' ? '🟢' : '🔴'
-        const market = s.market === 'crypto' ? '🪙' : '🇮🇳'
-        const price  = s.market === 'crypto'
-          ? `$${Number(data.price).toLocaleString('en-US', {maximumFractionDigits:2})}`
-          : `₹${Number(data.price).toLocaleString('en-IN', {maximumFractionDigits:2})}`
+      if (!data.signal || data.signal === 'HOLD') continue
+      if (data.confidence < s.minConf) continue
 
-        const msg = `${emoji} <b>SIGNAL FIRED</b> ${market}
+      // Deduplicate — don't fire same signal twice in 2 hours
+      const key = `${s.symbol}-${s.strategy}-${data.signal}-${Math.floor(Date.now()/7200000)}`
+      if (FIRED_SIGNALS.has(key)) continue
+      FIRED_SIGNALS.add(key)
+
+      const emoji    = data.signal === 'BUY' ? '🟢' : '🔴'
+      const mktEmoji = s.market === 'crypto' ? '🪙' : '🇮🇳'
+      const curr     = s.market === 'crypto' ? '$' : '₹'
+      const fmtP     = (n) => n ? `${curr}${Number(n).toLocaleString('en-US',{maximumFractionDigits:2})}` : '—'
+
+      // Check multi-timeframe confluence
+      let mtfNote = ''
+      try {
+        const mtf = await fetchJSON(`${CONFIG.DASHBOARD_URL}/api/multi-timeframe?symbol=${s.symbol}&market=${s.market}`)
+        if (mtf.confluence) mtfNote = `\nTimeframes: ${mtf.confluence} (${mtf.score}/3)`
+      } catch {}
+
+      const msg = `${emoji} <b>SIGNAL FIRED</b> ${mktEmoji}
 ━━━━━━━━━━━━━━━━
-<b>${data.signal} ${s.symbol}</b>
-Price: ${price}
-Stop Loss: ${data.stopLoss ? (s.market==='crypto'?'$':'₹')+data.stopLoss : '—'}
-Target: ${data.target ? (s.market==='crypto'?'$':'₹')+data.target : '—'}
-Strategy: ${s.strategy}
-Confidence: ${data.confidence}%
+<b>${data.signal} ${s.symbol}</b> · ${s.strategy}
+Price: ${fmtP(data.price)}
+Stop Loss: ${fmtP(data.stopLoss)}
+Target: ${fmtP(data.target)}
+Confidence: ${data.confidence}%${data.rr?` · R:R 1:${data.rr}`:''}${mtfNote}
 
-<a href="${CONFIG.DASHBOARD_URL}/dashboard">Open Dashboard →</a>`
+${data.reason?.slice(0,120)}
 
-        await sendTelegram(msg)
-        console.log(`[Signal] ${data.signal} ${s.symbol} @ ${price} (${data.confidence}%)`)
-      }
+<a href="${CONFIG.DASHBOARD_URL}/dashboard">⚡ Open Dashboard to Execute →</a>`
+
+      await sendTelegram(msg)
+      console.log(`[Signal] ${data.signal} ${s.symbol} (${data.confidence}%)`)
+
     } catch(e) {
-      console.error(`[Signal] Error checking ${s.symbol}:`, e.message)
+      console.error(`[Signal] Error ${s.symbol}/${s.strategy}:`, e.message)
     }
-
-    // Small delay between checks to avoid rate limits
-    await new Promise(r => setTimeout(r, 2000))
+    await new Promise(r => setTimeout(r, 1500)) // throttle
   }
 }
 
-// ── Market hours check ─────────────────────────────────────────
-function isIndianMarketOpen() {
-  const now = new Date(new Date().toLocaleString('en-US', {timeZone:'Asia/Kolkata'}))
-  const day = now.getDay()   // 0=Sun, 6=Sat
-  const h   = now.getHours()
-  const m   = now.getMinutes()
-  const mins = h * 60 + m
-  // Mon-Fri, 9:15 AM to 3:30 PM IST
-  return day >= 1 && day <= 5 && mins >= 555 && mins <= 930
+// ── Price alert checking ───────────────────────────────────────
+async function checkPriceAlerts() {
+  try {
+    const alerts = await fetchJSON(`${CONFIG.DASHBOARD_URL}/api/price-alerts`)
+    if (!alerts.alerts || !alerts.alerts.length) return
+
+    // Get current prices
+    const [indPrices, cryptoPrices] = await Promise.all([
+      fetchJSON(`${CONFIG.DASHBOARD_URL}/api/market?symbols=NIFTY,BANKNIFTY,SENSEX,TCS,INFY,RELIANCE,HDFCBANK,SBIN`).catch(()=>({data:{}})),
+      fetchJSON(`${CONFIG.DASHBOARD_URL}/api/binance?action=prices`).catch(()=>({prices:{}})),
+    ])
+
+    for (const alert of alerts.alerts) {
+      if (alert.triggered) continue
+
+      let currentPrice = null
+      if (alert.market === 'crypto') {
+        currentPrice = cryptoPrices.prices?.[alert.symbol]?.price
+      } else {
+        currentPrice = indPrices.data?.[alert.symbol]?.price
+      }
+
+      if (!currentPrice) continue
+
+      const triggered = alert.condition === 'above'
+        ? currentPrice >= alert.target_price
+        : currentPrice <= alert.target_price
+
+      if (!triggered) continue
+
+      const curr = alert.market === 'crypto' ? '$' : '₹'
+      const msg  = `🔔 <b>PRICE ALERT TRIGGERED!</b>
+━━━━━━━━━━━━━━━━
+<b>${alert.symbol}</b> is now ${curr}${currentPrice.toLocaleString()}
+Condition: ${alert.condition === 'above' ? '↑ Above' : '↓ Below'} ${curr}${alert.target_price.toLocaleString()}
+${alert.note ? `Note: ${alert.note}` : ''}
+
+<a href="${CONFIG.DASHBOARD_URL}/dashboard">Open Dashboard →</a>`
+
+      await sendTelegram(msg)
+
+      // Mark as triggered
+      await postJSON(`${CONFIG.DASHBOARD_URL}/api/price-alerts`, { id: alert.id, triggered: true })
+      console.log(`[Alert] ${alert.symbol} ${alert.condition} ${alert.target_price} TRIGGERED`)
+    }
+  } catch(e) {
+    console.error('[PriceAlerts] Error:', e.message)
+  }
 }
 
 // ── Morning briefing ───────────────────────────────────────────
 async function sendMorningBriefing() {
   try {
-    const now  = new Date(new Date().toLocaleString('en-US', {timeZone:'Asia/Kolkata'}))
+    const now  = getNow()
     const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
     const day  = days[now.getDay()]
 
-    const r = await postJSON(`${CONFIG.DASHBOARD_URL}/api/ai-analysis`, {
-      type: 'morning_briefing',
-      data: {
-        date:       now.toLocaleDateString('en-IN', {day:'2-digit',month:'short',year:'numeric'}),
-        dayOfWeek:  day,
-        dayInsight: now.getDay()===2 ? 'Tuesday — best day (+0.97% BankNifty avg)' :
-                    now.getDay()===3 ? 'Wednesday — second best' :
-                    now.getDay()===1 ? 'Monday — weak day' : 'Standard day',
-        niftyPrice:'—', niftyChange:'—',
-        bankNiftyPrice:'—', bankNiftyChange:'—',
-      }
-    })
+    const [regime, aiResp] = await Promise.all([
+      fetchJSON(`${CONFIG.DASHBOARD_URL}/api/market-regime`).catch(() => null),
+      postJSON(`${CONFIG.DASHBOARD_URL}/api/ai-analysis`, {
+        type: 'morning_briefing',
+        data: { date: now.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}), dayOfWeek: day,
+          dayInsight: now.getDay()===2?'Tuesday — best day (+0.97% BankNifty avg)':now.getDay()===3?'Wednesday — second best':now.getDay()===1?'Monday — weak day':'Standard day',
+          niftyPrice:'—', niftyChange:'—', bankNiftyPrice:'—', bankNiftyChange:'—' }
+      }).catch(() => null),
+    ])
 
-    if (r.analysis) {
-      await sendTelegram(`☀️ <b>PROJECTZERO MORNING BRIEFING</b>\n${day}\n━━━━━━━━━━━━━━━━\n${r.analysis.slice(0,800)}`)
+    let msg = `☀️ <b>GOOD MORNING JAY!</b>\n${day} · ${now.toLocaleDateString('en-IN',{day:'2-digit',month:'short'})}\n━━━━━━━━━━━━━━━━\n`
+
+    if (regime?.regime) {
+      msg += `\n${regime.regimeEmoji} Market Regime: <b>${regime.regime}</b>\n${regime.description?.slice(0,100)}\n`
+      msg += `\nBest strategies today: ${regime.bestStrategies?.slice(0,2).join(', ')}\n`
+      if (regime.fearGreed) msg += `Fear & Greed: ${regime.fearGreed.value}/100 (${regime.fearGreed.label})\n`
     }
+
+    if (aiResp?.analysis) msg += `\n${aiResp.analysis.slice(0,400)}\n`
+
+    msg += `\n<a href="${CONFIG.DASHBOARD_URL}/dashboard">Open Dashboard →</a>`
+    await sendTelegram(msg)
+    console.log('[Briefing] Morning briefing sent')
   } catch(e) {
     console.error('[Briefing] Error:', e.message)
   }
 }
 
-// ── Daily P&L summary ──────────────────────────────────────────
+// ── 3:19 PM Square-Off Alert ──────────────────────────────────
+async function sendSquareOffAlert() {
+  try {
+    const msg = `⚠️ <b>SQUARE-OFF ALERT — 3:19 PM IST</b>
+━━━━━━━━━━━━━━━━
+MIS positions will auto-close at <b>3:25 PM</b> (Zerodha).
+
+Action required:
+• Check your open MIS positions
+• Decide: close manually or let auto-close happen
+• Review P&amp;L before market closes at 3:30 PM
+
+<a href="${CONFIG.DASHBOARD_URL}/dashboard">📊 Check Portfolio →</a>`
+
+    await sendTelegram(msg)
+    console.log('[SquareOff] 3:19 PM alert sent')
+  } catch(e) {
+    console.error('[SquareOff] Error:', e.message)
+  }
+}
+
+// ── Daily summary ─────────────────────────────────────────────
 async function sendDailySummary() {
   try {
-    await sendTelegram(`📊 <b>PROJECTZERO DAILY SUMMARY</b>\nMarket closed for today.\nCheck your trade history: <a href="${CONFIG.DASHBOARD_URL}/dashboard">Dashboard →</a>`)
+    // Fetch today's trades
+    const tradesData = await fetchJSON(`${CONFIG.DASHBOARD_URL}/api/trades?limit=20`).catch(()=>({trades:[]}))
+    const todayTrades = (tradesData.trades || []).filter(t => {
+      const d = new Date(t.created_at)
+      const now = getNow()
+      return d.toDateString() === now.toDateString()
+    })
+
+    const closedToday = todayTrades.filter(t => t.status === 'CLOSED')
+    const openToday   = todayTrades.filter(t => t.status === 'OPEN')
+    const totalPnl    = closedToday.reduce((a,t) => a + parseFloat(t.pnl||0), 0)
+    const wins        = closedToday.filter(t => parseFloat(t.pnl||0) > 0).length
+    const losses      = closedToday.filter(t => parseFloat(t.pnl||0) <= 0).length
+
+    const msg = `📊 <b>DAILY SUMMARY — ${getNow().toLocaleDateString('en-IN',{day:'2-digit',month:'short'})}</b>
+━━━━━━━━━━━━━━━━
+Trades today: ${todayTrades.length}
+Closed: ${closedToday.length} (${wins}W / ${losses}L)
+Open positions: ${openToday.length}
+
+<b>Today's P&amp;L: ${totalPnl >= 0 ? '🟢' : '🔴'} ₹${totalPnl.toFixed(2)}</b>
+
+${openToday.length > 0 ? `⚠️ You have ${openToday.length} open position(s)!\n` : ''}
+<a href="${CONFIG.DASHBOARD_URL}/dashboard">View Full History →</a>`
+
+    await sendTelegram(msg)
+    console.log('[Summary] Daily summary sent, P&L:', totalPnl.toFixed(2))
   } catch(e) {
     console.error('[Summary] Error:', e.message)
   }
 }
 
-// ── Scheduler ─────────────────────────────────────────────────
-let lastBriefingDate = ''
-let lastSummaryDate  = ''
-let signalCheckCount = 0
+// ── Main scheduler ────────────────────────────────────────────
+let checkCount     = 0
+let lastBriefDate  = ''
+let lastSummDate   = ''
+let lastSquareDate = ''
+let lastAlertCheck = 0
 
 async function tick() {
-  const now = new Date(new Date().toLocaleString('en-US', {timeZone:'Asia/Kolkata'}))
-  const h   = now.getHours()
-  const m   = now.getMinutes()
+  checkCount++
+  const now     = getNow()
+  const h       = now.getHours()
+  const m       = now.getMinutes()
   const dateStr = now.toDateString()
-  const day     = now.getDay()
-  const isWeekday = day >= 1 && day <= 5
+  const isWkday = now.getDay() >= 1 && now.getDay() <= 5
 
-  // Morning briefing at 9:00 AM IST (weekdays only)
-  if (isWeekday && h === 9 && m === 0 && lastBriefingDate !== dateStr) {
-    lastBriefingDate = dateStr
-    console.log('[Scheduler] Sending morning briefing...')
+  // Morning briefing — 9:00 AM IST weekdays
+  if (isWkday && h===9 && m===0 && lastBriefDate!==dateStr) {
+    lastBriefDate = dateStr
     await sendMorningBriefing()
   }
 
-  // Daily summary at 3:35 PM IST (weekdays only)
-  if (isWeekday && h === 15 && m === 35 && lastSummaryDate !== dateStr) {
-    lastSummaryDate = dateStr
-    console.log('[Scheduler] Sending daily summary...')
+  // Square-off alert — 3:19 PM IST weekdays
+  if (isWkday && h===15 && m===19 && lastSquareDate!==dateStr) {
+    lastSquareDate = dateStr
+    await sendSquareOffAlert()
+  }
+
+  // Daily summary — 3:35 PM IST weekdays
+  if (isWkday && h===15 && m===35 && lastSummDate!==dateStr) {
+    lastSummDate = dateStr
     await sendDailySummary()
   }
 
-  // Check signals every 30 seconds during market hours
-  // For crypto: check every 60 seconds (24/7)
-  signalCheckCount++
-
-  const checkIndian = isIndianMarketOpen() && signalCheckCount % 2 === 0  // every ~60s
-  const checkCrypto = signalCheckCount % 4 === 0  // every ~120s
-
+  // Signal checks
+  const checkIndian  = isIndianMarketOpen() && checkCount % 2 === 0  // every ~60s
+  const checkCrypto  = checkCount % 4 === 0                           // every ~120s
   if (checkIndian || checkCrypto) {
     await checkSignals()
+  }
+
+  // Price alerts — every 5 minutes
+  if (Date.now() - lastAlertCheck > 300000) {
+    lastAlertCheck = Date.now()
+    await checkPriceAlerts()
   }
 }
 
 // ── Health check server ────────────────────────────────────────
 const server = http.createServer((req, res) => {
+  const now = getNow()
   if (req.url === '/health') {
-    res.writeHead(200, {'Content-Type': 'application/json'})
+    res.writeHead(200, {'Content-Type':'application/json'})
     res.end(JSON.stringify({
-      status:  'ok',
-      worker:  'projectzero-automation',
-      time:    new Date().toISOString(),
-      market:  isIndianMarketOpen() ? 'OPEN' : 'CLOSED',
-      checks:  signalCheckCount,
-      telegram: !!CONFIG.TELEGRAM_BOT_TOKEN,
+      status:    'ok',
+      worker:    'projectzero-automation-v2',
+      time:      now.toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata'}),
+      market:    isIndianMarketOpen() ? 'OPEN' : 'CLOSED',
+      checks:    checkCount,
+      telegram:  !!CONFIG.TELEGRAM_BOT_TOKEN,
+      features:  ['signals','price_alerts','morning_briefing','squareoff_319pm','daily_summary','multi_timeframe'],
     }))
   } else {
-    res.writeHead(200, {'Content-Type': 'text/plain'})
-    res.end('Projectzero Worker Running')
+    res.writeHead(200, {'Content-Type':'text/plain'})
+    res.end('Projectzero Worker v2 — Running')
   }
 })
 
 server.listen(CONFIG.PORT, () => {
-  console.log(`[Worker] Projectzero automation started on port ${CONFIG.PORT}`)
+  console.log(`[Worker] Projectzero v2 started on port ${CONFIG.PORT}`)
   console.log(`[Worker] Dashboard: ${CONFIG.DASHBOARD_URL}`)
-  console.log(`[Worker] Telegram: ${CONFIG.TELEGRAM_BOT_TOKEN ? 'Configured' : 'Not configured yet'}`)
+  console.log(`[Worker] Telegram: ${CONFIG.TELEGRAM_BOT_TOKEN ? 'Configured ✅' : 'NOT configured'}`)
+  console.log(`[Worker] Features: signals, price alerts, 3:19pm alert, morning briefing, daily summary`)
 })
 
-// ── Start ticking ──────────────────────────────────────────────
-console.log('[Worker] Starting signal monitoring...')
-sendTelegram('🚀 <b>Projectzero Worker Started</b>\n24/7 monitoring active.\nIndian markets + Crypto tracked.').catch(()=>{})
+// ── Boot notification ─────────────────────────────────────────
+sendTelegram(`🚀 <b>Projectzero Worker v2 Started</b>
+━━━━━━━━━━━━━━━━
+✅ Signal monitoring (every 30s)
+✅ Price alerts (every 5 min)
+✅ Morning briefing at 9:00 AM IST
+✅ Square-off alert at 3:19 PM IST
+✅ Daily summary at 3:35 PM IST
+✅ Multi-timeframe confluence checks
 
-// Run immediately then every 30 seconds
+<a href="${CONFIG.DASHBOARD_URL}/dashboard">Dashboard →</a>`).catch(()=>{})
+
+// Start ticking every 30 seconds
 tick().catch(console.error)
 setInterval(() => tick().catch(console.error), 30000)
-
-console.log('[Worker] Running. Checking signals every 30 seconds.')

@@ -76,3 +76,15 @@ ALTER TABLE trades           ENABLE ROW LEVEL SECURITY;
 ALTER TABLE signals          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE portfolio        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE backtest_results ENABLE ROW LEVEL SECURITY;
+
+-- Price Alerts table
+CREATE TABLE IF NOT EXISTS price_alerts (
+  id            UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  symbol        TEXT NOT NULL,
+  market        TEXT DEFAULT 'india',
+  condition     TEXT NOT NULL CHECK (condition IN ('above','below')),
+  target_price  DECIMAL(18,4) NOT NULL,
+  note          TEXT DEFAULT '',
+  triggered     BOOLEAN DEFAULT FALSE,
+  created_at    TIMESTAMPTZ DEFAULT NOW()
+);

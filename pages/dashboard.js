@@ -1342,6 +1342,227 @@ function NewsBar({t, market}) {
 }
 
 
+// ── Alerts Tab — Price Alerts ──────────────────────────────────
+function AlertsTab({t}) {
+  const [alerts,  setAlerts]  = useState([])
+  const [loading, setLoading] = useState(true)
+  const [form,    setForm]    = useState({symbol:'NIFTY',market:'india',condition:'above',price:'',note:''})
+  const [saving,  setSaving]  = useState(false)
+  const [msg,     setMsg]     = useState('')
+
+  useEffect(()=>{load()},[])
+
+  async function load(){
+    setLoading(true)
+    try{const r=await fetch('/api/price-alerts');const d=await r.json();setAlerts(d.alerts||[])}catch{}
+    setLoading(false)
+  }
+
+  async function create(){
+    if(!form.price||isNaN(form.price)){setMsg('Enter a valid price');return}
+    setSaving(true)
+    const r=await fetch('/api/price-alerts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(form)})
+    const d=await r.json()
+    if(d.alert){setMsg('✅ Alert created!');setForm(f=>({...f,price:'',note:''}));load()}
+    else setMsg('❌ '+d.error)
+    setSaving(false)
+    setTimeout(()=>setMsg(''),3000)
+  }
+
+  async function remove(id){
+    await fetch('/api/price-alerts',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})})
+    load()
+  }
+
+  const SYMS_INDIA  = ['NIFTY','BANKNIFTY','SENSEX','TCS','INFY','RELIANCE','HDFCBANK','ICICIBANK','SBIN','WIPRO']
+  const SYMS_CRYPTO = ['BTC','ETH','SOL','BNB','XRP','DOGE']
+  const syms = form.market==='crypto' ? SYMS_CRYPTO : SYMS_INDIA
+  const curr = form.market==='crypto' ? '$' : '₹'
+
+  return (
+    <div>
+      <div style={{marginBottom:20}}>
+        <h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Price Alerts</h2>
+        <p style={{color:t.muted,fontSize:13,marginTop:5}}>Set alerts — Telegram notification when price hits your level</p>
+      </div>
+
+      {/* Create Alert Form */}
+      <div style={{background:t.card,borderRadius:20,padding:24,border:`1px solid ${t.border}`,marginBottom:20}}>
+        <p style={{color:t.text,fontWeight:700,fontSize:15,marginBottom:16}}>🔔 Create New Alert</p>
+
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(160px,1fr))',gap:12,marginBottom:16}}>
+          <div>
+            <p style={{color:t.muted,fontSize:11,fontWeight:600,marginBottom:6}}>MARKET</p>
+            <select value={form.market} onChange={e=>setForm(f=>({...f,market:e.target.value,symbol:e.target.value==='crypto'?'BTC':'NIFTY'}))}
+              style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,fontSize:13,padding:'8px 10px',width:'100%',fontFamily:'Space Grotesk,sans-serif'}}>
+              <option value="india">🇮🇳 Indian</option>
+              <option value="crypto">🪙 Crypto</option>
+            </select>
+          </div>
+          <div>
+            <p style={{color:t.muted,fontSize:11,fontWeight:600,marginBottom:6}}>SYMBOL</p>
+            <select value={form.symbol} onChange={e=>setForm(f=>({...f,symbol:e.target.value}))}
+              style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,fontSize:13,padding:'8px 10px',width:'100%',fontFamily:'Space Grotesk,sans-serif'}}>
+              {syms.map(s=><option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div>
+            <p style={{color:t.muted,fontSize:11,fontWeight:600,marginBottom:6}}>CONDITION</p>
+            <select value={form.condition} onChange={e=>setForm(f=>({...f,condition:e.target.value}))}
+              style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,fontSize:13,padding:'8px 10px',width:'100%',fontFamily:'Space Grotesk,sans-serif'}}>
+              <option value="above">↑ Price goes above</option>
+              <option value="below">↓ Price goes below</option>
+            </select>
+          </div>
+          <div>
+            <p style={{color:t.muted,fontSize:11,fontWeight:600,marginBottom:6}}>TARGET PRICE ({curr})</p>
+            <input type="number" value={form.price} onChange={e=>setForm(f=>({...f,price:e.target.value}))}
+              placeholder={form.market==='crypto'?'e.g. 80000':'e.g. 24500'}
+              style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,fontSize:13,padding:'8px 10px',width:'100%',fontFamily:'monospace',boxSizing:'border-box'}}/>
+          </div>
+        </div>
+
+        <div style={{marginBottom:14}}>
+          <p style={{color:t.muted,fontSize:11,fontWeight:600,marginBottom:6}}>NOTE (optional)</p>
+          <input value={form.note} onChange={e=>setForm(f=>({...f,note:e.target.value}))}
+            placeholder="e.g. ORB breakout level, resistance zone..."
+            style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,fontSize:13,padding:'8px 12px',width:'100%',fontFamily:'Space Grotesk,sans-serif',boxSizing:'border-box'}}/>
+        </div>
+
+        {msg&&<p style={{color:msg.includes('✅')?t.green:t.red,fontSize:13,marginBottom:10,fontWeight:600}}>{msg}</p>}
+
+        <button onClick={create} disabled={saving}
+          style={{padding:'12px 28px',background:`linear-gradient(135deg,${t.blue},${t.purple})`,border:'none',borderRadius:12,color:'#fff',fontWeight:700,cursor:saving?'not-allowed':'pointer',fontFamily:'Space Grotesk,sans-serif',fontSize:14,boxShadow:`0 4px 16px ${t.blue}33`}}>
+          {saving?'Creating...':'🔔 Create Alert'}
+        </button>
+      </div>
+
+      {/* Active Alerts */}
+      <div style={{background:t.card,borderRadius:20,border:`1px solid ${t.border}`,overflow:'hidden'}}>
+        <div style={{padding:'16px 22px',borderBottom:`1px solid ${t.border}`,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <p style={{fontWeight:700,color:t.text}}>Active Alerts ({alerts.filter(a=>!a.triggered).length})</p>
+          <button onClick={load} style={{background:'none',border:`1px solid ${t.border}`,borderRadius:6,color:t.muted,cursor:'pointer',padding:'4px 10px',fontSize:12}}>↻ Refresh</button>
+        </div>
+        {loading&&<div style={{padding:24,textAlign:'center'}}><div style={{width:24,height:24,border:`3px solid ${t.border}`,borderTopColor:t.blue,borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'0 auto'}}/></div>}
+        {!loading&&alerts.length===0&&<p style={{padding:24,color:t.muted,textAlign:'center'}}>No alerts set yet. Create one above!</p>}
+        {!loading&&alerts.map(a=>(
+          <div key={a.id} style={{padding:'14px 22px',borderBottom:`1px solid ${t.border}`,display:'flex',justifyContent:'space-between',alignItems:'center',opacity:a.triggered?0.5:1}}>
+            <div>
+              <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+                <span style={{fontSize:16}}>{a.market==='crypto'?'🪙':'🇮🇳'}</span>
+                <span style={{fontWeight:800,color:t.text,fontSize:15}}>{a.symbol}</span>
+                <span style={{background:a.condition==='above'?t.green+'22':t.red+'22',color:a.condition==='above'?t.green:t.red,borderRadius:20,padding:'2px 10px',fontSize:11,fontWeight:700}}>
+                  {a.condition==='above'?'↑ Above':'↓ Below'} {a.market==='crypto'?'$':'₹'}{parseFloat(a.target_price).toLocaleString()}
+                </span>
+                {a.triggered&&<span style={{background:t.muted+'22',color:t.muted,borderRadius:20,padding:'2px 8px',fontSize:10}}>TRIGGERED</span>}
+              </div>
+              {a.note&&<p style={{color:t.muted,fontSize:12}}>{a.note}</p>}
+            </div>
+            <button onClick={()=>remove(a.id)} style={{background:t.red+'11',border:`1px solid ${t.red}33`,borderRadius:8,color:t.red,cursor:'pointer',padding:'5px 12px',fontSize:12,fontWeight:600}}>✕ Remove</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ── Performance Tab — Strategy Stats ──────────────────────────
+function PerformanceTab({t}) {
+  const [data,    setData]    = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(()=>{load()},[])
+
+  async function load(){
+    setLoading(true)
+    try{const r=await fetch('/api/strategy-performance');const d=await r.json();setData(d)}catch{}
+    setLoading(false)
+  }
+
+  const fmtPnl = (n) => {
+    const v = parseFloat(n||0)
+    return <span style={{color:v>0?t.green:v<0?t.red:t.muted,fontWeight:700,fontFamily:'monospace'}}>{v>0?'+':''}{v.toFixed(2)}</span>
+  }
+
+  return (
+    <div>
+      <div style={{marginBottom:20}}>
+        <h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Strategy Performance</h2>
+        <p style={{color:t.muted,fontSize:13,marginTop:5}}>Win rates and P&L per strategy — based on your closed trades</p>
+      </div>
+
+      {loading&&<div style={{textAlign:'center',padding:40}}><div style={{width:32,height:32,border:`3px solid ${t.border}`,borderTopColor:t.blue,borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'0 auto 12px'}}/><p style={{color:t.muted}}>Calculating performance...</p></div>}
+
+      {!loading&&data&&(
+        <>
+          {/* Overall stats */}
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(140px,1fr))',gap:12,marginBottom:24}}>
+            {[
+              {l:'TOTAL TRADES', v:data.overall.totalTrades, c:t.text},
+              {l:'WIN RATE',     v:`${data.overall.winRate}%`, c:data.overall.winRate>50?t.green:t.red},
+              {l:'TOTAL P&L',   v:`₹${data.overall.totalPnl}`, c:data.overall.totalPnl>0?t.green:t.red},
+              {l:'AVG P&L',     v:`₹${data.overall.avgPnl}`, c:data.overall.avgPnl>0?t.green:t.red},
+            ].map(x=>(
+              <div key={x.l} style={{background:t.card,borderRadius:14,padding:'16px',border:`1px solid ${t.border}`,textAlign:'center'}}>
+                <p style={{color:t.muted,fontSize:10,fontWeight:700,letterSpacing:'0.08em',marginBottom:6}}>{x.l}</p>
+                <p style={{color:x.c,fontSize:20,fontWeight:900,fontFamily:'monospace'}}>{x.v}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* By strategy */}
+          {data.byStrategy.length > 0 ? (
+            <div style={{background:t.card,borderRadius:20,border:`1px solid ${t.border}`,overflow:'hidden'}}>
+              <div style={{padding:'16px 22px',borderBottom:`1px solid ${t.border}`}}>
+                <p style={{fontWeight:700,color:t.text}}>By Strategy</p>
+              </div>
+              {data.byStrategy.map(s=>(
+                <div key={s.strategy} style={{padding:'16px 22px',borderBottom:`1px solid ${t.border}`}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',flexWrap:'wrap',gap:10}}>
+                    <div>
+                      <p style={{fontWeight:700,color:t.text,marginBottom:4}}>{s.strategy}</p>
+                      <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                        <span style={{color:t.muted,fontSize:12}}>{s.trades} trades</span>
+                        <span style={{color:t.green,fontSize:12,fontWeight:600}}>{s.wins}W</span>
+                        <span style={{color:t.red,fontSize:12,fontWeight:600}}>{s.losses}L</span>
+                      </div>
+                    </div>
+                    <div style={{display:'flex',gap:16,alignItems:'center',flexWrap:'wrap'}}>
+                      <div style={{textAlign:'right'}}>
+                        <p style={{color:t.muted,fontSize:10,fontWeight:600}}>WIN RATE</p>
+                        <p style={{color:s.winRate>50?t.green:t.red,fontWeight:800,fontSize:18}}>{s.winRate}%</p>
+                      </div>
+                      <div style={{textAlign:'right'}}>
+                        <p style={{color:t.muted,fontSize:10,fontWeight:600}}>TOTAL P&L</p>
+                        <p style={{fontWeight:800,fontSize:16}}>{fmtPnl(s.totalPnl)}</p>
+                      </div>
+                      <div style={{textAlign:'right'}}>
+                        <p style={{color:t.muted,fontSize:10,fontWeight:600}}>AVG/TRADE</p>
+                        <p style={{fontWeight:700,fontSize:14}}>{fmtPnl(s.avgPnl)}</p>
+                      </div>
+                    </div>
+                  </div>
+                  {/* Win rate bar */}
+                  <div style={{marginTop:10,height:5,background:t.surface,borderRadius:3,overflow:'hidden'}}>
+                    <div style={{height:'100%',width:`${s.winRate}%`,background:s.winRate>60?t.green:s.winRate>40?t.amber:t.red,borderRadius:3,transition:'width 0.5s'}}/>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={{background:t.card,borderRadius:20,padding:40,border:`1px solid ${t.border}`,textAlign:'center'}}>
+              <p style={{fontSize:32,marginBottom:12}}>📊</p>
+              <p style={{color:t.text,fontWeight:700,fontSize:16,marginBottom:8}}>No closed trades yet</p>
+              <p style={{color:t.muted,fontSize:13}}>Execute and close trades to see strategy performance stats here.</p>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+
 function TickerBar({mkt, t, setTab, isConn}) {
   const syms = ['NIFTY','BANKNIFTY','SENSEX','BTC','ETH','SOL']
   return (
@@ -1403,7 +1624,7 @@ export default function Dashboard() {
 
   function disc(){['kite_access_token','kite_user','kite_connected_date'].forEach(k=>localStorage.removeItem(k));setAt('');setKU(null)}
 
-  const tabs=[{id:'signals',l:'📡 Signals'},{id:'crypto',l:'🪙 Crypto'},{id:'positions',l:'💼 Portfolio'},{id:'trades',l:'📋 History'},{id:'charts',l:'📈 Charts'}]
+  const tabs=[{id:'signals',l:'📡 Signals'},{id:'crypto',l:'🪙 Crypto'},{id:'positions',l:'💼 Portfolio'},{id:'trades',l:'📋 History'},{id:'charts',l:'📈 Charts'},{id:'alerts',l:'🔔 Alerts'},{id:'performance',l:'🏆 Performance'}]
   const isConn=!!at
 
   return (
@@ -1452,6 +1673,8 @@ export default function Dashboard() {
 
             {tab==='signals'&&<div><div style={{marginBottom:18,display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}><div><h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Live Signals</h2><p style={{color:t.muted,fontSize:13,marginTop:5}}>8 PZ strategies · ORB, Momentum, Supertrend, VWAP, Bollinger, MACD</p></div></div><MarketRegimeBanner t={t}/><NewsBar t={t} market='india'/><div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(370px,1fr))',gap:20,marginTop:20}}>{PZ_STRATEGIES.map(s=><SignalCard key={s.id} strat={s} at={at} onTrade={()=>setTr(r=>r+1)} t={t}/>)}</div></div>}
             {tab==='crypto'&&<CryptoTab t={t} />}
+            {tab==='alerts'&&<AlertsTab t={t}/>}
+            {tab==='performance'&&<PerformanceTab t={t}/>}
             {tab==='positions'&&<div><div style={{marginBottom:22}}><h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Portfolio</h2><p style={{color:t.muted,fontSize:13,marginTop:5}}>Live from Zerodha · Positions · Available Margin · Today's Orders</p></div><Positions at={at} t={t}/></div>}
             {tab==='trades'&&<div><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:22}}><div><h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Trade History</h2><p style={{color:t.muted,fontSize:13,marginTop:5}}>All trades · Entry/Exit · P&L</p></div><button onClick={()=>setTr(r=>r+1)} style={{padding:'8px 16px',background:t.surface,border:`1px solid ${t.border}`,borderRadius:10,color:t.text,cursor:'pointer',fontSize:12,fontFamily:'Space Grotesk,sans-serif',fontWeight:600}}>🔄 Refresh</button></div><History refresh={tr} t={t}/></div>}
             {tab==='charts'&&<Charts t={t} at={at}/>}
