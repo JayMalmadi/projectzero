@@ -442,7 +442,17 @@ function ExecModal({data, strat, sym, at, onClose, onDone, t}) {
 
 function SignalCard({strat,at,onTrade,t}) {
   const [sym,setSym]=useState(strat.symbols[0]),[data,setData]=useState(null),[loading,setLoading]=useState(false),[modal,setModal]=useState(false),[chart,setChart]=useState(false)
-  useEffect(()=>{load()},[sym,strat.id])
+  useEffect(()=>{
+    load()
+    // Auto-refresh every 5 minutes during market hours
+    const iv = setInterval(()=>{
+      const now = new Date(new Date().toLocaleString('en-US',{timeZone:'Asia/Kolkata'}))
+      const h=now.getHours(),m=now.getMinutes(),day=now.getDay()
+      const isOpen = day>=1&&day<=5&&(h*60+m)>=555&&(h*60+m)<=930
+      if(isOpen) load()
+    }, 5*60*1000)
+    return ()=>clearInterval(iv)
+  },[sym,strat.id])
   const [aiNote,   setAiNote]   = useState('')
   const [aiLoading,setAiLoading]= useState(false)
   const [mtf,      setMtf]      = useState(null)
@@ -951,7 +961,12 @@ function CryptoSignalCard({symbol, strategy, stratName, t}) {
   const [aiNote,   setAiNote]  = useState('')
   const [aiLoading,setAiLoading] = useState(false)
 
-  useEffect(() => { load() }, [symbol, strategy])
+  useEffect(() => {
+    load()
+    // Crypto auto-refresh every 2 minutes (24/7)
+    const iv = setInterval(() => load(), 2*60*1000)
+    return () => clearInterval(iv)
+  }, [symbol, strategy])
 
   const [mtf,          setMtf]          = useState(null)
   const [cryptoDeep,   setCryptoDeep]   = useState(null)
@@ -1831,6 +1846,157 @@ function OptionsTab({t}) {
 }
 
 
+// ── Market Status Banner ───────────────────────────────────────
+// ── Day-Based Strategy Hint ────────────────────────────────────
+function DayStrategyHint({t}) {
+  const now = new Date(new Date().toLocaleString('en-US',{timeZone:'Asia/Kolkata'}))
+  const day = now.getDay()
+  const dow = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][day]
+
+  const hints = {
+    1: { // Monday
+      label: 'Weak Day', color: t.red,
+      tip: 'Monday historically weakest day. Trade smaller size. Gap-Fade strategy works well if market gaps up.',
+      focus: ['Gap & Fade','VWAP Reversion'],
+      avoid: ['Tuesday Momentum (wrong day)','Swing shorts (wait for Tue)'],
+    },
+    2: { // Tuesday
+      label: '📅 Best Day', color: t.green,
+      tip: 'Tuesday avg +0.97% BankNifty. Best day for momentum. Tuesday Momentum strategy has highest win rate today.',
+      focus: ['Tuesday Momentum ⭐','PZ-ORB Filter','Supertrend'],
+      avoid: ['Gap & Fade (avoid fading strength)'],
+    },
+    3: { // Wednesday
+      label: 'Good Day', color: t.green,
+      tip: 'Wednesday second best day (+0.54% avg). Momentum strategies continue to work. Watch for trend continuation.',
+      focus: ['Supertrend','MACD Crossover','VWAP'],
+      avoid: ['Mean reversion on strong trends'],
+    },
+    4: { // Thursday
+      label: 'Neutral', color: t.amber,
+      tip: 'Thursday typically rangebound. Bollinger Band strategies work well. Be cautious of expiry volatility.',
+      focus: ['Bollinger Bands','VWAP Reversion'],
+      avoid: ['Holding positions overnight'],
+    },
+    5: { // Friday
+      label: 'Flat/Down', color: t.amber,
+      tip: 'Friday tends flat to slightly down. Reduce size. Avoid new overnight positions. Close MIS by 3:15.',
+      focus: ['Gap & Fade','Bollinger Bands (if ranging)'],
+      avoid: ['Tuesday Momentum','Swing positions'],
+    },
+  }
+
+  const isWeekend = day === 0 || day === 6
+  if (isWeekend) return null
+
+  const hint = hints[day]
+  if (!hint) return null
+
+  return (
+    <div style={{
+      background:hint.color+'08',border:`1px solid ${hint.color}22`,
+      borderRadius:12,padding:'12px 16px',marginBottom:14,
+    }}>
+      <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:8}}>
+        <span style={{fontWeight:700,color:hint.color,fontSize:13}}>{dow} — {hint.label}</span>
+        <span style={{color:t.muted,fontSize:12,flex:1}}>{hint.tip}</span>
+      </div>
+      <div style={{display:'flex',gap:16,flexWrap:'wrap'}}>
+        <div>
+          <span style={{color:t.muted,fontSize:10,fontWeight:600}}>FOCUS: </span>
+          {hint.focus.map(s=>(
+            <span key={s} style={{background:t.green+'18',color:t.green,borderRadius:20,padding:'1px 8px',fontSize:11,fontWeight:600,marginRight:4,border:`1px solid ${t.green}22`}}>{s}</span>
+          ))}
+        </div>
+        <div>
+          <span style={{color:t.muted,fontSize:10,fontWeight:600}}>AVOID: </span>
+          {hint.avoid.map(s=>(
+            <span key={s} style={{background:t.red+'18',color:t.red,borderRadius:20,padding:'1px 8px',fontSize:11,fontWeight:600,marginRight:4,border:`1px solid ${t.red}22`}}>{s}</span>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+
+function MarketStatusBanner({t}) {
+  const [time, setTime] = useState(new Date())
+
+  useEffect(() => {
+    const iv = setInterval(() => setTime(new Date()), 1000)
+    return () => clearInterval(iv)
+  }, [])
+
+  const ist = new Date(time.toLocaleString('en-US', {timeZone:'Asia/Kolkata'}))
+  const h   = ist.getHours()
+  const m   = ist.getMinutes()
+  const s   = ist.getSeconds()
+  const day = ist.getDay()
+  const mins = h*60+m
+
+  const isWeekday   = day >= 1 && day <= 5
+  const isPreOpen   = isWeekday && mins >= 540  && mins < 555   // 9:00-9:15
+  const isOpen      = isWeekday && mins >= 555  && mins <= 930  // 9:15-3:30
+  const isClosing   = isWeekday && mins >= 919  && mins <= 930  // 3:19-3:30
+  const isPost      = isWeekday && mins > 930   && mins < 1080  // after 3:30
+  const isWeekend   = day === 0 || day === 6
+
+  // Time to next event
+  let nextLabel = '', nextMins = 0, statusColor = '', statusText = '', statusEmoji = ''
+
+  if (isOpen && !isClosing) {
+    const closeAt = 930
+    nextMins  = closeAt - mins
+    nextLabel = `Market closes in ${Math.floor(nextMins/60)}h ${nextMins%60}m`
+    statusColor = t.green; statusText = 'MARKET OPEN'; statusEmoji = '🟢'
+  } else if (isClosing) {
+    nextMins  = 930 - mins
+    nextLabel = `⚠️ MIS AUTO-CLOSE IN ${nextMins}m ${60-s}s`
+    statusColor = t.red; statusText = 'CLOSING SOON'; statusEmoji = '🔴'
+  } else if (isPreOpen) {
+    nextMins  = 555 - mins
+    nextLabel = `Market opens in ${nextMins}m ${60-s}s`
+    statusColor = t.amber; statusText = 'PRE-OPEN'; statusEmoji = '🟡'
+  } else if (isPost) {
+    const tomorrow = isWeekday && day < 5 ? 'tomorrow' : 'Monday'
+    nextLabel = `Next session: ${tomorrow} 9:15 AM IST`
+    statusColor = t.muted; statusText = 'MARKET CLOSED'; statusEmoji = '⚫'
+  } else if (isWeekend) {
+    nextLabel = 'Market reopens Monday 9:15 AM IST'
+    statusColor = t.muted; statusText = 'WEEKEND'; statusEmoji = '⚫'
+  } else {
+    const openAt = isWeekday ? 555 - mins : 0
+    nextLabel = `Market opens in ${Math.floor(openAt/60)}h ${openAt%60}m`
+    statusColor = t.muted; statusText = 'CLOSED'; statusEmoji = '⚫'
+  }
+
+  const timeStr = ist.toLocaleTimeString('en-IN', {hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true})
+
+  return (
+    <div style={{
+      display:'flex',alignItems:'center',justifyContent:'space-between',
+      background:isOpen?(isClosing?t.red+'0a':t.green+'08'):t.surface,
+      border:`1px solid ${isOpen?(isClosing?t.red:t.green):t.border}33`,
+      borderRadius:12,padding:'10px 16px',marginBottom:16,flexWrap:'wrap',gap:8,
+    }}>
+      <div style={{display:'flex',alignItems:'center',gap:10}}>
+        <div style={{width:8,height:8,borderRadius:'50%',background:statusColor,
+          boxShadow:isOpen?`0 0 8px ${statusColor}`:'none',
+          animation:isOpen?'pulse 1.5s infinite':'none',flexShrink:0}}/>
+        <span style={{fontWeight:700,fontSize:13,color:statusColor}}>{statusText}</span>
+        <span style={{color:t.muted,fontSize:12}}>NSE/BSE</span>
+        {isOpen&&<span style={{background:t.green+'18',color:t.green,fontSize:10,fontWeight:600,padding:'1px 8px',borderRadius:20,border:`1px solid ${t.green}33`}}>LIVE</span>}
+      </div>
+      <div style={{display:'flex',alignItems:'center',gap:16}}>
+        <span style={{color:t.muted,fontSize:12}}>{nextLabel}</span>
+        <span style={{color:t.text,fontFamily:'JetBrains Mono,monospace',fontSize:13,fontWeight:600}}>{timeStr}</span>
+      </div>
+    </div>
+  )
+}
+
+
 function TickerBar({mkt, t, setTab, isConn}) {
   const syms = ['NIFTY','BANKNIFTY','SENSEX','BTC','ETH','SOL']
   return (
@@ -1875,7 +2041,18 @@ export default function Dashboard() {
 
   function toggleDark(){const nd=!dark;setDark(nd);localStorage.setItem('pz_dark',String(nd))}
 
-  useEffect(()=>{fetchMkt();const ti=setInterval(fetchMkt,15000);return()=>clearInterval(ti)},[at])
+  useEffect(()=>{
+    fetchMkt()
+    // Refresh faster during market hours
+    const getInterval = () => {
+      const now = new Date(new Date().toLocaleString('en-US',{timeZone:'Asia/Kolkata'}))
+      const h=now.getHours(),m=now.getMinutes(),day=now.getDay()
+      const isOpen = day>=1&&day<=5&&(h*60+m)>=555&&(h*60+m)<=930
+      return isOpen ? 10000 : 30000  // 10s open, 30s closed
+    }
+    const ti = setInterval(fetchMkt, getInterval())
+    return () => clearInterval(ti)
+  }, [at])
 
   async function fetchMkt(){
     try{
@@ -1893,6 +2070,19 @@ export default function Dashboard() {
   }
 
   function disc(){['kite_access_token','kite_user','kite_connected_date'].forEach(k=>localStorage.removeItem(k));setAt('');setKU(null)}
+
+  // Keyboard shortcuts: 1-8 = tabs, R = refresh, D = dark mode
+  useEffect(()=>{
+    const handler = (e) => {
+      if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA') return
+      const tabKeys = {'1':'signals','2':'crypto','3':'positions','4':'trades','5':'charts','6':'alerts','7':'performance','8':'options'}
+      if(tabKeys[e.key]) { setTab(tabKeys[e.key]); return }
+      if(e.key==='r'||e.key==='R') { fetchMkt(); return }
+      if(e.key==='d'||e.key==='D') { toggleDark(); return }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [])
 
   const tabs=[{id:'signals',l:'📡 Signals'},{id:'crypto',l:'🪙 Crypto'},{id:'positions',l:'💼 Portfolio'},{id:'trades',l:'📋 History'},{id:'charts',l:'📈 Charts'},{id:'alerts',l:'🔔 Alerts'},{id:'performance',l:'🏆 Performance'},{id:'options',l:'⛓ Options'}]
   const isConn=!!at
@@ -2017,7 +2207,7 @@ export default function Dashboard() {
           <div style={{background:t.card,border:`1px solid ${t.border}`,borderRadius:'0 16px 16px 16px',padding:28}}>
             {!isConn&&tab!=='charts'&&<div style={{background:dark?t.blue+'0d':t.blue+'0a',border:`1px solid ${t.blue}33`,borderRadius:16,padding:18,marginBottom:24,display:'flex',alignItems:'center',justifyContent:'space-between',gap:16}}><div><p style={{color:t.blue,fontWeight:700,fontSize:14}}>🔐 Login with Zerodha for live data & 1-click execution</p><p style={{color:t.muted,fontSize:12,marginTop:3}}>Live prices · Real positions · Auto stop loss · SL + Target in one click</p></div><button onClick={()=>loginUrl&&window.location.assign(loginUrl)} style={{padding:'10px 22px',background:`linear-gradient(135deg,${t.green},${t.teal})`,border:'none',borderRadius:12,color:'#fff',fontWeight:700,cursor:'pointer',fontSize:13,fontFamily:'Inter,sans-serif',flexShrink:0,boxShadow:`0 4px 20px ${t.green}33`}}>Connect Now →</button></div>}
 
-            {tab==='signals'&&<div><div style={{marginBottom:18,display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}><div><h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Live Signals</h2><p style={{color:t.muted,fontSize:13,marginTop:5}}>8 PZ strategies · ORB, Momentum, Supertrend, VWAP, Bollinger, MACD</p></div></div><MarketRegimeBanner t={t}/><NewsBar t={t} market='india'/><div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(340px,1fr))',gap:20,marginTop:20}}>{PZ_STRATEGIES.map(s=><SignalCard key={s.id} strat={s} at={at} onTrade={()=>setTr(r=>r+1)} t={t}/>)}</div></div>}
+            {tab==='signals'&&<div><MarketStatusBanner t={t}/><DayStrategyHint t={t}/><div style={{marginBottom:18,display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}><div><h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Live Signals</h2><p style={{color:t.muted,fontSize:13,marginTop:5}}>8 PZ strategies · ORB, Momentum, Supertrend, VWAP, Bollinger, MACD</p></div></div><MarketRegimeBanner t={t}/><NewsBar t={t} market='india'/><div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(340px,1fr))',gap:20,marginTop:20}}>{PZ_STRATEGIES.map(s=><SignalCard key={s.id} strat={s} at={at} onTrade={()=>setTr(r=>r+1)} t={t}/>)}</div></div>}
             {tab==='crypto'&&<CryptoTab t={t} />}
             {tab==='alerts'&&<AlertsTab t={t}/>}
             {tab==='performance'&&<PerformanceTab t={t}/>}
