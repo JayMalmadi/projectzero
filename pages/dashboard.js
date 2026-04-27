@@ -504,6 +504,26 @@ function SignalCard({strat,at,onTrade,t}) {
             ))}
           </div>
 
+
+        {/* Signal Strength Bar */}
+        {data.signal !== 'HOLD' && (
+          <div>
+            <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
+              <span style={{color:t.muted,fontSize:10,fontWeight:700,letterSpacing:'0.08em'}}>SIGNAL STRENGTH</span>
+              <span style={{color:data.confidence>=70?t.green:data.confidence>=50?t.amber:t.red,fontSize:10,fontWeight:800}}>
+                {data.confidence>=70?'🟢 Strong':data.confidence>=50?'🟡 Moderate':'🔴 Weak'} · {data.confidence}%
+              </span>
+            </div>
+            <div style={{height:7,background:t.surface,borderRadius:4,overflow:'hidden',border:`1px solid ${t.border}`}}>
+              <div style={{
+                height:'100%',width:`${Math.min(data.confidence,100)}%`,borderRadius:4,
+                background:data.confidence>=70?`linear-gradient(90deg,${t.green},${t.teal})`:data.confidence>=50?`linear-gradient(90deg,${t.amber},#fbbf24)`:`linear-gradient(90deg,${t.red},#fb7185)`,
+                transition:'width 0.6s ease',
+                boxShadow:data.confidence>=70?`0 0 8px ${t.green}55`:'none',
+              }}/>
+            </div>
+          </div>
+        )}
           <div style={{background:t.surface,borderRadius:10,padding:'10px 14px',border:`1px solid ${t.border}`}}>
             <p style={{color:t.text2,fontSize:12,lineHeight:1.7}}>{data.reason}</p>
           </div>
@@ -964,6 +984,26 @@ function CryptoSignalCard({symbol, strategy, stratName, t}) {
             </div>
           )}
 
+
+        {/* Signal Strength Bar */}
+        {data.signal !== 'HOLD' && (
+          <div>
+            <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
+              <span style={{color:t.muted,fontSize:10,fontWeight:700,letterSpacing:'0.08em'}}>SIGNAL STRENGTH</span>
+              <span style={{color:data.confidence>=70?t.green:data.confidence>=50?t.amber:t.red,fontSize:10,fontWeight:800}}>
+                {data.confidence>=70?'🟢 Strong':data.confidence>=50?'🟡 Moderate':'🔴 Weak'} · {data.confidence}%
+              </span>
+            </div>
+            <div style={{height:7,background:t.surface,borderRadius:4,overflow:'hidden',border:`1px solid ${t.border}`}}>
+              <div style={{
+                height:'100%',width:`${Math.min(data.confidence,100)}%`,borderRadius:4,
+                background:data.confidence>=70?`linear-gradient(90deg,${t.green},${t.teal})`:data.confidence>=50?`linear-gradient(90deg,${t.amber},#fbbf24)`:`linear-gradient(90deg,${t.red},#fb7185)`,
+                transition:'width 0.6s ease',
+                boxShadow:data.confidence>=70?`0 0 8px ${t.green}55`:'none',
+              }}/>
+            </div>
+          </div>
+        )}
           {/* Reason */}
           <div style={{background:t.surface,borderRadius:10,padding:'10px 14px',border:`1px solid ${t.border}`}}>
             <p style={{color:t.text2,fontSize:12,lineHeight:1.7}}>{data.reason}</p>
@@ -1127,6 +1167,181 @@ function CryptoTab({t, at}) {
   )
 }
 
+// ── Market Regime Banner ───────────────────────────────────────
+function MarketRegimeBanner({t}) {
+  const [regime, setRegime] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => { load() }, [])
+
+  async function load() {
+    setLoading(true)
+    try {
+      const r = await fetch('/api/market-regime')
+      const d = await r.json()
+      if (d.status === 'success') setRegime(d)
+    } catch {}
+    setLoading(false)
+  }
+
+  if (loading) return (
+    <div style={{background:t.surface,borderRadius:14,padding:'14px 18px',marginBottom:16,border:`1px solid ${t.border}`,display:'flex',alignItems:'center',gap:10}}>
+      <div style={{width:10,height:10,border:`2px solid ${t.border}`,borderTopColor:t.blue,borderRadius:'50%',animation:'spin 0.8s linear infinite'}}/>
+      <span style={{color:t.muted,fontSize:12}}>Analysing market regime...</span>
+    </div>
+  )
+
+  if (!regime) return null
+
+  const fng = regime.fearGreed
+
+  return (
+    <div style={{marginBottom:16}}>
+      {/* Regime banner */}
+      <div style={{background:regime.color+'0d',border:`1px solid ${regime.color}33`,borderRadius:14,padding:'14px 18px',display:'flex',flexWrap:'wrap',gap:16,alignItems:'flex-start'}}>
+        <div style={{flex:1,minWidth:200}}>
+          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
+            <span style={{fontSize:20}}>{regime.regimeEmoji}</span>
+            <span style={{color:regime.color,fontWeight:900,fontSize:16,letterSpacing:'0.05em'}}>{regime.regime}</span>
+            <span style={{background:regime.color+'22',color:regime.color,borderRadius:20,padding:'2px 10px',fontSize:10,fontWeight:700,border:`1px solid ${regime.color}44`}}>MARKET REGIME</span>
+          </div>
+          <p style={{color:t.text2,fontSize:12,lineHeight:1.7,marginBottom:8}}>{regime.description}</p>
+          <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+            <div>
+              <span style={{color:t.muted,fontSize:10,fontWeight:600}}>BEST NOW: </span>
+              {regime.bestStrategies?.map(s=>(
+                <span key={s} style={{background:t.green+'18',color:t.green,borderRadius:20,padding:'1px 8px',fontSize:10,fontWeight:600,marginRight:4,border:`1px solid ${t.green}33`}}>{s}</span>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Metrics */}
+        <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
+          {[
+            {l:'NIFTY',    v:`₹${regime.metrics?.niftyPrice?.toLocaleString('en-IN')}`, c:t.text},
+            {l:'DAY CHG',  v:`${regime.metrics?.dayChange>0?'+':''}${regime.metrics?.dayChange}%`, c:regime.metrics?.dayChange>0?t.green:t.red},
+            {l:'VOLATILITY',v:`${regime.metrics?.atrPct?.toFixed(2)}% ATR`, c:regime.metrics?.atrPct>0.8?t.red:t.amber},
+            {l:'TREND',    v:regime.metrics?.emaTrend?.replace('_',' '), c:regime.metrics?.emaTrend?.includes('UP')?t.green:t.red},
+          ].map(m=>(
+            <div key={m.l} style={{background:t.card,borderRadius:8,padding:'8px 12px',border:`1px solid ${t.border}`,textAlign:'center',minWidth:70}}>
+              <p style={{color:t.muted,fontSize:9,fontWeight:700,letterSpacing:'0.08em',marginBottom:3}}>{m.l}</p>
+              <p style={{color:m.c,fontSize:11,fontWeight:800}}>{m.v}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Day of week insight */}
+        {regime.dayOfWeek && (
+          <div style={{width:'100%',background:t.card,borderRadius:10,padding:'8px 14px',border:`1px solid ${t.border}`,fontSize:12,color:t.text2}}>
+            {regime.dayOfWeek.insight}
+          </div>
+        )}
+      </div>
+
+      {/* Fear & Greed */}
+      {fng && (
+        <div style={{background:t.card,borderRadius:12,padding:'12px 18px',marginTop:10,border:`1px solid ${t.border}`,display:'flex',alignItems:'center',gap:16,flexWrap:'wrap'}}>
+          <div>
+            <p style={{color:t.muted,fontSize:10,fontWeight:700,letterSpacing:'0.08em',marginBottom:4}}>CRYPTO FEAR & GREED INDEX</p>
+            <div style={{display:'flex',alignItems:'center',gap:10}}>
+              <div style={{
+                width:48,height:48,borderRadius:'50%',
+                background:fng.value<25?t.red+'22':fng.value<45?t.amber+'22':fng.value<55?t.muted+'22':fng.value<75?t.green+'22':t.green+'33',
+                border:`3px solid ${fng.value<25?t.red:fng.value<45?t.amber:fng.value<55?t.muted:t.green}`,
+                display:'flex',alignItems:'center',justifyContent:'center',
+                fontWeight:900,fontSize:16,color:fng.value<25?t.red:fng.value<45?t.amber:fng.value<55?t.muted:t.green
+              }}>{fng.value}</div>
+              <div>
+                <p style={{color:t.text,fontWeight:700,fontSize:13}}>{fng.label}</p>
+                <p style={{color:t.muted,fontSize:11}}>{fng.sentiment}</p>
+              </div>
+            </div>
+          </div>
+          {/* History bars */}
+          {fng.history && fng.history.length > 0 && (
+            <div style={{display:'flex',gap:4,alignItems:'flex-end',height:40}}>
+              {fng.history.slice(0,7).reverse().map((d,i)=>(
+                <div key={i} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
+                  <div style={{
+                    width:16,
+                    height:Math.max(4,(d.value/100)*36),
+                    borderRadius:3,
+                    background:d.value<35?t.red:d.value<55?t.amber:t.green,
+                    opacity:i===6?1:0.5+i*0.08,
+                  }}/>
+                  <span style={{color:t.muted,fontSize:8}}>{d.date}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── News Bar ───────────────────────────────────────────────────
+function NewsBar({t, market}) {
+  const [news,    setNews]    = useState([])
+  const [loading, setLoading] = useState(true)
+  const [expanded, setExpanded] = useState(false)
+
+  useEffect(() => { load() }, [market])
+
+  async function load() {
+    setLoading(true)
+    try {
+      const r = await fetch(`/api/news?market=${market}`)
+      const d = await r.json()
+      if (d.news) setNews(d.news)
+    } catch {}
+    setLoading(false)
+  }
+
+  if (loading) return (
+    <div style={{background:t.surface,borderRadius:12,padding:'10px 16px',border:`1px solid ${t.border}`,display:'flex',alignItems:'center',gap:8}}>
+      <span style={{fontSize:14}}>📰</span>
+      <span style={{color:t.muted,fontSize:12}}>Loading market news...</span>
+    </div>
+  )
+
+  if (!news.length) return null
+  const shown = expanded ? news : news.slice(0, 3)
+
+  return (
+    <div style={{background:t.card,borderRadius:12,border:`1px solid ${t.border}`,overflow:'hidden'}}>
+      <div style={{padding:'10px 16px',display:'flex',justifyContent:'space-between',alignItems:'center',borderBottom:`1px solid ${t.border}`}}>
+        <div style={{display:'flex',alignItems:'center',gap:8}}>
+          <span style={{fontSize:14}}>📰</span>
+          <span style={{color:t.text,fontSize:13,fontWeight:700}}>Market News</span>
+          <span style={{background:t.blue+'22',color:t.blue,borderRadius:20,padding:'1px 8px',fontSize:10,fontWeight:700}}>{news.length}</span>
+        </div>
+        <button onClick={()=>setExpanded(e=>!e)} style={{background:'none',border:'none',color:t.muted,cursor:'pointer',fontSize:12,fontWeight:600}}>
+          {expanded?'Show less ↑':'Show more ↓'}
+        </button>
+      </div>
+      {shown.map((item,i)=>(
+        <div key={i} style={{padding:'10px 16px',borderBottom:i<shown.length-1?`1px solid ${t.border}`:'none',display:'flex',alignItems:'flex-start',gap:10}}>
+          <span style={{fontSize:14,flexShrink:0,marginTop:1}}>{item.sentEmoji}</span>
+          <div style={{flex:1,minWidth:0}}>
+            <a href={item.link} target="_blank" rel="noopener noreferrer"
+              style={{color:t.text,fontSize:12,fontWeight:600,textDecoration:'none',lineHeight:1.5,display:'block',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
+              {item.title}
+            </a>
+            <div style={{display:'flex',gap:8,marginTop:3}}>
+              {item.source && <span style={{color:t.muted,fontSize:10}}>{item.source}</span>}
+              <span style={{color:t.muted,fontSize:10}}>{item.timeAgo}</span>
+              <span style={{color:item.sentiment==='bullish'?t.green:item.sentiment==='bearish'?t.red:t.muted,fontSize:10,fontWeight:600,textTransform:'capitalize'}}>{item.sentiment}</span>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+
 function TickerBar({mkt, t, setTab, isConn}) {
   const syms = ['NIFTY','BANKNIFTY','SENSEX','BTC','ETH','SOL']
   return (
@@ -1235,7 +1450,7 @@ export default function Dashboard() {
           <div style={{background:t.card,border:`1px solid ${t.border}`,borderRadius:'0 16px 16px 16px',padding:28}}>
             {!isConn&&tab!=='charts'&&<div style={{background:dark?t.blue+'0d':t.blue+'0a',border:`1px solid ${t.blue}33`,borderRadius:16,padding:18,marginBottom:24,display:'flex',alignItems:'center',justifyContent:'space-between',gap:16}}><div><p style={{color:t.blue,fontWeight:700,fontSize:14}}>🔐 Login with Zerodha for live data & 1-click execution</p><p style={{color:t.muted,fontSize:12,marginTop:3}}>Live prices · Real positions · Auto stop loss · SL + Target in one click</p></div><button onClick={()=>loginUrl&&window.location.assign(loginUrl)} style={{padding:'10px 22px',background:`linear-gradient(135deg,${t.green},${t.teal})`,border:'none',borderRadius:12,color:'#fff',fontWeight:700,cursor:'pointer',fontSize:13,fontFamily:'Space Grotesk,sans-serif',flexShrink:0,boxShadow:`0 4px 20px ${t.green}33`}}>Connect Now →</button></div>}
 
-            {tab==='signals'&&<div><div style={{marginBottom:22}}><h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Live Signals</h2><p style={{color:t.muted,fontSize:13,marginTop:5}}>8 PZ strategies · ORB, Momentum, Supertrend, VWAP, Bollinger, MACD · built from NSE data</p></div><div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(370px,1fr))',gap:20}}>{PZ_STRATEGIES.map(s=><SignalCard key={s.id} strat={s} at={at} onTrade={()=>setTr(r=>r+1)} t={t}/>)}</div></div>}
+            {tab==='signals'&&<div><div style={{marginBottom:18,display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}><div><h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Live Signals</h2><p style={{color:t.muted,fontSize:13,marginTop:5}}>8 PZ strategies · ORB, Momentum, Supertrend, VWAP, Bollinger, MACD</p></div></div><MarketRegimeBanner t={t}/><NewsBar t={t} market='india'/><div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(370px,1fr))',gap:20,marginTop:20}}>{PZ_STRATEGIES.map(s=><SignalCard key={s.id} strat={s} at={at} onTrade={()=>setTr(r=>r+1)} t={t}/>)}</div></div>}
             {tab==='crypto'&&<CryptoTab t={t} />}
             {tab==='positions'&&<div><div style={{marginBottom:22}}><h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Portfolio</h2><p style={{color:t.muted,fontSize:13,marginTop:5}}>Live from Zerodha · Positions · Available Margin · Today's Orders</p></div><Positions at={at} t={t}/></div>}
             {tab==='trades'&&<div><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:22}}><div><h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Trade History</h2><p style={{color:t.muted,fontSize:13,marginTop:5}}>All trades · Entry/Exit · P&L</p></div><button onClick={()=>setTr(r=>r+1)} style={{padding:'8px 16px',background:t.surface,border:`1px solid ${t.border}`,borderRadius:10,color:t.text,cursor:'pointer',fontSize:12,fontFamily:'Space Grotesk,sans-serif',fontWeight:600}}>🔄 Refresh</button></div><History refresh={tr} t={t}/></div>}
