@@ -59,246 +59,142 @@ function SCard({label,value,color,sub,icon,t}) {
 }
 
 function PZChart({symbol, t, h=420, accessToken}) {
-  const [candles,   setCandles]   = React.useState([])
-  const [loading,   setLoading]   = React.useState(false)
-  const [source,    setSource]    = React.useState('')
-  const [interval,  setInterval2] = React.useState('15minute')
-  const [lastPrice, setLastPrice] = React.useState(null)
+  const INTERVALS = [
+    {v:'minute',   l:'1m',  days:1,   refresh:5},
+    {v:'3minute',  l:'3m',  days:2,   refresh:10},
+    {v:'5minute',  l:'5m',  days:3,   refresh:10},
+    {v:'10minute', l:'10m', days:5,   refresh:15},
+    {v:'15minute', l:'15m', days:5,   refresh:20},
+    {v:'30minute', l:'30m', days:10,  refresh:30},
+    {v:'60minute', l:'1h',  days:30,  refresh:60},
+    {v:'day',      l:'1D',  days:365, refresh:300},
+    {v:'week',     l:'1W',  days:730, refresh:600},
+  ]
+  const [candles, setCandles] = React.useState([])
+  const [loading, setLoading] = React.useState(false)
+  const [source,  setSource]  = React.useState('')
+  const [intv,    setIntv]    = React.useState('15minute')
+  const [last,    setLast]    = React.useState(null)
+  const [live,    setLive]    = React.useState(true)
+  const [updated, setUpdated] = React.useState(null)
   const chartRef = React.useRef(null)
   const tvRef    = React.useRef(null)
   const serRef   = React.useRef(null)
+  const volRef   = React.useRef(null)
+  const timerRef = React.useRef(null)
+  const cfg = INTERVALS.find(i=>i.v===intv)||INTERVALS[4]
 
-  React.useEffect(() => { loadChart() }, [symbol, interval, accessToken])
-
-  async function loadChart() {
-    setLoading(true)
+  async function loadData(silent=false) {
+    if (!silent) setLoading(true)
     try {
-      const r = await fetch(`/api/kite-chart?symbol=${symbol}&interval=${interval}&days=${interval==='15minute'?5:interval==='day'?365:30}`, {
-        headers: accessToken ? {'x-kite-access-token': accessToken} : {}
-      })
+      const r = await fetch(`/api/kite-chart?symbol=${symbol}&interval=${intv}&days=${cfg.days}`,
+        {headers:accessToken?{'x-kite-access-token':accessToken}:{}})
       const d = await r.json()
-      if (d.candles?.length > 0) {
+      if (d.candles?.length>0) {
         setCandles(d.candles)
         setSource(d.source)
-        setLastPrice(d.last)
+        setLast(d.last)
+        setUpdated(new Date())
+        if (silent && serRef.current) {
+          const s=[...d.candles].sort((a,b)=>a.time-b.time)
+          const u=s.filter((c,i)=>i===0||c.time!==s[i-1].time)
+          serRef.current.setData(u)
+          if (volRef.current) volRef.current.setData(u.map(c=>({time:c.time,value:c.volume||0,color:c.close>=c.open?'#10f59e33':'#ff446633'})))
+        }
       }
     } catch {}
-    setLoading(false)
+    if (!silent) setLoading(false)
   }
 
-  React.useEffect(() => {
-    if (!candles.length || !chartRef.current) return
-    // Load lightweight-charts from CDN
+  React.useEffect(()=>{
+    loadData()
+    if (timerRef.current) clearInterval(timerRef.current)
+    if (live) timerRef.current=setInterval(()=>loadData(true), cfg.refresh*1000)
+    return ()=>{ if (timerRef.current) clearInterval(timerRef.current) }
+  },[symbol,intv,accessToken,live])
+
+  React.useEffect(()=>{
+    if (!candles.length||!chartRef.current||loading) return
     if (!window.LightweightCharts) {
-      const script = document.createElement('script')
-      script.src = 'https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js'
-      script.onload = () => renderChart()
-      document.head.appendChild(script)
-    } else {
-      renderChart()
-    }
-  }, [candles, t])
+      const s=document.createElement('script')
+      s.src='https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js'
+      s.onload=()=>renderChart()
+      document.head.appendChild(s)
+    } else { renderChart() }
+  },[candles,t])
 
   function renderChart() {
-    if (!window.LightweightCharts || !chartRef.current) return
-    // Cleanup old chart
-    if (tvRef.current) { tvRef.current.remove(); tvRef.current = null }
-    chartRef.current.innerHTML = ''
-
-    const isDark = t.bg === '#07090f'
-    const chart = window.LightweightCharts.createChart(chartRef.current, {
-      width:  chartRef.current.clientWidth,
-      height: h - 60,
-      layout: {
-        background:  { color: isDark ? '#0d1117' : '#ffffff' },
-        textColor:   isDark ? '#9ca3af' : '#6b7280',
-      },
-      grid: {
-        vertLines: { color: isDark ? '#1f2937' : '#f3f4f6' },
-        horzLines: { color: isDark ? '#1f2937' : '#f3f4f6' },
-      },
-      crosshair: { mode: 1 },
-      rightPriceScale: { borderColor: isDark ? '#1f2937' : '#e5e7eb' },
-      timeScale: {
-        borderColor:     isDark ? '#1f2937' : '#e5e7eb',
-        timeVisible:     true,
-        secondsVisible:  false,
-      },
+    if (!window.LightweightCharts||!chartRef.current) return
+    if (tvRef.current) { try{tvRef.current.remove()}catch{} tvRef.current=null }
+    chartRef.current.innerHTML=''
+    const isDark=t.bg==='#07090f'
+    const chart=window.LightweightCharts.createChart(chartRef.current,{
+      width:chartRef.current.clientWidth||600, height:h-90,
+      layout:{background:{color:isDark?'#0d1117':'#ffffff'},textColor:isDark?'#9ca3af':'#6b7280',fontSize:11},
+      grid:{vertLines:{color:isDark?'#1f293755':'#f3f4f6'},horzLines:{color:isDark?'#1f293755':'#f3f4f6'}},
+      crosshair:{mode:1},
+      rightPriceScale:{borderColor:isDark?'#1f2937':'#e5e7eb',scaleMargins:{top:0.08,bottom:0.22}},
+      timeScale:{borderColor:isDark?'#1f2937':'#e5e7eb',timeVisible:true,secondsVisible:intv==='minute'},
     })
-
-    const series = chart.addCandlestickSeries({
-      upColor:          '#10f59e',
-      downColor:        '#ff4466',
-      borderUpColor:    '#10f59e',
-      borderDownColor:  '#ff4466',
-      wickUpColor:      '#10f59e',
-      wickDownColor:    '#ff4466',
+    const series=chart.addCandlestickSeries({
+      upColor:'#10f59e',downColor:'#ff4466',
+      borderUpColor:'#10f59e',borderDownColor:'#ff4466',
+      wickUpColor:'#10f59e88',wickDownColor:'#ff446688',
     })
-
-    // Sort and deduplicate candles
-    const sorted = [...candles].sort((a,b) => a.time - b.time)
-    const deduped = sorted.filter((c,i) => i===0 || c.time !== sorted[i-1].time)
+    const vol=chart.addHistogramSeries({priceFormat:{type:'volume'},priceScaleId:'vol'})
+    chart.priceScale('vol').applyOptions({scaleMargins:{top:0.85,bottom:0}})
+    const sorted=[...candles].sort((a,b)=>a.time-b.time)
+    const deduped=sorted.filter((c,i)=>i===0||c.time!==sorted[i-1].time)
     series.setData(deduped)
-
-    // Volume histogram
-    const volSeries = chart.addHistogramSeries({
-      color:     '#3b9eff44',
-      priceFormat: { type: 'volume' },
-      priceScaleId: 'vol',
-    })
-    chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.85, bottom: 0 } })
-    volSeries.setData(deduped.map(c => ({ time: c.time, value: c.volume || 0, color: c.close >= c.open ? '#10f59e33' : '#ff446633' })))
-
+    vol.setData(deduped.map(c=>({time:c.time,value:c.volume||0,color:c.close>=c.open?'#10f59e33':'#ff446633'})))
     chart.timeScale().fitContent()
-    tvRef.current  = chart
-    serRef.current = series
-
-    // Responsive resize
-    const ro = new ResizeObserver(() => {
-      if (chartRef.current) chart.applyOptions({ width: chartRef.current.clientWidth })
-    })
+    tvRef.current=chart; serRef.current=series; volRef.current=vol
+    const ro=new ResizeObserver(()=>{if(chartRef.current)chart.applyOptions({width:chartRef.current.clientWidth})})
     ro.observe(chartRef.current)
   }
 
-  const kiteUrl = KITE_CHARTS[symbol]
-  const intervals = [
-    {v:'15minute',l:'15m'},
-    {v:'60minute',l:'1h'},
-    {v:'day',l:'1D'},
-  ]
+  const chg    = last ? ((last.close-last.open)/last.open*100) : 0
+  const isUp   = chg >= 0
+  const secAgo = updated ? Math.round((new Date()-updated)/1000) : null
 
   return (
     <div style={{borderRadius:16,overflow:'hidden',border:`1px solid ${t.border}`,background:t.card}}>
-      {/* Header */}
-      <div style={{padding:'10px 16px',display:'flex',justifyContent:'space-between',alignItems:'center',borderBottom:`1px solid ${t.border}`}}>
-        <div style={{display:'flex',alignItems:'center',gap:10}}>
-          <span style={{width:8,height:8,borderRadius:'50%',background:loading?t.amber:t.green,display:'inline-block',animation:loading?'pulse 0.8s infinite':'none'}} />
-          <span style={{color:t.text,fontWeight:800,fontSize:14}}>{symbol}</span>
-          {lastPrice && <span style={{color:t.muted,fontSize:12,fontFamily:'monospace'}}>₹{fmt(lastPrice.close)}</span>}
-          {lastPrice && <span style={{fontSize:11,color:lastPrice.close>=lastPrice.open?t.green:t.red,fontWeight:700,background:(lastPrice.close>=lastPrice.open?t.green:t.red)+'18',borderRadius:5,padding:'1px 6px'}}>{lastPrice.close>=lastPrice.open?'+':''}{fmt(((lastPrice.close-lastPrice.open)/lastPrice.open*100),2)}{'%'}</span>}
-          <span style={{color:t.muted,fontSize:10}}>· {source==='kite'?'Live Kite':'Yahoo Finance'}</span>
+      {/* Row 1: symbol + price + controls */}
+      <div style={{padding:'10px 14px',display:'flex',justifyContent:'space-between',alignItems:'center',borderBottom:`1px solid ${t.border}`}}>
+        <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+          <span style={{width:8,height:8,borderRadius:'50%',background:live?t.green:t.amber,display:'inline-block',animation:live?'pulse 1.5s infinite':'none'}} />
+          <span style={{color:t.text,fontWeight:800,fontSize:15}}>{symbol}</span>
+          {last && <>
+            <span style={{color:t.text,fontSize:14,fontFamily:'JetBrains Mono,monospace',fontWeight:700}}>₹{fmt(last.close)}</span>
+            <span style={{fontSize:11,fontWeight:700,color:isUp?t.green:t.red,background:(isUp?t.green:t.red)+'18',borderRadius:5,padding:'2px 7px'}}>{isUp?'+':''}{fmt(chg,2)}{'%'}</span>
+          </>}
+          <span style={{color:t.muted,fontSize:10}}>{source==='kite'?'🟢 Live':'⚪ Yahoo'}{secAgo!==null?` · ${secAgo}s ago`:''}</span>
         </div>
-        <div style={{display:'flex',alignItems:'center',gap:6}}>
-          {intervals.map(i => (
-            <button key={i.v} onClick={()=>setInterval2(i.v)} style={{padding:'3px 10px',borderRadius:6,fontSize:11,fontWeight:700,background:interval===i.v?t.accentC:t.surface,border:`1px solid ${interval===i.v?t.accentC:t.border}`,color:interval===i.v?'#fff':t.muted,cursor:'pointer',fontFamily:'Space Grotesk,sans-serif'}}>{i.l}</button>
-          ))}
-          {kiteUrl && <button onClick={()=>window.open(kiteUrl,'_blank')} style={{padding:'3px 10px',borderRadius:6,fontSize:11,background:'none',border:`1px solid ${t.border}`,color:t.blue,cursor:'pointer',fontFamily:'Space Grotesk,sans-serif',fontWeight:600}}>Kite ↗</button>}
+        <div style={{display:'flex',gap:6}}>
+          <button onClick={()=>setLive(v=>!v)} style={{padding:'3px 10px',borderRadius:6,fontSize:11,fontWeight:700,background:live?t.green+'22':t.surface,border:`1px solid ${live?t.green:t.border}`,color:live?t.green:t.muted,cursor:'pointer',fontFamily:'Space Grotesk,sans-serif'}}>
+            {live?`⚡ Auto (${cfg.refresh}s)`:'⏸ Paused'}
+          </button>
+          <button onClick={()=>loadData()} style={{padding:'3px 8px',borderRadius:6,fontSize:13,background:'none',border:`1px solid ${t.border}`,color:t.muted,cursor:'pointer'}}>↻</button>
+          {KITE_CHARTS[symbol]&&<button onClick={()=>window.open(KITE_CHARTS[symbol],'_blank')} style={{padding:'3px 10px',borderRadius:6,fontSize:11,background:'none',border:`1px solid ${t.border}`,color:t.blue,cursor:'pointer',fontFamily:'Space Grotesk,sans-serif',fontWeight:600}}>Kite ↗</button>}
         </div>
+      </div>
+      {/* Row 2: interval selector */}
+      <div style={{padding:'8px 14px',display:'flex',gap:4,flexWrap:'wrap',borderBottom:`1px solid ${t.border}`,background:t.surface+'55'}}>
+        {INTERVALS.map(i=>(
+          <button key={i.v} onClick={()=>setIntv(i.v)} style={{padding:'4px 10px',borderRadius:6,fontSize:12,fontWeight:700,background:intv===i.v?t.accentC:t.surface,border:`1px solid ${intv===i.v?t.accentC:t.border}`,color:intv===i.v?'#fff':t.muted,cursor:'pointer',fontFamily:'Space Grotesk,sans-serif',transition:'all 0.1s'}}>{i.l}</button>
+        ))}
       </div>
       {/* Chart */}
       {loading
-        ? <div style={{height:h-60,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:12}}>
+        ? <div style={{height:h-90,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:12}}>
             <div style={{width:36,height:36,border:`3px solid ${t.border}`,borderTopColor:t.accentC,borderRadius:'50%',animation:'spin 0.8s linear infinite'}} />
-            <p style={{color:t.muted,fontSize:12}}>Loading {source==='kite'?'Kite':'market'} data...</p>
+            <p style={{color:t.muted,fontSize:12}}>Loading {cfg.l} candles...</p>
           </div>
-        : <div ref={chartRef} style={{width:'100%',height:h-60}} />
+        : <div ref={chartRef} style={{width:'100%',height:h-90}} />
       }
     </div>
   )
 }
-
-function ExecModal({data,strat,sym,at,onClose,onDone,t}) {
-  const [qty,setQty]=useState(1),[prod,setProd]=useState('MIS'),[placing,setPlacing]=useState(false),[result,setResult]=useState(null),[sl,setSl]=useState(true),[tgt,setTgt]=useState(true)
-  const risk=data.stopLoss?Math.abs(data.price-data.stopLoss)*qty:null
-  const rwrd=data.target?Math.abs(data.target-data.price)*qty:null
-  const sc=data.signal==='BUY'?t.green:t.red
-
-  async function place() {
-    if (!at) { setResult({ok:false,msg:'Login with Zerodha first'}); return }
-    setPlacing(true)
-    try {
-      const r=await fetch('/api/kite-pro?action=place_order',{method:'POST',headers:{'Content-Type':'application/json','x-kite-access-token':at},body:JSON.stringify({tradingsymbol:sym,exchange:'NSE',transaction_type:data.signal,quantity:qty,product:prod,order_type:'MARKET',stop_loss_price:sl&&data.stopLoss?data.stopLoss:null,target_price:tgt&&data.target?data.target:null})})
-      const d=await r.json()
-      if (d.status==='success') {
-        await fetch('/api/trades',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:sym,direction:data.signal,quantity:qty,entry_price:data.price,stop_loss:data.stopLoss,target:data.target,strategy:strat.name,order_id:d.results?.main_order_id,notes:`SL:${d.results?.sl_order_id||'—'}`})})
-        setResult({ok:true,msg:d.message,det:d.results})
-        onDone&&onDone()
-      } else setResult({ok:false,msg:d.error||'Order failed'})
-    } catch(e) { setResult({ok:false,msg:e.message}) }
-    setPlacing(false)
-  }
-
-  return (
-    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.88)',backdropFilter:'blur(8px)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:500,padding:16}}>
-      <div style={{background:t.card,border:`1px solid ${t.border}`,borderRadius:24,padding:28,width:480,maxWidth:'100%',maxHeight:'90vh',overflowY:'auto',boxShadow:`0 0 60px ${sc}22`}}>
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20}}>
-          <div style={{display:'flex',alignItems:'center',gap:12}}>
-            <div style={{background:sc+'22',border:`2px solid ${sc}`,borderRadius:12,padding:'8px 18px',color:sc,fontWeight:900,fontSize:20}}>{data.signal}</div>
-            <div><p style={{fontWeight:800,fontSize:17,color:t.text}}>{sym}</p><p style={{color:t.muted,fontSize:12}}>{strat.name}</p></div>
-          </div>
-          <button onClick={onClose} style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:10,color:t.muted,cursor:'pointer',fontSize:20,width:36,height:36,display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>
-        </div>
-
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,marginBottom:16}}>
-          {[{l:'ENTRY',v:`₹${fmt(data.price)}`,c:t.blue},{l:'STOP LOSS',v:data.stopLoss?`₹${fmt(data.stopLoss)}`:'—',c:t.red,s:risk?`Risk ₹${fmt(risk)}`:null},{l:'TARGET',v:data.target?`₹${fmt(data.target)}`:'—',c:t.green,s:rwrd?`Gain ₹${fmt(rwrd)}`:null}].map(x=>(
-            <div key={x.l} style={{background:t.surface,borderRadius:12,padding:'12px 14px',border:`1px solid ${t.border}`}}>
-              <p style={{color:t.muted,fontSize:10,fontWeight:700,letterSpacing:'0.1em',marginBottom:4}}>{x.l}</p>
-              <p style={{color:x.c,fontSize:14,fontWeight:800,fontFamily:'monospace'}}>{x.v}</p>
-              {x.s&&<p style={{color:t.muted,fontSize:10,marginTop:3}}>{x.s}</p>}
-            </div>
-          ))}
-        </div>
-
-        {risk&&rwrd&&(
-          <div style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:12,padding:'10px 16px',marginBottom:16,display:'flex',justifyContent:'space-around'}}>
-            {[['RISK:REWARD',`1:${(rwrd/risk).toFixed(1)}`,t.text],['CONFIDENCE',`${data.confidence}%`,data.confidence>70?t.green:data.confidence>50?t.amber:t.red]].map(([l,v,c])=>(
-              <div key={l} style={{textAlign:'center'}}><p style={{color:t.muted,fontSize:10,fontWeight:600}}>{l}</p><p style={{color:c,fontWeight:800,fontSize:16}}>{v}</p></div>
-            ))}
-          </div>
-        )}
-
-        <div style={{background:t.surface,borderRadius:14,padding:16,marginBottom:16}}>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
-            <div>
-              <p style={{color:t.muted,fontSize:11,fontWeight:600,marginBottom:8}}>QUANTITY</p>
-              <div style={{display:'flex',alignItems:'center',gap:10}}>
-                <button onClick={()=>setQty(q=>Math.max(1,q-1))} style={{width:34,height:34,background:t.card,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,cursor:'pointer',fontSize:20}}>−</button>
-                <span style={{color:t.text,fontWeight:800,fontSize:20,minWidth:36,textAlign:'center'}}>{qty}</span>
-                <button onClick={()=>setQty(q=>q+1)} style={{width:34,height:34,background:t.card,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,cursor:'pointer',fontSize:20}}>+</button>
-              </div>
-            </div>
-            <div>
-              <p style={{color:t.muted,fontSize:11,fontWeight:600,marginBottom:8}}>PRODUCT</p>
-              <select value={prod} onChange={e=>setProd(e.target.value)} style={{background:t.card,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,fontSize:12,padding:'8px 10px',fontFamily:'Space Grotesk,sans-serif',width:'100%'}}>
-                <option value="MIS">MIS — Intraday</option>
-                <option value="CNC">CNC — Delivery</option>
-                <option value="NRML">NRML — F&O</option>
-              </select>
-            </div>
-          </div>
-          <div style={{display:'flex',gap:20}}>
-            <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer'}}>
-              <input type="checkbox" checked={sl} onChange={e=>setSl(e.target.checked)} style={{width:16,height:16,accentColor:t.red}} />
-              <span style={{color:t.red,fontSize:12,fontWeight:600}}>Auto Stop Loss</span>
-            </label>
-            <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer'}}>
-              <input type="checkbox" checked={tgt} onChange={e=>setTgt(e.target.checked)} style={{width:16,height:16,accentColor:t.green}} />
-              <span style={{color:t.green,fontSize:12,fontWeight:600}}>Auto Target</span>
-            </label>
-          </div>
-        </div>
-
-        {result ? (
-          <div style={{textAlign:'center',padding:16}}>
-            <p style={{fontSize:40,marginBottom:8}}>{result.ok?'✅':'❌'}</p>
-            <p style={{color:result.ok?t.green:t.red,fontWeight:700,fontSize:15,marginBottom:8}}>{result.msg}</p>
-            {result.det&&<div style={{background:t.surface,borderRadius:10,padding:10,textAlign:'left',fontSize:11}}>
-              {result.det.main_order_id&&<p style={{color:t.muted}}>Main: <span style={{color:t.text,fontFamily:'monospace'}}>{result.det.main_order_id}</span></p>}
-              {result.det.sl_order_id&&<p style={{color:t.muted}}>SL: <span style={{color:t.red,fontFamily:'monospace'}}>{result.det.sl_order_id}</span></p>}
-              {result.det.target_order_id&&<p style={{color:t.muted}}>Target: <span style={{color:t.green,fontFamily:'monospace'}}>{result.det.target_order_id}</span></p>}
-            </div>}
-            <button onClick={onClose} style={{marginTop:14,padding:'8px 28px',background:t.surface,border:`1px solid ${t.border}`,borderRadius:10,color:t.text,cursor:'pointer',fontFamily:'Space Grotesk,sans-serif',fontSize:13}}>Close</button>
-          </div>
-        ) : (
-          <button onClick={place} disabled={placing} style={{width:'100%',padding:17,border:'none',borderRadius:14,background:placing?t.surface:data.signal==='BUY'?`linear-gradient(135deg,${t.green},${t.teal})`:`linear-gradient(135deg,${t.red},#ff6688)`,color:placing?t.muted:'#fff',fontWeight:800,fontSize:16,cursor:placing?'not-allowed':'pointer',fontFamily:'Space Grotesk,sans-serif',boxShadow:!placing?`0 4px 24px ${sc}44`:'none',transition:'all 0.2s'}}>
-            {placing?'⏳ Placing on NSE...':`⚡ Place ${data.signal} + SL + Target`}
-          </button>
-        )}
-      </div>
-    </div>
-  )
-}
-
 function SignalCard({strat,at,onTrade,t}) {
   const [sym,setSym]=useState(strat.symbols[0]),[data,setData]=useState(null),[loading,setLoading]=useState(false),[modal,setModal]=useState(false),[chart,setChart]=useState(false)
   useEffect(()=>{load()},[sym,strat.id])
