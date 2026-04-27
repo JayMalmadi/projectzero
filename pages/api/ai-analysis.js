@@ -1,195 +1,257 @@
-// pages/api/ai-analysis.js
-// Claude AI as trading partner inside Projectzero
-// Provides: signal analysis, morning briefing, post-trade review, chat
+// /api/ai-analysis
+// All Claude AI calls go through here
+// CACHING: Results saved to Supabase, never re-run for same input
+// POST-TRADE: Analysis saved directly to trade record
+
+import { createClient } from '@supabase/supabase-js'
+const sb = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_KEY
+)
+
+const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
+
+async function callClaude(prompt, maxTokens = 600) {
+  const r = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': ANTHROPIC_KEY,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-5-20251001',
+      max_tokens: maxTokens,
+      messages: [{ role: 'user', content: prompt }],
+    }),
+  })
+  const d = await r.json()
+  return d?.content?.[0]?.text || ''
+}
+
+async function getFromCache(key) {
+  const { data } = await sb
+    .from('ai_cache')
+    .select('analysis, created_at')
+    .eq('cache_key', key)
+    .single()
+  return data
+}
+
+async function saveToCache(key, type, analysis, metadata = {}, expiresHours = null) {
+  const expires_at = expiresHours
+    ? new Date(Date.now() + expiresHours * 3600000).toISOString()
+    : null
+  await sb.from('ai_cache').upsert({
+    cache_key: key,
+    type,
+    analysis,
+    metadata,
+    expires_at,
+    created_at: new Date().toISOString(),
+  }, { onConflict: 'cache_key' })
+}
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).end()
+  if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' })
 
   const { type, data } = req.body
   if (!type) return res.status(400).json({ error: 'type required' })
 
-  const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
-
-  // Build the prompt based on analysis type
-  let systemPrompt = `You are an expert algorithmic trading analyst integrated into Projectzero,
-a personal algo trading dashboard for Jay Malamdi (Zerodha ID: FHP228) based in Ahmedabad, India.
-Jay trades Indian markets (Nifty/BankNifty) with ₹10,000-25,000 capital.
-He is building an emotion-free, logic-based trading system.
-Be concise, specific, data-driven. No generic advice. Use INR (₹) for amounts.
-Format responses with clear sections. Keep total response under 200 words unless it's a detailed analysis.`
-
-  let userPrompt = ''
-
-  switch (type) {
+  try {
 
     // ── Signal Analysis ──────────────────────────────────────────
-    case 'signal_analysis':
-      userPrompt = `Analyse this trading signal for Jay:
+    if (type === 'signal_analysis') {
+      const { symbol, signal, strategy, price, confidence, today } = data
 
-Symbol: ${data.symbol}
-Signal: ${data.signal}
-Strategy: ${data.strategy}
-Price: ₹${data.price}
-Stop Loss: ₹${data.stopLoss || 'not set'}
-Target: ₹${data.target || 'not set'}
-RSI: ${data.rsi}
-Confidence: ${data.confidence}%
-Reason: ${data.reason}
-Today: ${data.today} (${data.marketContext?.note || ''})
+      // Cache key: same signal on same day = same analysis
+      const dateStr = new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' }).replace(/\//g, '-')
+      const cacheKey = `signal_${symbol}_${strategy}_${signal}_${dateStr}`
 
-Recent trade performance: ${data.recentPerformance || 'no data yet'}
-Capital: ₹${data.capital || '25000'}
+      // Check cache first
+      const cached = await getFromCache(cacheKey)
+      if (cached) {
+        return res.status(200).json({ analysis: cached.analysis, cached: true, cachedAt: cached.created_at })
+      }
 
-Provide:
-1. WHY this signal fired (explain the key conditions in plain English)
-2. QUALITY assessment (is this a strong or weak setup?)
-3. KEY RISK (what could go wrong?)
-4. SUGGESTED ACTION (execute / wait / skip with brief reason)
-Keep it under 150 words. Be direct.`
-      break
+      // Not cached — call Claude
+      const analysis = await callClaude(`You are a professional Indian stock/crypto market analyst. Give Jay (FHP228, Ahmedabad) a brief signal analysis.
 
-    // ── Morning Briefing ─────────────────────────────────────────
-    case 'morning_briefing':
-      userPrompt = `Generate Jay's morning trading briefing for ${data.date} (${data.dayOfWeek}).
+Signal: ${signal} ${symbol}
+Strategy: ${strategy}
+Price: ${price}
+Confidence: ${confidence}%
+Day: ${today || 'today'}
+Reason: ${data.reason || ''}
+RSI: ${data.rsi || 'N/A'}
+Stop Loss: ${data.stopLoss || 'N/A'}
+Target: ${data.target || 'N/A'}
+R:R: ${data.rr || 'N/A'}
 
-Market context:
-- Nifty: ₹${data.niftyPrice} (${data.niftyChange})
-- BankNifty: ₹${data.bankNiftyPrice} (${data.bankNiftyChange})
-- Global cues: ${data.globalCues || 'check SGX Nifty'}
-- Day of week insights: ${data.dayInsight}
+Write a concise 4-part analysis:
+1. WHY THIS SIGNAL: What does the data tell us? (2 sentences)
+2. QUALITY: Is this a good setup? What could make it better? (1 sentence)
+3. TRADE PLAN: Specific entry, SL management, target approach (2 sentences)
+4. WATCH OUT: One key risk factor to monitor (1 sentence)
 
-Jay's recent P&L: ${data.recentPnL || 'starting fresh'}
-Active strategies: PZ-ORB Filter, Tuesday Momentum, Gap & Fade, Weak Stock Swing
+Max 120 words. Be specific and actionable.`, 400)
 
-Provide a sharp morning briefing covering:
-1. TODAY'S OUTLOOK (1 line — bullish/bearish/sideways)
-2. BEST STRATEGY for today and why
-3. KEY LEVELS to watch (support/resistance)
-4. RISK LEVEL (low/medium/high) and max suggested capital deployment
-5. ONE THING TO WATCH OUT FOR today
+      // Save to cache (expires at midnight — same signal tomorrow gets fresh analysis)
+      await saveToCache(cacheKey, 'signal_analysis', analysis, { symbol, signal, strategy, price, confidence }, 24)
 
-Keep it under 200 words. Write as if you're a trading desk analyst talking to a solo trader.`
-      break
-
-    // ── Post-Trade Analysis ──────────────────────────────────────
-    case 'post_trade':
-      userPrompt = `Review this completed trade for Jay:
-
-Symbol: ${data.symbol}
-Direction: ${data.direction}
-Strategy: ${data.strategy}
-Entry: ₹${data.entryPrice}
-Exit: ₹${data.exitPrice}
-P&L: ₹${data.pnl} (${data.pnlPct}%)
-Exit reason: ${data.exitReason}
-Duration: ${data.duration}
-
-Recent trade history: ${data.recentTrades || 'first trade'}
-
-Provide:
-1. VERDICT (worked as expected / partial success / failed — one line)
-2. WHAT WORKED (or didn't)
-3. ONE LESSON from this trade
-4. STRATEGY STATUS (performing well / needs review / skip for now)
-
-Be direct. Under 120 words.`
-      break
-
-    // ── AI Chat ──────────────────────────────────────────────────
-    case 'chat':
-      systemPrompt += ` The user's portfolio context:
-- Capital: ₹${data.capital || '25000'}
-- Recent trades: ${data.recentTrades || 'none yet'}
-- Active strategies: PZ-ORB, Tuesday Momentum, Gap & Fade, Weak Stock Swing
-- Markets: Indian (Zerodha), adding Crypto (Binance) soon
-Answer trading questions with specific, actionable insight. Reference Jay's actual data when available.`
-      userPrompt = data.message
-      break
-
-    // ── Market Regime Detection ──────────────────────────────────
-    case 'market_regime':
-      userPrompt = `Detect the current market regime for Indian markets:
-
-Nifty 50 data:
-- Current: ₹${data.niftyPrice}
-- 3-month return: ${data.nifty3m || '-5%'} (bearish recent trend)
-- RSI: ${data.niftyRsi || 'unknown'}
-- Today's move: ${data.niftyChange}
-
-BankNifty:
-- Current: ₹${data.bankNiftyPrice}  
-- Today's move: ${data.bankNiftyChange}
-
-Classify the regime as one of:
-- TRENDING UP (strong bullish momentum)
-- TRENDING DOWN (strong bearish momentum)  
-- SIDEWAYS (range-bound, choppy)
-- HIGH VOLATILITY (large swings, unpredictable)
-- LOW VOLATILITY (tight range, good for mean reversion)
-
-Then recommend:
-1. Which of Jay's 4 strategies works BEST in this regime
-2. Which to AVOID today
-3. Suggested position size (% of capital): conservative/normal/aggressive
-
-Under 100 words.`
-      break
-
-    // ── Daily Summary ────────────────────────────────────────────
-    case 'daily_summary':
-      userPrompt = `Write Jay's end-of-day trading summary for ${data.date}:
-
-Today's trades: ${JSON.stringify(data.trades || [])}
-Total P&L: ₹${data.totalPnL || 0}
-Wins: ${data.wins || 0} | Losses: ${data.losses || 0}
-Best trade: ${data.bestTrade || 'none'}
-Worst trade: ${data.worstTrade || 'none'}
-
-Market performance today:
-- Nifty: ${data.niftyPerf || 'unknown'}
-- BankNifty: ${data.bankNiftyPerf || 'unknown'}
-
-Weekly P&L so far: ₹${data.weeklyPnL || 0}
-
-Write a concise daily summary covering:
-1. TODAY'S PERFORMANCE (one line verdict)
-2. STRATEGY PERFORMANCE (which worked, which didn't)
-3. KEY OBSERVATION from today's market
-4. TOMORROW'S OUTLOOK and recommended approach
-5. MOTIVATION (one line — honest, not generic)
-
-Under 200 words. Tone: like a trusted trading mentor.`
-      break
-
-    default:
-      return res.status(400).json({ error: `Unknown type: ${type}` })
-  }
-
-  try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_KEY,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 1024,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userPrompt }],
-      }),
-    })
-
-    const aiData = await response.json()
-
-    if (!response.ok) {
-      console.error('Anthropic API error:', aiData)
-      return res.status(500).json({ error: 'AI analysis unavailable', details: aiData })
+      return res.status(200).json({ analysis, cached: false })
     }
 
-    const text = aiData.content?.[0]?.text || ''
-    return res.status(200).json({ analysis: text, type, tokens: aiData.usage })
+    // ── Post-Trade Analysis ──────────────────────────────────────
+    if (type === 'post_trade') {
+      const { tradeId, symbol, direction, entryPrice, exitPrice, pnl, strategy, duration } = data
+
+      // Cache by trade ID — never re-runs for same trade
+      const cacheKey = `post_trade_${tradeId}`
+      const cached = await getFromCache(cacheKey)
+      if (cached) {
+        return res.status(200).json({ analysis: cached.analysis, cached: true })
+      }
+
+      const isWin = pnl > 0
+      const pctMove = exitPrice ? (((exitPrice - entryPrice) / entryPrice) * 100).toFixed(2) : 0
+
+      const analysis = await callClaude(`You are Jay's trading coach. Analyse this completed trade.
+
+Trade: ${direction} ${symbol}
+Strategy: ${strategy}
+Entry: ${entryPrice} | Exit: ${exitPrice || 'open'}
+P&L: ${pnl > 0 ? '+' : ''}${pnl}
+Move: ${pctMove}%
+Duration: ${duration || 'unknown'}
+Result: ${isWin ? '✅ WIN' : '❌ LOSS'}
+
+Write a brief post-trade review:
+1. WHAT WENT ${isWin ? 'RIGHT' : 'WRONG'}: Why did this trade ${isWin ? 'work' : 'fail'}? (2 sentences)
+2. LESSON: One specific thing to remember for next time (1 sentence)
+3. NEXT TIME: One adjustment to make this setup better (1 sentence)
+
+Max 80 words. Be honest and constructive.`, 300)
+
+      // Save to cache permanently (trade analysis never expires)
+      await saveToCache(cacheKey, 'post_trade', analysis, { tradeId, symbol, pnl }, null)
+
+      // Also save directly to trade record
+      if (tradeId) {
+        await sb.from('trades').update({
+          ai_analysis: analysis,
+          ai_analysed_at: new Date().toISOString(),
+        }).eq('id', tradeId)
+      }
+
+      return res.status(200).json({ analysis, cached: false })
+    }
+
+    // ── Morning Briefing ─────────────────────────────────────────
+    if (type === 'morning_briefing') {
+      const { date, dayOfWeek, dayInsight, niftyPrice, niftyChange, bankNiftyPrice, bankNiftyChange } = data
+      const today = new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' }).replace(/\//g, '-')
+      const cacheKey = `morning_briefing_${today}`
+
+      const cached = await getFromCache(cacheKey)
+      if (cached) {
+        return res.status(200).json({ analysis: cached.analysis, cached: true })
+      }
+
+      const analysis = await callClaude(`You are Jay's daily trading assistant (FHP228, Ahmedabad).
+Write a brief morning trading briefing for ${dayOfWeek}, ${date}.
+
+Market data:
+- NIFTY: ${niftyPrice} (${niftyChange})
+- BankNifty: ${bankNiftyPrice} (${bankNiftyChange})
+- Day insight: ${dayInsight}
+
+Cover in 100 words:
+1. Market mood for today
+2. Which 2 strategies to focus on and why  
+3. One key level to watch
+4. One risk to be aware of
+
+Be specific and actionable for an Indian intraday trader.`, 350)
+
+      // Save to daily_reports and cache
+      await saveToCache(cacheKey, 'morning_briefing', analysis, {}, 24)
+      await sb.from('daily_reports').upsert({
+        report_date: new Date().toISOString().split('T')[0],
+        morning_brief: analysis,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'report_date' })
+
+      return res.status(200).json({ analysis, cached: false })
+    }
+
+    // ── Daily Summary ────────────────────────────────────────────
+    if (type === 'daily_summary') {
+      const { date, trades, totalPnL, wins, losses } = data
+      const today = new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' }).replace(/\//g, '-')
+      const cacheKey = `daily_summary_${today}`
+
+      const cached = await getFromCache(cacheKey)
+      if (cached) {
+        return res.status(200).json({ analysis: cached.analysis, cached: true })
+      }
+
+      const analysis = await callClaude(`You are Jay's trading coach. Write a brief end-of-day summary.
+
+Date: ${date}
+Trades today: ${trades?.length || 0}
+Wins: ${wins} | Losses: ${losses}
+Total P&L: ${totalPnL > 0 ? '+' : ''}₹${totalPnL}
+
+Write a 3-part summary in 80 words:
+1. TODAY'S PERFORMANCE: How was the day overall?
+2. KEY LESSON: One thing to take away from today
+3. TOMORROW: What to focus on tomorrow
+
+Be honest, brief, and forward-looking.`, 250)
+
+      await saveToCache(cacheKey, 'daily_summary', analysis, {}, 24)
+      await sb.from('daily_reports').upsert({
+        report_date: new Date().toISOString().split('T')[0],
+        daily_summary: analysis,
+        trades_today: trades?.length || 0,
+        pnl_today: totalPnL || 0,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'report_date' })
+
+      return res.status(200).json({ analysis, cached: false })
+    }
+
+    // ── Chat ─────────────────────────────────────────────────────
+    if (type === 'chat') {
+      // Chat is NOT cached — always fresh
+      const { message, capital } = data
+      const analysis = await callClaude(`You are Jay's personal trading assistant (FHP228, Ahmedabad, India).
+He trades NIFTY, BankNifty and crypto on Binance. Capital: ₹${capital || 25000}.
+
+User question: ${message}
+
+Answer helpfully and specifically for Indian markets. Max 150 words.`, 400)
+
+      return res.status(200).json({ analysis, cached: false })
+    }
+
+    // ── Market Regime ────────────────────────────────────────────
+    if (type === 'market_regime') {
+      const today = new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' }).replace(/\//g, '-')
+      const cacheKey = `market_regime_${today}`
+      const cached = await getFromCache(cacheKey)
+      if (cached) return res.status(200).json({ analysis: cached.analysis, cached: true })
+
+      const analysis = await callClaude(`Briefly describe today's Indian market regime in 50 words. 
+Data: ${JSON.stringify(data)}
+Focus on: trend direction, volatility level, best strategy type for today.`, 150)
+
+      await saveToCache(cacheKey, 'market_regime', analysis, {}, 12)
+      return res.status(200).json({ analysis, cached: false })
+    }
+
+    return res.status(400).json({ error: `Unknown type: ${type}` })
 
   } catch (err) {
     console.error('AI analysis error:', err)

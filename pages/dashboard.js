@@ -704,13 +704,24 @@ function History({refresh,t}) {
   const [trades,setTrades]=useState([]),[loading,setLoading]=useState(false)
   useEffect(()=>{load()},[refresh])
   async function load(){setLoading(true);try{const r=await fetch('/api/trades?limit=50');const d=await r.json();setTrades(d.trades||[])}catch{}setLoading(false)}
-  async function close(id,entry,dir){
+  async function close(id,entry,dir,sym,strat){
     const ep=prompt(`Close Trade\nDirection: ${dir}\nEntry Price: ₹${entry}\n\nEnter exit price:`)
     if(!ep||isNaN(parseFloat(ep)))return
     const r=await fetch('/api/trades',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,exit_price:parseFloat(ep)})})
     const d=await r.json()
     const pnl=d.pnl||d.trade?.pnl
-    if(pnl!==undefined){alert(`Trade Closed!\nP&L: ₹${Number(pnl).toFixed(2)}\n${pnl>0?'🟢 Profit!':'🔴 Loss'}`)}
+    if(pnl!==undefined){
+      alert(`Trade Closed!\nP&L: ₹${Number(pnl).toFixed(2)}\n${pnl>0?'🟢 Profit!':'🔴 Loss'}`)
+      // Auto-trigger post-trade AI analysis (saves to DB, runs once per trade)
+      fetch('/api/ai-analysis',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({type:'post_trade',data:{
+          tradeId:id, symbol:sym||'Unknown', direction:dir,
+          entryPrice:entry, exitPrice:parseFloat(ep),
+          pnl:Number(pnl), strategy:strat||'Unknown',
+        }})
+      }).catch(()=>{}) // fire and forget
+    }
     load()
   }
   const closed=trades.filter(x=>x.status==='CLOSED'),openT=trades.filter(x=>x.status==='OPEN'),totalPnL=closed.reduce((a,x)=>a+(x.pnl||0),0),wr=closed.length>0?`${(closed.filter(x=>(x.pnl||0)>0).length/closed.length*100).toFixed(0)}%`:'—'
@@ -724,7 +735,7 @@ function History({refresh,t}) {
       </div>
       {loading&&<div style={{textAlign:'center',padding:30}}><div style={{width:32,height:32,border:`3px solid ${t.border}`,borderTopColor:t.blue,borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'0 auto'}} /></div>}
       {!loading&&trades.length===0&&<div style={{textAlign:'center',padding:50,background:t.surface,borderRadius:16,border:`1px solid ${t.border}`}}><p style={{fontSize:40,marginBottom:10}}>📋</p><p style={{color:t.text,fontWeight:700}}>No trades yet</p><p style={{color:t.muted,fontSize:13,marginTop:4}}>Execute a signal to start</p></div>}
-      {!loading&&trades.length>0&&<div style={{overflowX:'auto',borderRadius:16,border:`1px solid ${t.border}`}}><table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead><tr style={{background:t.surface}}>{['Date','Symbol','Strategy','Dir','Qty','Entry','Exit','P&L','Status',''].map(h=><th key={h} style={{padding:'12px 16px',textAlign:'left',color:t.muted,fontWeight:700,borderBottom:`1px solid ${t.border}`,whiteSpace:'nowrap'}}>{h}</th>)}</tr></thead><tbody>{trades.map((x,i)=>{const pc=clr(x.pnl||0,t),date=new Date(x.created_at).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',hour12:true});return <tr key={x.id} style={{borderBottom:`1px solid ${t.border}22`,background:i%2?t.surface+'44':'transparent'}}><td style={{padding:'12px 16px',color:t.muted,whiteSpace:'nowrap'}}>{date}</td><td style={{padding:'12px 16px',fontWeight:800,color:t.text}}>{x.symbol}</td><td style={{padding:'12px 16px',color:t.muted,maxWidth:120,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{x.strategy}</td><td style={{padding:'12px 16px'}}><Badge color={x.direction==='BUY'?t.green:t.red}>{x.direction}</Badge></td><td style={{padding:'12px 16px',fontFamily:'monospace',color:t.text2}}>{x.quantity}</td><td style={{padding:'12px 16px',fontFamily:'monospace',color:t.text}}>₹{fmt(x.entry_price)}</td><td style={{padding:'12px 16px',fontFamily:'monospace',color:t.text2}}>{x.exit_price?`₹${fmt(x.exit_price)}`:'—'}</td><td style={{padding:'12px 16px',color:pc,fontWeight:800,fontFamily:'monospace'}}>{x.pnl!=null?`${x.pnl>=0?'+':''}₹${fmt(x.pnl)}`:'—'}</td><td style={{padding:'12px 16px'}}><Badge color={x.status==='OPEN'?t.amber:x.status==='CLOSED'?t.green:t.red}>{x.status}</Badge></td><td style={{padding:'12px 16px'}}>{x.status==='OPEN'&&<button onClick={()=>close(x.id,x.entry_price,x.direction)} style={{padding:'5px 12px',background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,cursor:'pointer',fontSize:11,fontFamily:'Inter,sans-serif',fontWeight:600}}>Close</button>}</td></tr>})}</tbody></table></div>}
+      {!loading&&trades.length>0&&<div style={{overflowX:'auto',borderRadius:16,border:`1px solid ${t.border}`}}><table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead><tr style={{background:t.surface}}>{['Date','Symbol','Strategy','Dir','Qty','Entry','Exit','P&L','Status',''].map(h=><th key={h} style={{padding:'12px 16px',textAlign:'left',color:t.muted,fontWeight:700,borderBottom:`1px solid ${t.border}`,whiteSpace:'nowrap'}}>{h}</th>)}</tr></thead><tbody>{trades.map((x,i)=>{const pc=clr(x.pnl||0,t),date=new Date(x.created_at).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',hour12:true});return <tr key={x.id} style={{borderBottom:`1px solid ${t.border}22`,background:i%2?t.surface+'44':'transparent'}}><td style={{padding:'12px 16px',color:t.muted,whiteSpace:'nowrap'}}>{date}</td><td style={{padding:'12px 16px',fontWeight:800,color:t.text}}>{x.symbol}</td><td style={{padding:'12px 16px',color:t.muted,maxWidth:120,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{x.strategy}</td><td style={{padding:'12px 16px'}}><Badge color={x.direction==='BUY'?t.green:t.red}>{x.direction}</Badge></td><td style={{padding:'12px 16px',fontFamily:'monospace',color:t.text2}}>{x.quantity}</td><td style={{padding:'12px 16px',fontFamily:'monospace',color:t.text}}>₹{fmt(x.entry_price)}</td><td style={{padding:'12px 16px',fontFamily:'monospace',color:t.text2}}>{x.exit_price?`₹${fmt(x.exit_price)}`:'—'}</td><td style={{padding:'12px 16px',color:pc,fontWeight:800,fontFamily:'monospace'}}>{x.pnl!=null?`${x.pnl>=0?'+':''}₹${fmt(x.pnl)}`:'—'}</td><td style={{padding:'12px 16px'}}><Badge color={x.status==='OPEN'?t.amber:x.status==='CLOSED'?t.green:t.red}>{x.status}</Badge></td><td style={{padding:'12px 16px'}}>{x.status==='OPEN'&&<button onClick={()=>close(x.id,x.entry_price,x.direction,x.symbol,x.strategy)} style={{padding:'5px 12px',background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,cursor:'pointer',fontSize:11,fontFamily:'Inter,sans-serif',fontWeight:600}}>Close</button>}</td></tr>})}</tbody></table></div>}
     </div>
   )
 }
@@ -2352,6 +2363,158 @@ function BinancePortfolio({t}) {
 }
 
 
+// ── Reports Tab — Historical Daily Reports ─────────────────────
+function ReportsTab({t}) {
+  const [reports, setReports] = useState([])
+  const [selected, setSelected] = useState(null)
+  const [detail, setDetail] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => { loadReports() }, [])
+
+  async function loadReports() {
+    setLoading(true)
+    try {
+      const r = await fetch('/api/daily-reports?limit=30')
+      const d = await r.json()
+      setReports(d.reports || [])
+      if (d.reports?.length > 0 && !selected) {
+        selectReport(d.reports[0].report_date)
+      }
+    } catch {}
+    setLoading(false)
+  }
+
+  async function selectReport(date) {
+    setSelected(date)
+    setDetail(null)
+    try {
+      const r = await fetch(`/api/daily-reports?date=${date}`)
+      const d = await r.json()
+      setDetail(d.report)
+    } catch {}
+  }
+
+  const fmtDate = (d) => new Date(d).toLocaleDateString('en-IN', {
+    weekday:'short', day:'2-digit', month:'short', year:'numeric', timeZone:'UTC'
+  })
+
+  return (
+    <div>
+      <div style={{marginBottom:20}}>
+        <h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Daily Reports</h2>
+        <p style={{color:t.muted,fontSize:13,marginTop:5}}>
+          Morning briefs and daily summaries — saved automatically, viewable anytime
+        </p>
+      </div>
+
+      {loading ? (
+        <div style={{textAlign:'center',padding:40}}>
+          <div style={{width:28,height:28,border:`3px solid ${t.border}`,borderTopColor:'#ff6600',borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'0 auto'}}/>
+        </div>
+      ) : reports.length === 0 ? (
+        <div style={{background:t.card,borderRadius:16,padding:40,border:`1px solid ${t.border}`,textAlign:'center'}}>
+          <p style={{fontSize:36,marginBottom:12}}>📅</p>
+          <p style={{color:t.text,fontWeight:700,fontSize:16,marginBottom:8}}>No reports yet</p>
+          <p style={{color:t.muted,fontSize:13}}>
+            Daily reports save automatically every morning at 9 AM and after market close.
+            Reports are cached — AI runs once per day, viewable forever.
+          </p>
+        </div>
+      ) : (
+        <div style={{display:'grid',gridTemplateColumns:'240px 1fr',gap:16,alignItems:'start'}}>
+
+          {/* Date list */}
+          <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,overflow:'hidden'}}>
+            <div style={{padding:'10px 14px',borderBottom:`1px solid ${t.border}`,fontSize:11,fontWeight:700,color:t.muted,letterSpacing:'0.06em'}}>REPORT HISTORY</div>
+            {reports.map(r => (
+              <div key={r.report_date}
+                onClick={() => selectReport(r.report_date)}
+                style={{
+                  padding:'12px 14px',
+                  borderBottom:`1px solid ${t.border}`,
+                  cursor:'pointer',
+                  background:selected===r.report_date?'#ff660014':'transparent',
+                  borderLeft:selected===r.report_date?'3px solid #ff6600':'3px solid transparent',
+                  transition:'all 0.15s',
+                }}>
+                <p style={{fontWeight:600,fontSize:13,color:selected===r.report_date?'#ff6600':t.text,marginBottom:3}}>
+                  {fmtDate(r.report_date)}
+                </p>
+                <div style={{display:'flex',gap:8}}>
+                  {r.morning_brief && <span style={{fontSize:10,color:t.green}}>☀️ brief</span>}
+                  {r.daily_summary && <span style={{fontSize:10,color:t.blue}}>📊 summary</span>}
+                  {r.pnl_today !== 0 && (
+                    <span style={{fontSize:10,color:r.pnl_today>0?t.green:t.red,fontWeight:700}}>
+                      {r.pnl_today>0?'+':''}₹{Math.abs(r.pnl_today).toFixed(0)}
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Report detail */}
+          <div style={{display:'flex',flexDirection:'column',gap:14}}>
+            {!detail ? (
+              <div style={{background:t.card,borderRadius:14,padding:30,border:`1px solid ${t.border}`,textAlign:'center'}}>
+                <div style={{width:24,height:24,border:`3px solid ${t.border}`,borderTopColor:'#ff6600',borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'0 auto'}}/>
+              </div>
+            ) : (
+              <>
+                {/* Stats bar */}
+                <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10}}>
+                  {[
+                    {l:'TRADES', v:detail.trades_today||0, c:t.text},
+                    {l:'P&L', v:`${(detail.pnl_today||0)>=0?'+':''}₹${Math.abs(detail.pnl_today||0).toFixed(2)}`, c:(detail.pnl_today||0)>=0?t.green:t.red},
+                    {l:'DATE', v:fmtDate(detail.report_date), c:t.blue},
+                  ].map(x=>(
+                    <div key={x.l} style={{background:t.card,borderRadius:12,padding:'14px',border:`1px solid ${t.border}`,textAlign:'center'}}>
+                      <p style={{color:t.muted,fontSize:10,fontWeight:700,letterSpacing:'0.08em',marginBottom:4}}>{x.l}</p>
+                      <p style={{color:x.c,fontSize:15,fontWeight:800,fontFamily:'JetBrains Mono,monospace'}}>{x.v}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Morning brief */}
+                {detail.morning_brief && (
+                  <div style={{background:t.card,borderRadius:14,padding:20,border:`1px solid ${t.border}`}}>
+                    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}>
+                      <span style={{fontSize:18}}>☀️</span>
+                      <p style={{fontWeight:700,color:t.text,fontSize:15}}>Morning Intelligence Brief</p>
+                      <span style={{background:'#ff660018',color:'#ff6600',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20,border:'1px solid #ff660033',marginLeft:'auto'}}>CACHED</span>
+                    </div>
+                    <p style={{color:t.text2,fontSize:13,lineHeight:1.8,whiteSpace:'pre-wrap'}}>{detail.morning_brief}</p>
+                  </div>
+                )}
+
+                {/* Daily summary */}
+                {detail.daily_summary && (
+                  <div style={{background:t.card,borderRadius:14,padding:20,border:`1px solid ${t.border}`}}>
+                    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}>
+                      <span style={{fontSize:18}}>📊</span>
+                      <p style={{fontWeight:700,color:t.text,fontSize:15}}>End of Day Summary</p>
+                      <span style={{background:t.blue+'18',color:t.blue,fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20,border:`1px solid ${t.blue}33`,marginLeft:'auto'}}>CACHED</span>
+                    </div>
+                    <p style={{color:t.text2,fontSize:13,lineHeight:1.8,whiteSpace:'pre-wrap'}}>{detail.daily_summary}</p>
+                  </div>
+                )}
+
+                {!detail.morning_brief && !detail.daily_summary && (
+                  <div style={{background:t.card,borderRadius:14,padding:24,border:`1px solid ${t.border}`,textAlign:'center'}}>
+                    <p style={{color:t.muted,fontSize:13}}>No AI reports saved for this date yet.</p>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+
 function TickerBar({mkt, t, setTab, isConn}) {
   const syms = ['NIFTY','BANKNIFTY','SENSEX','BTC','ETH','SOL']
   return (
@@ -2450,7 +2613,7 @@ export default function Dashboard() {
     return () => window.removeEventListener('keydown', handler)
   }, [])
 
-  const tabs=[{id:'signals',l:'📡 Signals'},{id:'crypto',l:'🪙 Crypto'},{id:'positions',l:'💼 Portfolio'},{id:'trades',l:'📋 History'},{id:'charts',l:'📈 Charts'},{id:'alerts',l:'🔔 Alerts'},{id:'performance',l:'🏆 Performance'},{id:'options',l:'⛓ Options'},{id:'watchlist',l:'👁 Watchlist'}]
+  const tabs=[{id:'signals',l:'📡 Signals'},{id:'crypto',l:'🪙 Crypto'},{id:'positions',l:'💼 Portfolio'},{id:'trades',l:'📋 History'},{id:'charts',l:'📈 Charts'},{id:'alerts',l:'🔔 Alerts'},{id:'performance',l:'🏆 Performance'},{id:'options',l:'⛓ Options'},{id:'watchlist',l:'👁 Watchlist'},{id:'reports',l:'📅 Reports'}]
   const isConn=!!at
 
   return (
@@ -2600,6 +2763,7 @@ export default function Dashboard() {
             {tab==='performance'&&<PerformanceTab t={t}/>}
             {tab==='options'&&<OptionsTab t={t}/>}
             {tab==='watchlist'&&<WatchlistTab t={t} at={at}/>}
+            {tab==='reports'&&<ReportsTab t={t}/>}
             {tab==='positions'&&<div>
               <div style={{marginBottom:22,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                 <div>
