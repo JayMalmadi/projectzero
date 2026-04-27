@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import Head from 'next/head'
 import { useRouter } from 'next/router'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
@@ -58,20 +58,141 @@ function SCard({label,value,color,sub,icon,t}) {
   )
 }
 
-function KiteEmbed({symbol,t,h=420}) {
-  const url = KITE_CHARTS[symbol]
-  if (!url) return null
+function PZChart({symbol, t, h=420, accessToken}) {
+  const [candles,   setCandles]   = React.useState([])
+  const [loading,   setLoading]   = React.useState(false)
+  const [source,    setSource]    = React.useState('')
+  const [interval,  setInterval2] = React.useState('15minute')
+  const [lastPrice, setLastPrice] = React.useState(null)
+  const chartRef = React.useRef(null)
+  const tvRef    = React.useRef(null)
+  const serRef   = React.useRef(null)
+
+  React.useEffect(() => { loadChart() }, [symbol, interval, accessToken])
+
+  async function loadChart() {
+    setLoading(true)
+    try {
+      const r = await fetch(`/api/kite-chart?symbol=${symbol}&interval=${interval}&days=${interval==='15minute'?5:interval==='day'?365:30}`, {
+        headers: accessToken ? {'x-kite-access-token': accessToken} : {}
+      })
+      const d = await r.json()
+      if (d.candles?.length > 0) {
+        setCandles(d.candles)
+        setSource(d.source)
+        setLastPrice(d.last)
+      }
+    } catch {}
+    setLoading(false)
+  }
+
+  React.useEffect(() => {
+    if (!candles.length || !chartRef.current) return
+    // Load lightweight-charts from CDN
+    if (!window.LightweightCharts) {
+      const script = document.createElement('script')
+      script.src = 'https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js'
+      script.onload = () => renderChart()
+      document.head.appendChild(script)
+    } else {
+      renderChart()
+    }
+  }, [candles, t])
+
+  function renderChart() {
+    if (!window.LightweightCharts || !chartRef.current) return
+    // Cleanup old chart
+    if (tvRef.current) { tvRef.current.remove(); tvRef.current = null }
+    chartRef.current.innerHTML = ''
+
+    const isDark = t.bg === '#07090f'
+    const chart = window.LightweightCharts.createChart(chartRef.current, {
+      width:  chartRef.current.clientWidth,
+      height: h - 60,
+      layout: {
+        background:  { color: isDark ? '#0d1117' : '#ffffff' },
+        textColor:   isDark ? '#9ca3af' : '#6b7280',
+      },
+      grid: {
+        vertLines: { color: isDark ? '#1f2937' : '#f3f4f6' },
+        horzLines: { color: isDark ? '#1f2937' : '#f3f4f6' },
+      },
+      crosshair: { mode: 1 },
+      rightPriceScale: { borderColor: isDark ? '#1f2937' : '#e5e7eb' },
+      timeScale: {
+        borderColor:     isDark ? '#1f2937' : '#e5e7eb',
+        timeVisible:     true,
+        secondsVisible:  false,
+      },
+    })
+
+    const series = chart.addCandlestickSeries({
+      upColor:          '#10f59e',
+      downColor:        '#ff4466',
+      borderUpColor:    '#10f59e',
+      borderDownColor:  '#ff4466',
+      wickUpColor:      '#10f59e',
+      wickDownColor:    '#ff4466',
+    })
+
+    // Sort and deduplicate candles
+    const sorted = [...candles].sort((a,b) => a.time - b.time)
+    const deduped = sorted.filter((c,i) => i===0 || c.time !== sorted[i-1].time)
+    series.setData(deduped)
+
+    // Volume histogram
+    const volSeries = chart.addHistogramSeries({
+      color:     '#3b9eff44',
+      priceFormat: { type: 'volume' },
+      priceScaleId: 'vol',
+    })
+    chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.85, bottom: 0 } })
+    volSeries.setData(deduped.map(c => ({ time: c.time, value: c.volume || 0, color: c.close >= c.open ? '#10f59e33' : '#ff446633' })))
+
+    chart.timeScale().fitContent()
+    tvRef.current  = chart
+    serRef.current = series
+
+    // Responsive resize
+    const ro = new ResizeObserver(() => {
+      if (chartRef.current) chart.applyOptions({ width: chartRef.current.clientWidth })
+    })
+    ro.observe(chartRef.current)
+  }
+
+  const kiteUrl = KITE_CHARTS[symbol]
+  const intervals = [
+    {v:'15minute',l:'15m'},
+    {v:'60minute',l:'1h'},
+    {v:'day',l:'1D'},
+  ]
+
   return (
-    <div style={{borderRadius:16,overflow:'hidden',border:`1px solid ${t.border}`}}>
-      <div style={{background:t.card,padding:'10px 16px',display:'flex',justifyContent:'space-between',alignItems:'center',borderBottom:`1px solid ${t.border}`}}>
-        <div style={{display:'flex',alignItems:'center',gap:8}}>
-          <span style={{width:8,height:8,borderRadius:'50%',background:t.green,display:'inline-block'}} />
-          <span style={{color:t.text,fontWeight:700,fontSize:13}}>{symbol}</span>
-          <span style={{color:t.muted,fontSize:11}}>· Live · Kite</span>
+    <div style={{borderRadius:16,overflow:'hidden',border:`1px solid ${t.border}`,background:t.card}}>
+      {/* Header */}
+      <div style={{padding:'10px 16px',display:'flex',justifyContent:'space-between',alignItems:'center',borderBottom:`1px solid ${t.border}`}}>
+        <div style={{display:'flex',alignItems:'center',gap:10}}>
+          <span style={{width:8,height:8,borderRadius:'50%',background:loading?t.amber:t.green,display:'inline-block',animation:loading?'pulse 0.8s infinite':'none'}} />
+          <span style={{color:t.text,fontWeight:800,fontSize:14}}>{symbol}</span>
+          {lastPrice && <span style={{color:t.muted,fontSize:12,fontFamily:'monospace'}}>₹{fmt(lastPrice.close)}</span>}
+          {lastPrice && <span style={{fontSize:11,color:lastPrice.close>=lastPrice.open?t.green:t.red,fontWeight:700,background:(lastPrice.close>=lastPrice.open?t.green:t.red)+'18',borderRadius:5,padding:'1px 6px'}}>{lastPrice.close>=lastPrice.open?'+':''}{fmt(((lastPrice.close-lastPrice.open)/lastPrice.open*100),2)}{'%'}</span>}
+          <span style={{color:t.muted,fontSize:10}}>· {source==='kite'?'Live Kite':'Yahoo Finance'}</span>
         </div>
-        <button onClick={()=>window.open(url,'_blank')} style={{background:'none',border:`1px solid ${t.border}`,borderRadius:6,color:t.blue,cursor:'pointer',fontSize:11,padding:'3px 10px',fontFamily:'Space Grotesk,sans-serif',fontWeight:600}}>Full Screen ↗</button>
+        <div style={{display:'flex',alignItems:'center',gap:6}}>
+          {intervals.map(i => (
+            <button key={i.v} onClick={()=>setInterval2(i.v)} style={{padding:'3px 10px',borderRadius:6,fontSize:11,fontWeight:700,background:interval===i.v?t.accentC:t.surface,border:`1px solid ${interval===i.v?t.accentC:t.border}`,color:interval===i.v?'#fff':t.muted,cursor:'pointer',fontFamily:'Space Grotesk,sans-serif'}}>{i.l}</button>
+          ))}
+          {kiteUrl && <button onClick={()=>window.open(kiteUrl,'_blank')} style={{padding:'3px 10px',borderRadius:6,fontSize:11,background:'none',border:`1px solid ${t.border}`,color:t.blue,cursor:'pointer',fontFamily:'Space Grotesk,sans-serif',fontWeight:600}}>Kite ↗</button>}
+        </div>
       </div>
-      <iframe src={url} style={{width:'100%',height:h,border:'none',display:'block'}} title={`${symbol} Chart`} allow="fullscreen" />
+      {/* Chart */}
+      {loading
+        ? <div style={{height:h-60,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:12}}>
+            <div style={{width:36,height:36,border:`3px solid ${t.border}`,borderTopColor:t.accentC,borderRadius:'50%',animation:'spin 0.8s linear infinite'}} />
+            <p style={{color:t.muted,fontSize:12}}>Loading {source==='kite'?'Kite':'market'} data...</p>
+          </div>
+        : <div ref={chartRef} style={{width:'100%',height:h-60}} />
+      }
     </div>
   )
 }
@@ -228,7 +349,7 @@ function SignalCard({strat,at,onTrade,t}) {
             </button>
           </div>
 
-          {chart&&<KiteEmbed symbol={sym} t={t} h={360} />}
+          {chart&&<PZChart symbol={sym} t={t} h={380} accessToken={at} />}
         </>}
       </div>
     </>
@@ -255,7 +376,7 @@ function Positions({at,t}) {
   )
 }
 
-function Charts({t}) {
+function Charts({t, at}) {
   const [sel,setSel]=useState('NIFTY')
   const syms=Object.keys(KITE_CHARTS)
   return (
@@ -267,7 +388,7 @@ function Charts({t}) {
       <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>
         {syms.map(s=><button key={s} onClick={()=>setSel(s)} style={{padding:'7px 16px',borderRadius:20,fontSize:13,fontWeight:700,background:sel===s?t.accentC:t.surface,border:`1.5px solid ${sel===s?t.accentC:t.border}`,color:sel===s?'#fff':t.muted,cursor:'pointer',fontFamily:'Space Grotesk,sans-serif',transition:'all 0.15s'}}>{s}</button>)}
       </div>
-      <KiteEmbed symbol={sel} t={t} h={500} key={sel} />
+      <PZChart symbol={sel} t={t} h={520} accessToken={at} key={sel} />
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(120px,1fr))',gap:8,marginTop:14}}>
         {syms.filter(s=>s!==sel).map(s=><button key={s} onClick={()=>setSel(s)} style={{padding:'10px',background:t.card,border:`1px solid ${t.border}`,borderRadius:12,cursor:'pointer',fontFamily:'Space Grotesk,sans-serif',textAlign:'left',transition:'all 0.15s'}}><span style={{color:t.muted,fontSize:10,fontWeight:700,display:'block',marginBottom:3}}>CHART</span><span style={{color:t.text,fontSize:13,fontWeight:800}}>{s}</span></button>)}
       </div>
@@ -399,7 +520,7 @@ export default function Dashboard() {
             {tab==='signals'&&<div><div style={{marginBottom:22}}><h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Live Signals</h2><p style={{color:t.muted,fontSize:13,marginTop:5}}>4 custom PZ strategies built from 3-month NSE data · 76% ORB · Tue/Wed best days</p></div><div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(370px,1fr))',gap:20}}>{PZ_STRATEGIES.map(s=><SignalCard key={s.id} strat={s} at={at} onTrade={()=>setTr(r=>r+1)} t={t}/>)}</div></div>}
             {tab==='positions'&&<div><div style={{marginBottom:22}}><h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Portfolio</h2><p style={{color:t.muted,fontSize:13,marginTop:5}}>Live from Zerodha · Positions · Margins · Today's orders</p></div><Positions at={at} t={t}/></div>}
             {tab==='trades'&&<div><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:22}}><div><h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Trade History</h2><p style={{color:t.muted,fontSize:13,marginTop:5}}>All trades · Entry/Exit · P&L</p></div><button onClick={()=>setTr(r=>r+1)} style={{padding:'8px 16px',background:t.surface,border:`1px solid ${t.border}`,borderRadius:10,color:t.text,cursor:'pointer',fontSize:12,fontFamily:'Space Grotesk,sans-serif',fontWeight:600}}>🔄 Refresh</button></div><History refresh={tr} t={t}/></div>}
-            {tab==='charts'&&<Charts t={t}/>}
+            {tab==='charts'&&<Charts t={t} at={at}/>}
           </div>
         </main>
       </div>
