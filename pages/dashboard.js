@@ -200,10 +200,224 @@ function PZChart({symbol, t, h=420, accessToken}) {
     </div>
   )
 }
+
+// ── Execute Modal — Indian Markets (Kite) ─────────────────────
+function ExecModal({data, strat, sym, at, onClose, onDone, t}) {
+  const [qty,    setQty]    = useState(1)
+  const [prod,   setProd]   = useState('MIS')
+  const [placing,setPlacing]= useState(false)
+  const [result, setResult] = useState(null)
+  const [sl,     setSl]     = useState(true)
+  const [tgt,    setTgt]    = useState(true)
+
+  const risk   = data.stopLoss ? Math.abs(data.price - data.stopLoss)*qty : null
+  const reward = data.target   ? Math.abs(data.target - data.price)*qty   : null
+  const sc     = data.signal==='BUY' ? t.green : t.red
+  const rr     = risk && reward ? (reward/risk).toFixed(1) : null
+  const fmtP   = (n) => n ? `₹${Number(n).toLocaleString('en-IN',{maximumFractionDigits:2})}` : '—'
+
+  async function place() {
+    if (!at) { setResult({ok:false, msg:'Login with Zerodha first — click the Login button in header'}); return }
+    setPlacing(true)
+    try {
+      const r = await fetch('/api/kite-pro?action=place_order', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json', 'x-kite-access-token': at},
+        body: JSON.stringify({
+          tradingsymbol:   sym,
+          exchange:        sym==='NIFTY'||sym==='BANKNIFTY' ? 'NSE' : 'NSE',
+          transaction_type: data.signal,
+          quantity:        qty,
+          product:         prod,
+          order_type:      'MARKET',
+          stop_loss_price: sl  && data.stopLoss ? data.stopLoss : null,
+          target_price:    tgt && data.target   ? data.target   : null,
+        })
+      })
+      const d = await r.json()
+      if (d.status === 'success') {
+        // Save to trade history
+        await fetch('/api/trades', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({
+            symbol: sym, direction: data.signal, quantity: qty,
+            entry_price: data.price, stop_loss: data.stopLoss,
+            target: data.target, strategy: strat.name,
+            order_id: d.results?.main_order_id,
+            notes: `SL:${d.results?.sl_order_id||'—'} TGT:${d.results?.target_order_id||'—'}`
+          })
+        })
+        setResult({ok:true, msg:d.message, det:d.results})
+        onDone && onDone()
+      } else {
+        setResult({ok:false, msg: d.error || d.message || 'Order failed — check Kite login'})
+      }
+    } catch(e) { setResult({ok:false, msg:e.message}) }
+    setPlacing(false)
+  }
+
+  return (
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.88)',backdropFilter:'blur(8px)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:500,padding:16}}>
+      <div style={{background:t.card,border:`1px solid ${t.border}`,borderRadius:24,padding:28,width:480,maxWidth:'100%',maxHeight:'90vh',overflowY:'auto',boxShadow:`0 0 60px ${sc}22`}}>
+
+        {/* Header */}
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20}}>
+          <div style={{display:'flex',alignItems:'center',gap:12}}>
+            <div style={{background:sc+'22',border:`2px solid ${sc}`,borderRadius:12,padding:'8px 18px',color:sc,fontWeight:900,fontSize:20}}>{data.signal}</div>
+            <div>
+              <p style={{fontWeight:800,fontSize:17,color:t.text}}>{sym}</p>
+              <p style={{color:t.muted,fontSize:12}}>{strat.name}</p>
+            </div>
+          </div>
+          <button onClick={onClose} style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:10,color:t.muted,cursor:'pointer',fontSize:20,width:36,height:36,display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>
+        </div>
+
+        {/* Price boxes */}
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,marginBottom:14}}>
+          {[
+            {l:'ENTRY',    v:fmtP(data.price),    c:t.blue},
+            {l:'STOP LOSS',v:fmtP(data.stopLoss),  c:t.red,   s:risk?`Risk ${fmtP(risk)}`:null},
+            {l:'TARGET',   v:fmtP(data.target),    c:t.green,  s:reward?`Gain ${fmtP(reward)}`:null},
+          ].map(x=>(
+            <div key={x.l} style={{background:t.surface,borderRadius:12,padding:'12px 14px',border:`1px solid ${t.border}`}}>
+              <p style={{color:t.muted,fontSize:10,fontWeight:700,letterSpacing:'0.1em',marginBottom:4}}>{x.l}</p>
+              <p style={{color:x.c,fontSize:13,fontWeight:800,fontFamily:'monospace'}}>{x.v}</p>
+              {x.s&&<p style={{color:t.muted,fontSize:10,marginTop:3}}>{x.s}</p>}
+            </div>
+          ))}
+        </div>
+
+        {/* R:R + Confidence */}
+        {rr && (
+          <div style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:12,padding:'10px 16px',marginBottom:14,display:'flex',justifyContent:'space-around'}}>
+            <div style={{textAlign:'center'}}>
+              <p style={{color:t.muted,fontSize:10,fontWeight:600}}>RISK:REWARD</p>
+              <p style={{color:t.text,fontWeight:800,fontSize:16}}>1:{rr}</p>
+            </div>
+            <div style={{width:1,background:t.border}}/>
+            <div style={{textAlign:'center'}}>
+              <p style={{color:t.muted,fontSize:10,fontWeight:600}}>CONFIDENCE</p>
+              <p style={{color:data.confidence>70?t.green:data.confidence>50?t.amber:t.red,fontWeight:800,fontSize:16}}>{data.confidence}%</p>
+            </div>
+            <div style={{width:1,background:t.border}}/>
+            <div style={{textAlign:'center'}}>
+              <p style={{color:t.muted,fontSize:10,fontWeight:600}}>MARKET</p>
+              <p style={{color:t.blue,fontWeight:800,fontSize:16}}>🇮🇳 NSE</p>
+            </div>
+          </div>
+        )}
+
+        {/* Controls */}
+        <div style={{background:t.surface,borderRadius:14,padding:16,marginBottom:14}}>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
+            <div>
+              <p style={{color:t.muted,fontSize:11,fontWeight:600,marginBottom:8}}>QUANTITY</p>
+              <div style={{display:'flex',alignItems:'center',gap:10}}>
+                <button onClick={()=>setQty(q=>Math.max(1,q-1))} style={{width:34,height:34,background:t.card,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,cursor:'pointer',fontSize:20}}>−</button>
+                <span style={{color:t.text,fontWeight:800,fontSize:20,minWidth:36,textAlign:'center'}}>{qty}</span>
+                <button onClick={()=>setQty(q=>q+1)} style={{width:34,height:34,background:t.card,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,cursor:'pointer',fontSize:20}}>+</button>
+              </div>
+            </div>
+            <div>
+              <p style={{color:t.muted,fontSize:11,fontWeight:600,marginBottom:8}}>PRODUCT</p>
+              <select value={prod} onChange={e=>setProd(e.target.value)} style={{background:t.card,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,fontSize:12,padding:'8px 10px',fontFamily:'Space Grotesk,sans-serif',width:'100%'}}>
+                <option value="MIS">MIS — Intraday (auto sq-off)</option>
+                <option value="CNC">CNC — Delivery</option>
+                <option value="NRML">NRML — F&O overnight</option>
+              </select>
+            </div>
+          </div>
+          <div style={{display:'flex',gap:20}}>
+            <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer'}}>
+              <input type="checkbox" checked={sl} onChange={e=>setSl(e.target.checked)} style={{width:16,height:16,accentColor:t.red}}/>
+              <span style={{color:t.red,fontSize:12,fontWeight:600}}>Auto Stop Loss @ {fmtP(data.stopLoss)}</span>
+            </label>
+            <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer'}}>
+              <input type="checkbox" checked={tgt} onChange={e=>setTgt(e.target.checked)} style={{width:16,height:16,accentColor:t.green}}/>
+              <span style={{color:t.green,fontSize:12,fontWeight:600}}>Auto Target @ {fmtP(data.target)}</span>
+            </label>
+          </div>
+        </div>
+
+        {/* What happens note */}
+        <div style={{background:t.blue+'0d',border:`1px solid ${t.blue}22`,borderRadius:10,padding:'10px 14px',marginBottom:14,fontSize:11,color:t.muted,lineHeight:1.8}}>
+          ⚡ <span style={{color:t.blue,fontWeight:600}}>What happens:</span> Main {data.signal} order on NSE
+          {sl?' → Auto Stop Loss (SL-M order)':''}
+          {tgt?' → Auto Target (LIMIT order)':''}
+          → All 3 saved to Trade History
+        </div>
+
+        {/* Result or Execute */}
+        {result ? (
+          <div style={{textAlign:'center',padding:16}}>
+            <p style={{fontSize:40,marginBottom:8}}>{result.ok?'✅':'❌'}</p>
+            <p style={{color:result.ok?t.green:t.red,fontWeight:700,fontSize:15,marginBottom:8}}>{result.msg}</p>
+            {result.det && (
+              <div style={{background:t.surface,borderRadius:10,padding:10,textAlign:'left',fontSize:11,marginBottom:12}}>
+                {result.det.main_order_id   && <p style={{color:t.muted,marginBottom:4}}>Main Order: <span style={{color:t.text,fontFamily:'monospace'}}>{result.det.main_order_id}</span></p>}
+                {result.det.sl_order_id     && <p style={{color:t.muted,marginBottom:4}}>SL Order: <span style={{color:t.red,fontFamily:'monospace'}}>{result.det.sl_order_id}</span></p>}
+                {result.det.target_order_id && <p style={{color:t.muted}}>Target Order: <span style={{color:t.green,fontFamily:'monospace'}}>{result.det.target_order_id}</span></p>}
+              </div>
+            )}
+            <button onClick={onClose} style={{padding:'8px 28px',background:t.surface,border:`1px solid ${t.border}`,borderRadius:10,color:t.text,cursor:'pointer',fontFamily:'Space Grotesk,sans-serif',fontSize:13}}>Close</button>
+          </div>
+        ) : (
+          <button onClick={place} disabled={placing} style={{
+            width:'100%',padding:17,border:'none',borderRadius:14,
+            background: placing ? t.surface : data.signal==='BUY'
+              ? `linear-gradient(135deg,${t.green},${t.teal})`
+              : `linear-gradient(135deg,${t.red},#ff6688)`,
+            color: placing ? t.muted : '#fff',
+            fontWeight:800,fontSize:16,
+            cursor: placing?'not-allowed':'pointer',
+            fontFamily:'Space Grotesk,sans-serif',
+            boxShadow: !placing ? `0 4px 24px ${sc}44` : 'none',
+            transition:'all 0.2s',
+          }}>
+            {!at ? '⚠️ Login with Zerodha first' : placing ? '⏳ Placing orders on NSE...' : `⚡ Place ${data.signal} + SL + Target`}
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function SignalCard({strat,at,onTrade,t}) {
   const [sym,setSym]=useState(strat.symbols[0]),[data,setData]=useState(null),[loading,setLoading]=useState(false),[modal,setModal]=useState(false),[chart,setChart]=useState(false)
   useEffect(()=>{load()},[sym,strat.id])
-  async function load(){setLoading(true);setData(null);try{const r=await fetch(`/api/pz-strategies?symbol=${sym}&strategy=${strat.id}`);setData(await r.json())}catch{}setLoading(false)}
+  const [aiNote,   setAiNote]   = useState('')
+  const [aiLoading,setAiLoading]= useState(false)
+
+  async function load(){
+    setLoading(true);setData(null)
+    try{
+      const r=await fetch(`/api/pz-strategies?symbol=${sym}&strategy=${strat.id}`)
+      const d=await r.json()
+      setData(d)
+      if(d.signal!=='HOLD') fetchAI(d)
+      else setAiNote('')
+    }catch{}
+    setLoading(false)
+  }
+
+  async function fetchAI(d) {
+    setAiLoading(true); setAiNote('')
+    try {
+      const r = await fetch('/api/ai-analysis',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({type:'signal_analysis',data:{
+          symbol:sym,signal:d.signal,strategy:strat.name,
+          price:d.price,stopLoss:d.stopLoss,target:d.target,
+          rsi:d.indicators?.rsi,confidence:d.confidence,
+          reason:d.reason,today:d.today,capital:25000
+        }})
+      })
+      const j=await r.json()
+      if(j.analysis) setAiNote(j.analysis)
+    } catch{}
+    setAiLoading(false)
+  }
   const sc=data?.signal==='BUY'?t.green:data?.signal==='SELL'?t.red:t.amber
   return (
     <>
@@ -240,6 +454,19 @@ function SignalCard({strat,at,onTrade,t}) {
           <div style={{background:t.surface,borderRadius:10,padding:'10px 14px',border:`1px solid ${t.border}`}}>
             <p style={{color:t.text2,fontSize:12,lineHeight:1.7}}>{data.reason}</p>
           </div>
+          {(aiNote||aiLoading)&&(
+            <div style={{background:t.purple+'0d',borderRadius:10,padding:'10px 14px',border:`1px solid ${t.purple}33`}}>
+              <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:6}}>
+                <span style={{fontSize:12}}>🤖</span>
+                <span style={{color:t.purple,fontSize:10,fontWeight:700,letterSpacing:'0.08em'}}>CLAUDE AI ANALYSIS</span>
+                {aiLoading&&<div style={{width:10,height:10,border:`2px solid ${t.purple}44`,borderTopColor:t.purple,borderRadius:'50%',animation:'spin 0.8s linear infinite',marginLeft:'auto'}}/>}
+              </div>
+              {aiLoading
+                ?<p style={{color:t.muted,fontSize:11,fontStyle:'italic'}}>Analysing signal...</p>
+                :<p style={{color:t.text2,fontSize:11,lineHeight:1.8,whiteSpace:'pre-wrap'}}>{aiNote}</p>
+              }
+            </div>
+          )}
 
           {data.chartData&&<div style={{height:75}}><ResponsiveContainer width="100%" height="100%"><AreaChart data={data.chartData}><defs><linearGradient id={`g${strat.id}`} x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={sc} stopOpacity={0.3}/><stop offset="95%" stopColor={sc} stopOpacity={0}/></linearGradient></defs><XAxis dataKey="date" hide/><YAxis domain={['auto','auto']} hide/><Tooltip contentStyle={{background:t.card,border:`1px solid ${t.border}`,borderRadius:8,fontSize:11,color:t.text}}/><Area type="monotone" dataKey="close" stroke={sc} fill={`url(#g${strat.id})`} dot={false} strokeWidth={2}/></AreaChart></ResponsiveContainer></div>}
 
