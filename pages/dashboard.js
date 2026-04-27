@@ -1,195 +1,176 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import Head from 'next/head'
 import { useRouter } from 'next/router'
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts'
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 
-// ── Helpers ────────────────────────────────────────────────────
-const fmt  = (n, d=2) => n != null ? Number(n).toLocaleString('en-IN',{maximumFractionDigits:d}) : '—'
-const clr  = v => v > 0 ? '#00e676' : v < 0 ? '#ff3d57' : '#64748b'
-const isr  = () => typeof window !== 'undefined'
+const fmt = (n,d=2) => n!=null ? Number(n).toLocaleString('en-IN',{maximumFractionDigits:d}) : '—'
+const clr = (v,t) => v>0?t.green:v<0?t.red:t.muted
 
-const PZ_STRATEGIES = [
-  {id:'pz-orb',      name:'PZ-ORB Filter',    emoji:'◎', desc:'76% success. Gap+volume filter removes false signals.', symbols:['NIFTY','BANKNIFTY'], type:'Intraday'},
-  {id:'pz-tuesday',  name:'Tuesday Momentum', emoji:'📅', desc:'Data: Tue avg +0.97% BankNifty. Enter trend Tue/Wed.', symbols:['NIFTY','BANKNIFTY'], type:'Intraday'},
-  {id:'pz-gap-fade', name:'Gap & Fade',        emoji:'📉', desc:'24 gap-ups + 24 gap-downs in 3 months. Fade >0.35%.', symbols:['NIFTY','BANKNIFTY'], type:'Intraday'},
-  {id:'pz-swing',    name:'Weak Stock Swing',  emoji:'📊', desc:'IT sector -24 to -31%. Short bounces to 21-EMA.', symbols:['TCS','INFY','ICICIBANK'], type:'Swing'},
-]
-
-const KITE_CHART_URL = {
+const KITE_CHARTS = {
   NIFTY:    'https://kite.zerodha.com/chart/web/ciq/INDICES/NIFTY%2050/INDICES',
   BANKNIFTY:'https://kite.zerodha.com/chart/web/ciq/INDICES/NIFTY%20BANK/INDICES',
+  SENSEX:   'https://kite.zerodha.com/chart/web/ciq/INDICES/SENSEX/INDICES',
   TCS:      'https://kite.zerodha.com/chart/web/ciq/NSE/TCS/EQ',
   INFY:     'https://kite.zerodha.com/chart/web/ciq/NSE/INFY/EQ',
   ICICIBANK:'https://kite.zerodha.com/chart/web/ciq/NSE/ICICIBANK/EQ',
   RELIANCE: 'https://kite.zerodha.com/chart/web/ciq/NSE/RELIANCE/EQ',
   HDFCBANK: 'https://kite.zerodha.com/chart/web/ciq/NSE/HDFCBANK/EQ',
   SBIN:     'https://kite.zerodha.com/chart/web/ciq/NSE/SBIN/EQ',
+  WIPRO:    'https://kite.zerodha.com/chart/web/ciq/NSE/WIPRO/EQ',
 }
 
-// ── Sub-components ─────────────────────────────────────────────
-function Badge({children, color='#00d4ff'}) {
-  return <span style={{background:color+'22',color,border:`1px solid ${color}44`,borderRadius:6,padding:'2px 8px',fontSize:11,fontWeight:600}}>{children}</span>
+const PZ_STRATEGIES = [
+  {id:'pz-orb',      name:'PZ-ORB Filter',    emoji:'◎', desc:'76% success. Gap+volume filter removes false signals.', symbols:['NIFTY','BANKNIFTY'], type:'Intraday'},
+  {id:'pz-tuesday',  name:'Tuesday Momentum', emoji:'📅', desc:'Data: Tue avg +0.97% BankNifty. Enter on Tue/Wed.', symbols:['NIFTY','BANKNIFTY'], type:'Intraday'},
+  {id:'pz-gap-fade', name:'Gap & Fade',        emoji:'〰', desc:'24 gap-ups in 3 months. Fade gaps >0.35%.', symbols:['NIFTY','BANKNIFTY'], type:'Intraday'},
+  {id:'pz-swing',    name:'Weak Stock Swing',  emoji:'📊', desc:'IT sector -24 to -31%. Short bounces to EMA.', symbols:['TCS','INFY','ICICIBANK'], type:'Swing'},
+]
+
+const DARK = {
+  bg:'#07090f', surface:'#0d1117', card:'#111827', border:'#1f2937', border2:'#374151',
+  text:'#f9fafb', text2:'#9ca3af', muted:'#4b5563',
+  green:'#10f59e', red:'#ff4466', blue:'#3b9eff', amber:'#fbbf24', purple:'#a78bfa', teal:'#2dd4bf',
+  accent:'linear-gradient(135deg,#3b9eff,#a78bfa)', accentC:'#3b9eff',
+  glow:'0 0 0 1px #1f2937,0 4px 24px rgba(0,0,0,0.5)', tickBg:'#060c18',
 }
-function StatBox({label, value, color='#e2e8f0', sub}) {
+const LIGHT = {
+  bg:'#f0f4ff', surface:'#ffffff', card:'#ffffff', border:'#e5e7eb', border2:'#d1d5db',
+  text:'#111827', text2:'#6b7280', muted:'#9ca3af',
+  green:'#059669', red:'#dc2626', blue:'#2563eb', amber:'#d97706', purple:'#7c3aed', teal:'#0d9488',
+  accent:'linear-gradient(135deg,#2563eb,#7c3aed)', accentC:'#2563eb',
+  glow:'0 1px 3px rgba(0,0,0,0.1),0 4px 16px rgba(0,0,0,0.06)', tickBg:'#e8eeff',
+}
+
+function Badge({children,color}) {
+  return <span style={{background:color+'25',color,border:`1px solid ${color}44`,borderRadius:20,padding:'2px 10px',fontSize:11,fontWeight:700}}>{children}</span>
+}
+
+function SCard({label,value,color,sub,icon,t}) {
   return (
-    <div style={{background:'#0a0e1a',borderRadius:10,padding:'10px 14px'}}>
-      <p style={{color:'#64748b',fontSize:11,fontWeight:500,letterSpacing:'0.07em',marginBottom:4}}>{label}</p>
-      <p style={{color,fontSize:15,fontWeight:700,fontFamily:'JetBrains Mono,monospace'}}>{value}</p>
-      {sub && <p style={{color:'#475569',fontSize:11,marginTop:2}}>{sub}</p>}
+    <div style={{background:t.card,borderRadius:14,padding:'16px 18px',boxShadow:t.glow,border:`1px solid ${t.border}`}}>
+      <div style={{display:'flex',justifyContent:'space-between',marginBottom:8}}>
+        <span style={{color:t.muted,fontSize:10,fontWeight:700,letterSpacing:'0.09em'}}>{label}</span>
+        {icon&&<span style={{fontSize:16}}>{icon}</span>}
+      </div>
+      <p style={{color:color||t.text,fontSize:20,fontWeight:800,fontFamily:'JetBrains Mono,monospace',lineHeight:1}}>{value}</p>
+      {sub&&<p style={{color:t.muted,fontSize:11,marginTop:6}}>{sub}</p>}
     </div>
   )
 }
 
-// ── Execute Modal ──────────────────────────────────────────────
-function ExecuteModal({data, strat, sym, accessToken, onClose, onDone}) {
-  const [qty,       setQty]     = useState(1)
-  const [product,   setProduct] = useState('MIS')
-  const [placing,   setPlacing] = useState(false)
-  const [result,    setResult]  = useState(null)
-  const [placeSL,   setPlaceSL] = useState(true)
-  const [placeTgt,  setPlaceTgt]= useState(true)
+function KiteEmbed({symbol,t,h=420}) {
+  const url = KITE_CHARTS[symbol]
+  if (!url) return null
+  return (
+    <div style={{borderRadius:16,overflow:'hidden',border:`1px solid ${t.border}`}}>
+      <div style={{background:t.card,padding:'10px 16px',display:'flex',justifyContent:'space-between',alignItems:'center',borderBottom:`1px solid ${t.border}`}}>
+        <div style={{display:'flex',alignItems:'center',gap:8}}>
+          <span style={{width:8,height:8,borderRadius:'50%',background:t.green,display:'inline-block'}} />
+          <span style={{color:t.text,fontWeight:700,fontSize:13}}>{symbol}</span>
+          <span style={{color:t.muted,fontSize:11}}>· Live · Kite</span>
+        </div>
+        <button onClick={()=>window.open(url,'_blank')} style={{background:'none',border:`1px solid ${t.border}`,borderRadius:6,color:t.blue,cursor:'pointer',fontSize:11,padding:'3px 10px',fontFamily:'Space Grotesk,sans-serif',fontWeight:600}}>Full Screen ↗</button>
+      </div>
+      <iframe src={url} style={{width:'100%',height:h,border:'none',display:'block'}} title={`${symbol} Chart`} allow="fullscreen" />
+    </div>
+  )
+}
 
-  const risk   = data.stopLoss ? Math.abs(data.price - data.stopLoss) * qty : null
-  const reward = data.target   ? Math.abs(data.target - data.price)   * qty : null
-  const sc     = data.signal === 'BUY' ? '#00e676' : '#ff3d57'
+function ExecModal({data,strat,sym,at,onClose,onDone,t}) {
+  const [qty,setQty]=useState(1),[prod,setProd]=useState('MIS'),[placing,setPlacing]=useState(false),[result,setResult]=useState(null),[sl,setSl]=useState(true),[tgt,setTgt]=useState(true)
+  const risk=data.stopLoss?Math.abs(data.price-data.stopLoss)*qty:null
+  const rwrd=data.target?Math.abs(data.target-data.price)*qty:null
+  const sc=data.signal==='BUY'?t.green:t.red
 
   async function place() {
-    if (!accessToken) { setResult({ok:false, msg:'Not connected to Zerodha. Click "Login with Zerodha" first.'}); return }
+    if (!at) { setResult({ok:false,msg:'Login with Zerodha first'}); return }
     setPlacing(true)
     try {
-      const body = {
-        tradingsymbol: sym,
-        exchange: sym === 'NIFTY' || sym === 'BANKNIFTY' ? 'NFO' : 'NSE',
-        transaction_type: data.signal,
-        quantity: qty,
-        product,
-        order_type: 'MARKET',
-        stop_loss_price: placeSL  && data.stopLoss ? data.stopLoss : null,
-        target_price:    placeTgt && data.target   ? data.target   : null,
-      }
-      const r = await fetch('/api/kite-pro?action=place_order', {
-        method: 'POST',
-        headers: {'Content-Type':'application/json','x-kite-access-token': accessToken},
-        body: JSON.stringify(body),
-      })
-      const d = await r.json()
-      if (d.status === 'success') {
-        // Save to Supabase
-        await fetch('/api/trades', {
-          method: 'POST',
-          headers: {'Content-Type':'application/json'},
-          body: JSON.stringify({
-            symbol: sym, direction: data.signal, quantity: qty,
-            entry_price: data.price, stop_loss: data.stopLoss,
-            target: data.target, strategy: strat.name,
-            order_id: d.results?.main_order_id,
-            notes: `SL Order: ${d.results?.sl_order_id || 'none'} | Target Order: ${d.results?.target_order_id || 'none'}`,
-          })
-        })
-        setResult({ok:true, msg: d.message, details: d.results})
-        onDone && onDone()
-      } else {
-        setResult({ok:false, msg: d.error || d.message || 'Order failed'})
-      }
-    } catch(e) { setResult({ok:false, msg: e.message}) }
+      const r=await fetch('/api/kite-pro?action=place_order',{method:'POST',headers:{'Content-Type':'application/json','x-kite-access-token':at},body:JSON.stringify({tradingsymbol:sym,exchange:'NSE',transaction_type:data.signal,quantity:qty,product:prod,order_type:'MARKET',stop_loss_price:sl&&data.stopLoss?data.stopLoss:null,target_price:tgt&&data.target?data.target:null})})
+      const d=await r.json()
+      if (d.status==='success') {
+        await fetch('/api/trades',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:sym,direction:data.signal,quantity:qty,entry_price:data.price,stop_loss:data.stopLoss,target:data.target,strategy:strat.name,order_id:d.results?.main_order_id,notes:`SL:${d.results?.sl_order_id||'—'}`})})
+        setResult({ok:true,msg:d.message,det:d.results})
+        onDone&&onDone()
+      } else setResult({ok:false,msg:d.error||'Order failed'})
+    } catch(e) { setResult({ok:false,msg:e.message}) }
     setPlacing(false)
   }
 
   return (
-    <div style={{position:'fixed',inset:0,background:'#000000dd',display:'flex',alignItems:'center',justifyContent:'center',zIndex:300,padding:16}}>
-      <div style={{background:'#0f1628',border:'1px solid #1e2d4a',borderRadius:20,padding:28,width:480,maxWidth:'100%',maxHeight:'90vh',overflowY:'auto'}}>
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.88)',backdropFilter:'blur(8px)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:500,padding:16}}>
+      <div style={{background:t.card,border:`1px solid ${t.border}`,borderRadius:24,padding:28,width:480,maxWidth:'100%',maxHeight:'90vh',overflowY:'auto',boxShadow:`0 0 60px ${sc}22`}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20}}>
-          <div style={{display:'flex',alignItems:'center',gap:10}}>
-            <div style={{background:sc+'22',border:`2px solid ${sc}`,borderRadius:10,padding:'6px 16px',color:sc,fontWeight:800,fontSize:18}}>{data.signal}</div>
-            <div><p style={{fontWeight:700,fontSize:16,color:'#e2e8f0'}}>{sym}</p><p style={{color:'#64748b',fontSize:12}}>{strat.name}</p></div>
+          <div style={{display:'flex',alignItems:'center',gap:12}}>
+            <div style={{background:sc+'22',border:`2px solid ${sc}`,borderRadius:12,padding:'8px 18px',color:sc,fontWeight:900,fontSize:20}}>{data.signal}</div>
+            <div><p style={{fontWeight:800,fontSize:17,color:t.text}}>{sym}</p><p style={{color:t.muted,fontSize:12}}>{strat.name}</p></div>
           </div>
-          <button onClick={onClose} style={{background:'none',border:'none',color:'#64748b',cursor:'pointer',fontSize:24}}>×</button>
+          <button onClick={onClose} style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:10,color:t.muted,cursor:'pointer',fontSize:20,width:36,height:36,display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>
         </div>
 
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:16}}>
-          <StatBox label="ENTRY" value={`₹${fmt(data.price)}`} />
-          <StatBox label="STOP LOSS" value={data.stopLoss?`₹${fmt(data.stopLoss)}`:'—'} color='#ff3d57' sub={risk?`Risk: ₹${fmt(risk)}`:null} />
-          <StatBox label="TARGET" value={data.target?`₹${fmt(data.target)}`:'—'} color='#00e676' sub={reward?`Gain: ₹${fmt(reward)}`:null} />
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,marginBottom:16}}>
+          {[{l:'ENTRY',v:`₹${fmt(data.price)}`,c:t.blue},{l:'STOP LOSS',v:data.stopLoss?`₹${fmt(data.stopLoss)}`:'—',c:t.red,s:risk?`Risk ₹${fmt(risk)}`:null},{l:'TARGET',v:data.target?`₹${fmt(data.target)}`:'—',c:t.green,s:rwrd?`Gain ₹${fmt(rwrd)}`:null}].map(x=>(
+            <div key={x.l} style={{background:t.surface,borderRadius:12,padding:'12px 14px',border:`1px solid ${t.border}`}}>
+              <p style={{color:t.muted,fontSize:10,fontWeight:700,letterSpacing:'0.1em',marginBottom:4}}>{x.l}</p>
+              <p style={{color:x.c,fontSize:14,fontWeight:800,fontFamily:'monospace'}}>{x.v}</p>
+              {x.s&&<p style={{color:t.muted,fontSize:10,marginTop:3}}>{x.s}</p>}
+            </div>
+          ))}
         </div>
 
-        {risk && reward && (
-          <div style={{background:'#0a0e1a',borderRadius:8,padding:'8px 14px',marginBottom:12,display:'flex',justifyContent:'space-between'}}>
-            <span style={{color:'#64748b',fontSize:12}}>Risk : Reward</span>
-            <span style={{color:'#00d4ff',fontWeight:700,fontSize:13}}>1 : {(reward/risk).toFixed(1)}</span>
-            <span style={{color:'#64748b',fontSize:12}}>Confidence</span>
-            <span style={{color: data.confidence>70?'#00e676':data.confidence>50?'#ffab00':'#ff3d57',fontWeight:700,fontSize:13}}>{data.confidence}%</span>
+        {risk&&rwrd&&(
+          <div style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:12,padding:'10px 16px',marginBottom:16,display:'flex',justifyContent:'space-around'}}>
+            {[['RISK:REWARD',`1:${(rwrd/risk).toFixed(1)}`,t.text],['CONFIDENCE',`${data.confidence}%`,data.confidence>70?t.green:data.confidence>50?t.amber:t.red]].map(([l,v,c])=>(
+              <div key={l} style={{textAlign:'center'}}><p style={{color:t.muted,fontSize:10,fontWeight:600}}>{l}</p><p style={{color:c,fontWeight:800,fontSize:16}}>{v}</p></div>
+            ))}
           </div>
         )}
 
-        <div style={{background:'#0a0e1a',borderRadius:12,padding:16,marginBottom:16}}>
+        <div style={{background:t.surface,borderRadius:14,padding:16,marginBottom:16}}>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
             <div>
-              <p style={{color:'#64748b',fontSize:11,fontWeight:500,marginBottom:8}}>QUANTITY</p>
+              <p style={{color:t.muted,fontSize:11,fontWeight:600,marginBottom:8}}>QUANTITY</p>
               <div style={{display:'flex',alignItems:'center',gap:10}}>
-                <button onClick={()=>setQty(q=>Math.max(1,q-1))} style={{width:32,height:32,background:'#1e2d4a',border:'1px solid #2d4a6a',borderRadius:8,color:'#e2e8f0',cursor:'pointer',fontSize:18,display:'flex',alignItems:'center',justifyContent:'center'}}>−</button>
-                <span style={{color:'#e2e8f0',fontWeight:700,fontSize:18,minWidth:32,textAlign:'center'}}>{qty}</span>
-                <button onClick={()=>setQty(q=>q+1)} style={{width:32,height:32,background:'#1e2d4a',border:'1px solid #2d4a6a',borderRadius:8,color:'#e2e8f0',cursor:'pointer',fontSize:18,display:'flex',alignItems:'center',justifyContent:'center'}}>+</button>
+                <button onClick={()=>setQty(q=>Math.max(1,q-1))} style={{width:34,height:34,background:t.card,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,cursor:'pointer',fontSize:20}}>−</button>
+                <span style={{color:t.text,fontWeight:800,fontSize:20,minWidth:36,textAlign:'center'}}>{qty}</span>
+                <button onClick={()=>setQty(q=>q+1)} style={{width:34,height:34,background:t.card,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,cursor:'pointer',fontSize:20}}>+</button>
               </div>
             </div>
             <div>
-              <p style={{color:'#64748b',fontSize:11,fontWeight:500,marginBottom:8}}>PRODUCT TYPE</p>
-              <select value={product} onChange={e=>setProduct(e.target.value)} style={{background:'#1e2d4a',border:'1px solid #2d4a6a',borderRadius:8,color:'#e2e8f0',fontSize:13,padding:'7px 10px',fontFamily:'Space Grotesk,sans-serif',width:'100%'}}>
-                <option value="MIS">MIS — Intraday (auto sq-off)</option>
-                <option value="CNC">CNC — Delivery (stocks)</option>
-                <option value="NRML">NRML — F&O overnight</option>
+              <p style={{color:t.muted,fontSize:11,fontWeight:600,marginBottom:8}}>PRODUCT</p>
+              <select value={prod} onChange={e=>setProd(e.target.value)} style={{background:t.card,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,fontSize:12,padding:'8px 10px',fontFamily:'Space Grotesk,sans-serif',width:'100%'}}>
+                <option value="MIS">MIS — Intraday</option>
+                <option value="CNC">CNC — Delivery</option>
+                <option value="NRML">NRML — F&O</option>
               </select>
             </div>
           </div>
-
-          <div style={{display:'flex',gap:16}}>
+          <div style={{display:'flex',gap:20}}>
             <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer'}}>
-              <input type="checkbox" checked={placeSL} onChange={e=>setPlaceSL(e.target.checked)} style={{width:16,height:16,accentColor:'#ff3d57'}} />
-              <span style={{color:'#ff3d57',fontSize:12,fontWeight:600}}>Auto Stop Loss @ ₹{fmt(data.stopLoss)}</span>
+              <input type="checkbox" checked={sl} onChange={e=>setSl(e.target.checked)} style={{width:16,height:16,accentColor:t.red}} />
+              <span style={{color:t.red,fontSize:12,fontWeight:600}}>Auto Stop Loss</span>
             </label>
             <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer'}}>
-              <input type="checkbox" checked={placeTgt} onChange={e=>setPlaceTgt(e.target.checked)} style={{width:16,height:16,accentColor:'#00e676'}} />
-              <span style={{color:'#00e676',fontSize:12,fontWeight:600}}>Auto Target @ ₹{fmt(data.target)}</span>
+              <input type="checkbox" checked={tgt} onChange={e=>setTgt(e.target.checked)} style={{width:16,height:16,accentColor:t.green}} />
+              <span style={{color:t.green,fontSize:12,fontWeight:600}}>Auto Target</span>
             </label>
-          </div>
-        </div>
-
-        <div style={{background:'#060d1a',border:'1px solid #1e3d5a',borderRadius:10,padding:12,marginBottom:16}}>
-          <p style={{color:'#00d4ff',fontSize:12,fontWeight:600,marginBottom:6}}>⚡ What happens when you click Place Order:</p>
-          <div style={{display:'flex',flexDirection:'column',gap:4}}>
-            {[
-              `1. Main ${data.signal} order sent to NSE via Zerodha`,
-              placeSL  ? `2. Stop Loss order auto-placed at ₹${fmt(data.stopLoss)} (SL-M)` : '2. Stop Loss: skipped',
-              placeTgt ? `3. Target order auto-placed at ₹${fmt(data.target)} (LIMIT)` : '3. Target: skipped',
-              '4. All order IDs saved to Trade History',
-            ].map((s,i) => <p key={i} style={{color:'#64748b',fontSize:11}}>{s}</p>)}
           </div>
         </div>
 
         {result ? (
           <div style={{textAlign:'center',padding:16}}>
-            <p style={{fontSize:36,marginBottom:8}}>{result.ok?'✅':'❌'}</p>
-            <p style={{color:result.ok?'#00e676':'#ff3d57',fontWeight:700,fontSize:15,marginBottom:8}}>{result.msg}</p>
-            {result.details && (
-              <div style={{background:'#0a0e1a',borderRadius:8,padding:10,textAlign:'left'}}>
-                {result.details.main_order_id  && <p style={{color:'#64748b',fontSize:11}}>Main Order ID: <span style={{color:'#e2e8f0',fontFamily:'monospace'}}>{result.details.main_order_id}</span></p>}
-                {result.details.sl_order_id    && <p style={{color:'#64748b',fontSize:11}}>SL Order ID: <span style={{color:'#ff3d57',fontFamily:'monospace'}}>{result.details.sl_order_id}</span></p>}
-                {result.details.target_order_id && <p style={{color:'#64748b',fontSize:11}}>Target Order ID: <span style={{color:'#00e676',fontFamily:'monospace'}}>{result.details.target_order_id}</span></p>}
-              </div>
-            )}
-            <button onClick={onClose} style={{marginTop:12,padding:'8px 24px',background:'#1e2d4a',border:'1px solid #2d4a6a',borderRadius:8,color:'#e2e8f0',cursor:'pointer',fontFamily:'Space Grotesk,sans-serif',fontSize:13}}>Close</button>
+            <p style={{fontSize:40,marginBottom:8}}>{result.ok?'✅':'❌'}</p>
+            <p style={{color:result.ok?t.green:t.red,fontWeight:700,fontSize:15,marginBottom:8}}>{result.msg}</p>
+            {result.det&&<div style={{background:t.surface,borderRadius:10,padding:10,textAlign:'left',fontSize:11}}>
+              {result.det.main_order_id&&<p style={{color:t.muted}}>Main: <span style={{color:t.text,fontFamily:'monospace'}}>{result.det.main_order_id}</span></p>}
+              {result.det.sl_order_id&&<p style={{color:t.muted}}>SL: <span style={{color:t.red,fontFamily:'monospace'}}>{result.det.sl_order_id}</span></p>}
+              {result.det.target_order_id&&<p style={{color:t.muted}}>Target: <span style={{color:t.green,fontFamily:'monospace'}}>{result.det.target_order_id}</span></p>}
+            </div>}
+            <button onClick={onClose} style={{marginTop:14,padding:'8px 28px',background:t.surface,border:`1px solid ${t.border}`,borderRadius:10,color:t.text,cursor:'pointer',fontFamily:'Space Grotesk,sans-serif',fontSize:13}}>Close</button>
           </div>
         ) : (
-          <button onClick={place} disabled={placing||!accessToken} style={{
-            width:'100%',padding:16,border:'none',borderRadius:12,
-            background: !accessToken ? '#1e2d4a' : placing ? '#1e3d4a' : data.signal==='BUY'
-              ? 'linear-gradient(135deg,#00e676,#00b248)'
-              : 'linear-gradient(135deg,#ff3d57,#c62828)',
-            color: !accessToken ? '#475569' : '#fff',
-            fontWeight:700,fontSize:15,cursor:placing||!accessToken?'not-allowed':'pointer',
-            fontFamily:'Space Grotesk,sans-serif',
-            boxShadow: accessToken && !placing ? `0 0 30px ${data.signal==='BUY'?'rgba(0,230,118,0.25)':'rgba(255,61,87,0.25)'}` : 'none',
-          }}>
-            {!accessToken ? '⚠ Login with Zerodha first' : placing ? '⏳ Placing orders on NSE...' : `⚡ Place ${data.signal} + SL + Target`}
+          <button onClick={place} disabled={placing} style={{width:'100%',padding:17,border:'none',borderRadius:14,background:placing?t.surface:data.signal==='BUY'?`linear-gradient(135deg,${t.green},${t.teal})`:`linear-gradient(135deg,${t.red},#ff6688)`,color:placing?t.muted:'#fff',fontWeight:800,fontSize:16,cursor:placing?'not-allowed':'pointer',fontFamily:'Space Grotesk,sans-serif',boxShadow:!placing?`0 4px 24px ${sc}44`:'none',transition:'all 0.2s'}}>
+            {placing?'⏳ Placing on NSE...':`⚡ Place ${data.signal} + SL + Target`}
           </button>
         )}
       </div>
@@ -197,524 +178,216 @@ function ExecuteModal({data, strat, sym, accessToken, onClose, onDone}) {
   )
 }
 
-// ── Signal Card ────────────────────────────────────────────────
-function SignalCard({strat, accessToken, onTradeExecuted}) {
-  const [sym,       setSym]       = useState(strat.symbols[0])
-  const [data,      setData]      = useState(null)
-  const [loading,   setLoading]   = useState(false)
-  const [showModal, setShowModal] = useState(false)
-
-  useEffect(() => { loadSignal() }, [sym, strat.id])
-
-  async function loadSignal() {
-    setLoading(true); setData(null)
-    try { const r = await fetch(`/api/pz-strategies?symbol=${sym}&strategy=${strat.id}`); setData(await r.json()) }
-    catch {}
-    setLoading(false)
-  }
-
-  const sc = data?.signal==='BUY'?'#00e676':data?.signal==='SELL'?'#ff3d57':'#ffab00'
-
+function SignalCard({strat,at,onTrade,t}) {
+  const [sym,setSym]=useState(strat.symbols[0]),[data,setData]=useState(null),[loading,setLoading]=useState(false),[modal,setModal]=useState(false),[chart,setChart]=useState(false)
+  useEffect(()=>{load()},[sym,strat.id])
+  async function load(){setLoading(true);setData(null);try{const r=await fetch(`/api/pz-strategies?symbol=${sym}&strategy=${strat.id}`);setData(await r.json())}catch{}setLoading(false)}
+  const sc=data?.signal==='BUY'?t.green:data?.signal==='SELL'?t.red:t.amber
   return (
     <>
-      {showModal && data && <ExecuteModal data={data} strat={strat} sym={sym} accessToken={accessToken} onClose={()=>setShowModal(false)} onDone={()=>{setShowModal(false);onTradeExecuted&&onTradeExecuted()}} />}
-      <div style={{background:'#0f1628',border:'1px solid #1e2d4a',borderRadius:16,padding:20,display:'flex',flexDirection:'column',gap:12}}>
+      {modal&&data&&<ExecModal data={data} strat={strat} sym={sym} at={at} onClose={()=>setModal(false)} onDone={()=>{setModal(false);onTrade&&onTrade()}} t={t} />}
+      <div style={{background:t.card,borderRadius:20,padding:22,boxShadow:t.glow,border:`1px solid ${t.border}`,display:'flex',flexDirection:'column',gap:14}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
           <div>
-            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
-              <span style={{fontSize:18}}>{strat.emoji}</span>
-              <span style={{fontWeight:700,fontSize:15,color:'#e2e8f0'}}>{strat.name}</span>
-              <Badge color={strat.type==='Swing'?'#ffab00':'#00d4ff'}>{strat.type}</Badge>
+            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:5}}>
+              <span style={{fontSize:20}}>{strat.emoji}</span>
+              <span style={{fontWeight:800,fontSize:15,color:t.text}}>{strat.name}</span>
+              <Badge color={strat.type==='Swing'?t.amber:t.blue}>{strat.type}</Badge>
             </div>
-            <p style={{color:'#64748b',fontSize:12}}>{strat.desc}</p>
+            <p style={{color:t.muted,fontSize:12}}>{strat.desc}</p>
           </div>
-          {data && !loading && <div style={{background:sc+'22',color:sc,border:`2px solid ${sc}44`,borderRadius:10,padding:'6px 14px',fontWeight:800,fontSize:14,flexShrink:0}}>{data.signal}</div>}
+          {data&&!loading&&<div style={{background:sc+'22',border:`2px solid ${sc}55`,borderRadius:12,padding:'6px 14px',color:sc,fontWeight:900,fontSize:14,flexShrink:0}}>{data.signal}</div>}
         </div>
 
         <div style={{display:'flex',gap:6}}>
-          {strat.symbols.map(s=>(
-            <button key={s} onClick={()=>setSym(s)} style={{padding:'4px 12px',borderRadius:6,fontSize:12,fontWeight:600,background:sym===s?'#00d4ff22':'#0a0e1a',border:`1px solid ${sym===s?'#00d4ff':'#1e2d4a'}`,color:sym===s?'#00d4ff':'#64748b',cursor:'pointer',fontFamily:'Space Grotesk,sans-serif'}}>{s}</button>
-          ))}
+          {strat.symbols.map(s=><button key={s} onClick={()=>setSym(s)} style={{padding:'5px 14px',borderRadius:20,fontSize:12,fontWeight:700,background:sym===s?t.accentC+'22':t.surface,border:`1.5px solid ${sym===s?t.accentC:t.border}`,color:sym===s?t.accentC:t.muted,cursor:'pointer',fontFamily:'Space Grotesk,sans-serif',transition:'all 0.15s'}}>{s}</button>)}
         </div>
 
-        {loading && <p style={{color:'#64748b',fontSize:13,textAlign:'center',padding:16}}>Analysing live data...</p>}
+        {loading&&<div style={{textAlign:'center',padding:20}}><div style={{width:30,height:30,border:`3px solid ${t.border}`,borderTopColor:t.accentC,borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'0 auto 8px'}} /><p style={{color:t.muted,fontSize:12}}>Fetching live data...</p></div>}
 
-        {data && !loading && <>
+        {data&&!loading&&<>
           <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8}}>
-            <StatBox label="PRICE"      value={`₹${fmt(data.price)}`} />
-            <StatBox label="STOP LOSS"  value={data.stopLoss?`₹${fmt(data.stopLoss)}`:'—'} color='#ff3d57' />
-            <StatBox label="TARGET"     value={data.target?`₹${fmt(data.target)}`:'—'} color='#00e676' />
-            <StatBox label="CONFIDENCE" value={`${data.confidence}%`} color={data.confidence>70?'#00e676':data.confidence>50?'#ffab00':'#ff3d57'} />
+            {[{l:'PRICE',v:`₹${fmt(data.price)}`,c:t.text},{l:'STOP LOSS',v:data.stopLoss?`₹${fmt(data.stopLoss)}`:'—',c:t.red},{l:'TARGET',v:data.target?`₹${fmt(data.target)}`:'—',c:t.green},{l:'CONFIDENCE',v:`${data.confidence}%`,c:data.confidence>70?t.green:data.confidence>50?t.amber:t.red}].map(x=>(
+              <div key={x.l} style={{background:t.surface,borderRadius:10,padding:'10px 12px',border:`1px solid ${t.border}`}}>
+                <p style={{color:t.muted,fontSize:10,fontWeight:700,letterSpacing:'0.07em',marginBottom:4}}>{x.l}</p>
+                <p style={{color:x.c,fontSize:13,fontWeight:800,fontFamily:'monospace'}}>{x.v}</p>
+              </div>
+            ))}
           </div>
-          <div style={{background:'#0a0e1a',borderRadius:8,padding:'10px 14px'}}>
-            <p style={{color:'#94a3b8',fontSize:12,lineHeight:1.7}}>{data.reason}</p>
+
+          <div style={{background:t.surface,borderRadius:10,padding:'10px 14px',border:`1px solid ${t.border}`}}>
+            <p style={{color:t.text2,fontSize:12,lineHeight:1.7}}>{data.reason}</p>
           </div>
-          {data.chartData && <div style={{height:70}}>
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={data.chartData}>
-                <defs>
-                  <linearGradient id={`g${strat.id}`} x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%"  stopColor={sc} stopOpacity={0.2}/>
-                    <stop offset="95%" stopColor={sc} stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <XAxis dataKey="date" hide /><YAxis domain={['auto','auto']} hide />
-                <Tooltip contentStyle={{background:'#0a0e1a',border:'1px solid #1e2d4a',borderRadius:8,fontSize:11}} />
-                <Area type="monotone" dataKey="close" stroke={sc} fill={`url(#g${strat.id})`} dot={false} strokeWidth={2} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>}
+
+          {data.chartData&&<div style={{height:75}}><ResponsiveContainer width="100%" height="100%"><AreaChart data={data.chartData}><defs><linearGradient id={`g${strat.id}`} x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={sc} stopOpacity={0.3}/><stop offset="95%" stopColor={sc} stopOpacity={0}/></linearGradient></defs><XAxis dataKey="date" hide/><YAxis domain={['auto','auto']} hide/><Tooltip contentStyle={{background:t.card,border:`1px solid ${t.border}`,borderRadius:8,fontSize:11,color:t.text}}/><Area type="monotone" dataKey="close" stroke={sc} fill={`url(#g${strat.id})`} dot={false} strokeWidth={2}/></AreaChart></ResponsiveContainer></div>}
+
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-            <button onClick={()=>window.open(KITE_CHART_URL[sym],'_blank')} style={{padding:'10px',background:'#0a0e1a',border:'1px solid #1e2d4a',borderRadius:8,color:'#00d4ff',cursor:'pointer',fontSize:12,fontWeight:600,fontFamily:'Space Grotesk,sans-serif'}}>
-              📈 Open Chart in Kite ↗
-            </button>
-            <button onClick={()=>setShowModal(true)} disabled={data.signal==='HOLD'} style={{padding:'10px',border:'none',borderRadius:8,fontWeight:700,fontSize:12,cursor:data.signal==='HOLD'?'not-allowed':'pointer',background:data.signal==='HOLD'?'#1e2d4a':data.signal==='BUY'?'linear-gradient(135deg,#00e676,#00b248)':'linear-gradient(135deg,#ff3d57,#c62828)',color:data.signal==='HOLD'?'#475569':'#fff',fontFamily:'Space Grotesk,sans-serif',opacity:data.signal==='HOLD'?0.5:1}}>
-              {data.signal==='HOLD'?'No Signal — Hold':`⚡ ${data.signal} — Review & Execute`}
+            <button onClick={()=>setChart(!chart)} style={{padding:'11px',background:t.surface,border:`1.5px solid ${chart?t.blue:t.border}`,borderRadius:10,color:t.blue,cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:'Space Grotesk,sans-serif',transition:'all 0.15s'}}>{chart?'✕ Close Chart':'📈 Kite Chart'}</button>
+            <button onClick={()=>setModal(true)} disabled={data.signal==='HOLD'} style={{padding:'11px',border:'none',borderRadius:10,fontWeight:800,fontSize:12,cursor:data.signal==='HOLD'?'not-allowed':'pointer',background:data.signal==='HOLD'?t.surface:data.signal==='BUY'?`linear-gradient(135deg,${t.green},${t.teal})`:`linear-gradient(135deg,${t.red},#ff6688)`,color:data.signal==='HOLD'?t.muted:'#fff',fontFamily:'Space Grotesk,sans-serif',opacity:data.signal==='HOLD'?0.5:1,boxShadow:data.signal!=='HOLD'?`0 2px 12px ${sc}44`:'none'}}>
+              {data.signal==='HOLD'?'Hold':'⚡ '+data.signal+' + SL + Target'}
             </button>
           </div>
+
+          {chart&&<KiteEmbed symbol={sym} t={t} h={360} />}
         </>}
       </div>
     </>
   )
 }
 
-// ── Positions Panel ────────────────────────────────────────────
-function PositionsPanel({accessToken}) {
-  const [positions, setPositions] = useState([])
-  const [funds,     setFunds]     = useState(null)
-  const [orders,    setOrders]    = useState([])
-  const [loading,   setLoading]   = useState(false)
-
-  useEffect(() => { if (accessToken) { loadAll() } }, [accessToken])
-
-  async function loadAll() {
-    setLoading(true)
-    try {
-      const [pr, fr, or] = await Promise.all([
-        fetch('/api/kite-pro?action=positions',{headers:{'x-kite-access-token':accessToken}}).then(r=>r.json()),
-        fetch('/api/kite-pro?action=funds',    {headers:{'x-kite-access-token':accessToken}}).then(r=>r.json()),
-        fetch('/api/kite-pro?action=orders',   {headers:{'x-kite-access-token':accessToken}}).then(r=>r.json()),
-      ])
-      setPositions([...(pr.data?.net||[]), ...(pr.data?.day||[])].filter(p=>p.quantity!==0))
-      setFunds(fr.data)
-      setOrders((or.data||[]).slice(0,10))
-    } catch {}
-    setLoading(false)
-  }
-
-  if (!accessToken) return (
-    <div style={{textAlign:'center',padding:60,color:'#64748b'}}>
-      <p style={{fontSize:40,marginBottom:12}}>🔐</p>
-      <p style={{fontWeight:600,marginBottom:4}}>Login with Zerodha to see your positions</p>
-      <p style={{fontSize:13}}>Click "Login with Zerodha" button in the header</p>
-    </div>
-  )
-
-  if (loading) return <p style={{color:'#64748b',textAlign:'center',padding:40}}>Loading from Zerodha...</p>
-
-  const equity   = funds?.equity
-  const avail    = equity?.available?.live_balance || equity?.net || 0
-  const used     = equity?.utilised?.debits || 0
-  const totalPnL = positions.reduce((a,p)=>a+(p.pnl||p.unrealised||0),0)
-
+function Positions({at,t}) {
+  const [pos,setPos]=useState([]),[funds,setFunds]=useState(null),[orders,setOrders]=useState([]),[loading,setLoading]=useState(false)
+  useEffect(()=>{if(at)load()},[at])
+  async function load(){setLoading(true);try{const H={'x-kite-access-token':at};const [pr,fr,or]=await Promise.all([fetch('/api/kite-pro?action=positions',{headers:H}).then(r=>r.json()),fetch('/api/kite-pro?action=funds',{headers:H}).then(r=>r.json()),fetch('/api/kite-pro?action=orders',{headers:H}).then(r=>r.json())]);setPos([...(pr.data?.net||[]),...(pr.data?.day||[])].filter(p=>p.quantity!==0));setFunds(fr.data);setOrders((or.data||[]).slice(0,15))}catch{}setLoading(false)}
+  if (!at) return <div style={{textAlign:'center',padding:60}}><p style={{fontSize:50,marginBottom:12}}>🔐</p><p style={{color:t.text,fontWeight:700,fontSize:16,marginBottom:6}}>Login with Zerodha</p><p style={{color:t.muted,fontSize:13}}>Connect to see your live portfolio</p></div>
+  if (loading) return <div style={{textAlign:'center',padding:40}}><div style={{width:36,height:36,border:`3px solid ${t.border}`,borderTopColor:t.blue,borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'0 auto'}} /></div>
+  const eq=funds?.equity,avail=eq?.available?.live_balance||eq?.net||0,used=eq?.utilised?.debits||0,pnl=pos.reduce((a,p)=>a+(p.pnl||p.unrealised||0),0)
   return (
-    <div style={{display:'flex',flexDirection:'column',gap:20}}>
-      {/* Funds */}
-      {funds && (
-        <div>
-          <h3 style={{fontWeight:600,fontSize:14,marginBottom:12,color:'#94a3b8'}}>ACCOUNT FUNDS</h3>
-          <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12}}>
-            <StatBox label="AVAILABLE MARGIN" value={`₹${fmt(avail)}`} color='#00d4ff' />
-            <StatBox label="USED MARGIN"       value={`₹${fmt(used)}`}  color='#ffab00' />
-            <StatBox label="UNREALISED P&L"    value={`${totalPnL>=0?'+':''}₹${fmt(totalPnL)}`} color={clr(totalPnL)} />
-          </div>
-        </div>
-      )}
-
-      {/* Open Positions */}
+    <div style={{display:'flex',flexDirection:'column',gap:24}}>
+      {funds&&<div><p style={{color:t.muted,fontSize:11,fontWeight:700,letterSpacing:'0.1em',marginBottom:12}}>ACCOUNT FUNDS</p><div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12}}><SCard label="AVAILABLE" value={`₹${fmt(avail)}`} color={t.blue} icon="💰" t={t}/><SCard label="USED" value={`₹${fmt(used)}`} color={t.amber} icon="📊" t={t}/><SCard label="LIVE P&L" value={`${pnl>=0?'+':''}₹${fmt(pnl)}`} color={clr(pnl,t)} icon="📈" t={t}/></div></div>}
       <div>
-        <h3 style={{fontWeight:600,fontSize:14,marginBottom:12,color:'#94a3b8'}}>OPEN POSITIONS ({positions.length})</h3>
-        {positions.length === 0 ? (
-          <div style={{background:'#0a0e1a',borderRadius:10,padding:20,textAlign:'center',color:'#475569',fontSize:13}}>No open positions</div>
-        ) : (
-          <div style={{overflowX:'auto',borderRadius:10,border:'1px solid #1e2d4a'}}>
-            <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-              <thead>
-                <tr style={{background:'#0a0e1a'}}>
-                  {['Symbol','Product','Qty','Avg Price','LTP','P&L','Action'].map(h=>(
-                    <th key={h} style={{padding:'10px 14px',textAlign:'left',color:'#64748b',fontWeight:600,borderBottom:'1px solid #1e2d4a'}}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {positions.map((p,i)=>{
-                  const pnl    = p.pnl || p.unrealised || 0
-                  const pc     = clr(pnl)
-                  const isLong = (p.quantity||0) > 0
-                  return (
-                    <tr key={i} style={{borderBottom:'1px solid #1e2d4a22'}}>
-                      <td style={{padding:'10px 14px',fontWeight:700,color:'#e2e8f0'}}>{p.tradingsymbol}</td>
-                      <td style={{padding:'10px 14px'}}><Badge color='#64748b'>{p.product}</Badge></td>
-                      <td style={{padding:'10px 14px'}}><span style={{color:isLong?'#00e676':'#ff3d57',fontWeight:700}}>{isLong?'+':''}{p.quantity}</span></td>
-                      <td style={{padding:'10px 14px',fontFamily:'monospace',color:'#94a3b8'}}>₹{fmt(p.average_price)}</td>
-                      <td style={{padding:'10px 14px',fontFamily:'monospace',color:'#e2e8f0'}}>₹{fmt(p.last_price)}</td>
-                      <td style={{padding:'10px 14px',color:pc,fontWeight:700,fontFamily:'monospace'}}>{pnl>=0?'+':''}₹{fmt(pnl)}</td>
-                      <td style={{padding:'10px 14px'}}>
-                        <button onClick={()=>window.open(KITE_CHART_URL[p.tradingsymbol]||`https://kite.zerodha.com`,'_blank')} style={{padding:'3px 10px',background:'#1e2d4a',border:'1px solid #2d4a6a',borderRadius:6,color:'#00d4ff',cursor:'pointer',fontSize:11,fontFamily:'Space Grotesk,sans-serif'}}>Chart ↗</button>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <p style={{color:t.muted,fontSize:11,fontWeight:700,letterSpacing:'0.1em',marginBottom:12}}>OPEN POSITIONS ({pos.length})</p>
+        {pos.length===0?<div style={{background:t.surface,borderRadius:14,padding:24,textAlign:'center',color:t.muted,border:`1px solid ${t.border}`,fontSize:13}}>No open positions</div>
+        :<div style={{overflowX:'auto',borderRadius:14,border:`1px solid ${t.border}`}}><table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead><tr style={{background:t.surface}}>{['Symbol','Qty','Avg','LTP','P&L','Chart'].map(h=><th key={h} style={{padding:'12px 16px',textAlign:'left',color:t.muted,fontWeight:700,borderBottom:`1px solid ${t.border}`}}>{h}</th>)}</tr></thead><tbody>{pos.map((p,i)=>{const pl=p.pnl||p.unrealised||0;return <tr key={i} style={{borderBottom:`1px solid ${t.border}22`}}><td style={{padding:'12px 16px',fontWeight:800,color:t.text}}>{p.tradingsymbol}</td><td style={{padding:'12px 16px',color:(p.quantity||0)>0?t.green:t.red,fontWeight:700}}>{(p.quantity||0)>0?'+':''}{p.quantity}</td><td style={{padding:'12px 16px',fontFamily:'monospace',color:t.text2}}>₹{fmt(p.average_price)}</td><td style={{padding:'12px 16px',fontFamily:'monospace',color:t.text}}>₹{fmt(p.last_price)}</td><td style={{padding:'12px 16px',color:clr(pl,t),fontWeight:800,fontFamily:'monospace'}}>{pl>=0?'+':''}₹{fmt(pl)}</td><td style={{padding:'12px 16px'}}><button onClick={()=>window.open(KITE_CHARTS[p.tradingsymbol]||`https://kite.zerodha.com/chart/web/ciq/NSE/${p.tradingsymbol}/EQ`,'_blank')} style={{padding:'4px 10px',background:t.blue+'22',border:`1px solid ${t.blue}44`,borderRadius:6,color:t.blue,cursor:'pointer',fontSize:11,fontFamily:'Space Grotesk,sans-serif',fontWeight:600}}>↗</button></td></tr>})}</tbody></table></div>}
       </div>
-
-      {/* Today's Orders */}
-      {orders.length > 0 && (
-        <div>
-          <h3 style={{fontWeight:600,fontSize:14,marginBottom:12,color:'#94a3b8'}}>TODAY'S ORDERS</h3>
-          <div style={{overflowX:'auto',borderRadius:10,border:'1px solid #1e2d4a'}}>
-            <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-              <thead>
-                <tr style={{background:'#0a0e1a'}}>
-                  {['Time','Symbol','Type','Qty','Price','Status'].map(h=>(
-                    <th key={h} style={{padding:'10px 14px',textAlign:'left',color:'#64748b',fontWeight:600,borderBottom:'1px solid #1e2d4a'}}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {orders.map((o,i)=>{
-                  const time = o.order_timestamp ? new Date(o.order_timestamp).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:true}) : '—'
-                  const stColor = o.status==='COMPLETE'?'#00e676':o.status==='REJECTED'?'#ff3d57':o.status==='OPEN'?'#ffab00':'#64748b'
-                  return (
-                    <tr key={i} style={{borderBottom:'1px solid #1e2d4a22'}}>
-                      <td style={{padding:'10px 14px',color:'#64748b'}}>{time}</td>
-                      <td style={{padding:'10px 14px',fontWeight:700,color:'#e2e8f0'}}>{o.tradingsymbol}</td>
-                      <td style={{padding:'10px 14px'}}><span style={{color:o.transaction_type==='BUY'?'#00e676':'#ff3d57',fontWeight:700}}>{o.transaction_type}</span></td>
-                      <td style={{padding:'10px 14px',fontFamily:'monospace',color:'#94a3b8'}}>{o.filled_quantity}/{o.quantity}</td>
-                      <td style={{padding:'10px 14px',fontFamily:'monospace',color:'#e2e8f0'}}>₹{fmt(o.average_price||o.price)}</td>
-                      <td style={{padding:'10px 14px'}}><Badge color={stColor}>{o.status}</Badge></td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-          <button onClick={loadAll} style={{marginTop:8,padding:'6px 14px',background:'#1e2d4a',border:'1px solid #2d4a6a',borderRadius:8,color:'#e2e8f0',cursor:'pointer',fontSize:12,fontFamily:'Space Grotesk,sans-serif'}}>🔄 Refresh</button>
-        </div>
-      )}
+      {orders.length>0&&<div><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}><p style={{color:t.muted,fontSize:11,fontWeight:700,letterSpacing:'0.1em'}}>TODAY'S ORDERS ({orders.length})</p><button onClick={load} style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,color:t.muted,cursor:'pointer',fontSize:11,padding:'4px 10px',fontFamily:'Space Grotesk,sans-serif'}}>🔄</button></div><div style={{overflowX:'auto',borderRadius:14,border:`1px solid ${t.border}`}}><table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead><tr style={{background:t.surface}}>{['Time','Symbol','Type','Qty','Price','Status'].map(h=><th key={h} style={{padding:'12px 16px',textAlign:'left',color:t.muted,fontWeight:700,borderBottom:`1px solid ${t.border}`}}>{h}</th>)}</tr></thead><tbody>{orders.map((o,i)=>{const time=o.order_timestamp?new Date(o.order_timestamp).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:true}):'—';const sc2=o.status==='COMPLETE'?t.green:o.status==='REJECTED'?t.red:o.status==='OPEN'?t.amber:t.muted;return <tr key={i} style={{borderBottom:`1px solid ${t.border}22`}}><td style={{padding:'12px 16px',color:t.muted}}>{time}</td><td style={{padding:'12px 16px',fontWeight:800,color:t.text}}>{o.tradingsymbol}</td><td style={{padding:'12px 16px'}}><span style={{color:o.transaction_type==='BUY'?t.green:t.red,fontWeight:700}}>{o.transaction_type}</span></td><td style={{padding:'12px 16px',fontFamily:'monospace',color:t.text2}}>{o.filled_quantity}/{o.quantity}</td><td style={{padding:'12px 16px',fontFamily:'monospace',color:t.text}}>₹{fmt(o.average_price||o.price)}</td><td style={{padding:'12px 16px'}}><Badge color={sc2}>{o.status}</Badge></td></tr>})}</tbody></table></div></div>}
     </div>
   )
 }
 
-// ── Trade History ──────────────────────────────────────────────
-function TradeHistory({refresh}) {
-  const [trades,  setTrades]  = useState([])
-  const [loading, setLoading] = useState(false)
-  useEffect(() => { load() }, [refresh])
-  async function load() {
-    setLoading(true)
-    try { const r = await fetch('/api/trades?limit=50'); const d=await r.json(); setTrades(d.trades||[]) } catch{}
-    setLoading(false)
-  }
-  async function closeTrade(id, entry, dir, qty) {
-    const ep = prompt(`Exit price? (Entry: ₹${entry}, ${dir})`)
-    if (!ep||isNaN(ep)) return
-    const r = await fetch('/api/trades',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,exit_price:parseFloat(ep)})})
-    const d = await r.json()
-    alert(`Closed! P&L: ₹${d.pnl?.toFixed(2)} ${d.pnl>0?'🟢 Profit':'🔴 Loss'}`)
-    load()
-  }
-  const closed=trades.filter(t=>t.status==='CLOSED'), openT=trades.filter(t=>t.status==='OPEN')
-  const totalPnL=closed.reduce((a,t)=>a+(t.pnl||0),0)
-  const winRate=closed.length>0?`${(closed.filter(t=>(t.pnl||0)>0).length/closed.length*100).toFixed(0)}%`:'—'
-  return (
-    <div style={{display:'flex',flexDirection:'column',gap:16}}>
-      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12}}>
-        <StatBox label="TOTAL TRADES" value={trades.length} />
-        <StatBox label="OPEN"         value={openT.length}  color='#ffab00' />
-        <StatBox label="WIN RATE"     value={winRate}        color={parseInt(winRate)>50?'#00e676':'#ff3d57'} />
-        <StatBox label="TOTAL P&L"    value={`₹${fmt(totalPnL)}`} color={clr(totalPnL)} />
-      </div>
-      {loading && <p style={{color:'#64748b',textAlign:'center',padding:30}}>Loading...</p>}
-      {!loading && trades.length===0 && (
-        <div style={{textAlign:'center',padding:40,color:'#64748b',background:'#0a0e1a',borderRadius:12}}>
-          <p style={{fontSize:36,marginBottom:10}}>📋</p>
-          <p style={{fontWeight:600}}>No trades yet</p>
-          <p style={{fontSize:13,marginTop:4}}>Execute a signal to get started</p>
-        </div>
-      )}
-      {!loading && trades.length>0 && (
-        <div style={{overflowX:'auto',borderRadius:10,border:'1px solid #1e2d4a'}}>
-          <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-            <thead><tr style={{background:'#0a0e1a'}}>
-              {['Date','Symbol','Strategy','Dir','Qty','Entry','Exit','P&L','Status',''].map(h=>(
-                <th key={h} style={{padding:'10px 14px',textAlign:'left',color:'#64748b',fontWeight:600,borderBottom:'1px solid #1e2d4a',whiteSpace:'nowrap'}}>{h}</th>
-              ))}
-            </tr></thead>
-            <tbody>{trades.map((t,i)=>{
-              const pc=clr(t.pnl||0)
-              const date=new Date(t.created_at).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',hour12:true})
-              return <tr key={t.id} style={{borderBottom:'1px solid #1e2d4a22',background:i%2?'#ffffff03':'transparent'}}>
-                <td style={{padding:'10px 14px',color:'#64748b',whiteSpace:'nowrap'}}>{date}</td>
-                <td style={{padding:'10px 14px',fontWeight:700,color:'#e2e8f0'}}>{t.symbol}</td>
-                <td style={{padding:'10px 14px',color:'#64748b',maxWidth:120,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{t.strategy}</td>
-                <td style={{padding:'10px 14px'}}><span style={{background:t.direction==='BUY'?'#00e67222':'#ff3d5722',color:t.direction==='BUY'?'#00e676':'#ff3d57',border:`1px solid ${t.direction==='BUY'?'#00e67244':'#ff3d5744'}`,borderRadius:6,padding:'2px 8px',fontWeight:700,fontSize:11}}>{t.direction}</span></td>
-                <td style={{padding:'10px 14px',fontFamily:'monospace',color:'#94a3b8'}}>{t.quantity}</td>
-                <td style={{padding:'10px 14px',fontFamily:'monospace',color:'#e2e8f0'}}>₹{fmt(t.entry_price)}</td>
-                <td style={{padding:'10px 14px',fontFamily:'monospace',color:'#94a3b8'}}>{t.exit_price?`₹${fmt(t.exit_price)}`:'—'}</td>
-                <td style={{padding:'10px 14px',color:pc,fontWeight:700,fontFamily:'monospace'}}>{t.pnl!=null?`${t.pnl>=0?'+':''}₹${fmt(t.pnl)}`:'—'}</td>
-                <td style={{padding:'10px 14px'}}><Badge color={t.status==='OPEN'?'#ffab00':t.status==='CLOSED'?'#00e676':'#ff3d57'}>{t.status}</Badge></td>
-                <td style={{padding:'10px 14px'}}>{t.status==='OPEN'&&<button onClick={()=>closeTrade(t.id,t.entry_price,t.direction,t.quantity)} style={{padding:'4px 10px',background:'#1e2d4a',border:'1px solid #2d4a6a',borderRadius:6,color:'#e2e8f0',cursor:'pointer',fontSize:11,fontFamily:'Space Grotesk,sans-serif'}}>Close</button>}</td>
-              </tr>
-            })}</tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── Charts Tab ─────────────────────────────────────────────────
-function ChartsTab() {
-  const [sel, setSel] = useState('NIFTY')
-  const syms = Object.keys(KITE_CHART_URL)
+function Charts({t}) {
+  const [sel,setSel]=useState('NIFTY')
+  const syms=Object.keys(KITE_CHARTS)
   return (
     <div>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
-        <div>
-          <h2 style={{fontSize:18,fontWeight:700}}>Live Charts</h2>
-          <p style={{color:'#64748b',fontSize:13,marginTop:4}}>Full Kite charts with all indicators. Opens in Kite — your session, your data.</p>
-        </div>
-        <button onClick={()=>window.open(KITE_CHART_URL[sel],'_blank')} style={{padding:'8px 18px',background:'linear-gradient(135deg,#00d4ff,#0066ff)',border:'none',borderRadius:8,color:'#fff',fontWeight:600,cursor:'pointer',fontSize:13,fontFamily:'Space Grotesk,sans-serif'}}>
-          🔗 Open {sel} in Kite ↗
-        </button>
+        <div><h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Live Charts</h2><p style={{color:t.muted,fontSize:13,marginTop:4}}>Kite charts embedded · Full indicators · Your account</p></div>
+        <button onClick={()=>window.open(KITE_CHARTS[sel],'_blank')} style={{padding:'8px 18px',background:t.accent,border:'none',borderRadius:10,color:'#fff',fontWeight:700,cursor:'pointer',fontSize:13,fontFamily:'Space Grotesk,sans-serif'}}>Full Screen ↗</button>
       </div>
-      <div style={{display:'flex',gap:8,marginBottom:20,flexWrap:'wrap'}}>
-        {syms.map(s=>(
-          <button key={s} onClick={()=>setSel(s)} style={{padding:'7px 16px',borderRadius:20,fontSize:13,fontWeight:600,background:sel===s?'linear-gradient(135deg,#00d4ff,#0066ff)':'#0a0e1a',border:`1px solid ${sel===s?'#00d4ff':'#1e2d4a'}`,color:sel===s?'#fff':'#64748b',cursor:'pointer',fontFamily:'Space Grotesk,sans-serif'}}>{s}</button>
-        ))}
+      <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>
+        {syms.map(s=><button key={s} onClick={()=>setSel(s)} style={{padding:'7px 16px',borderRadius:20,fontSize:13,fontWeight:700,background:sel===s?t.accentC:t.surface,border:`1.5px solid ${sel===s?t.accentC:t.border}`,color:sel===s?'#fff':t.muted,cursor:'pointer',fontFamily:'Space Grotesk,sans-serif',transition:'all 0.15s'}}>{s}</button>)}
       </div>
-      <div style={{background:'#0a0e1a',borderRadius:16,padding:24,textAlign:'center',border:'1px solid #1e2d4a'}}>
-        <p style={{fontSize:40,marginBottom:12}}>📈</p>
-        <p style={{fontWeight:700,fontSize:16,color:'#e2e8f0',marginBottom:8}}>Open {sel} Chart in Kite</p>
-        <p style={{color:'#64748b',fontSize:13,marginBottom:20,maxWidth:400,margin:'0 auto 20px'}}>
-          Kite has full professional charts with all indicators, drawing tools, and your complete order history. Click below to open.
-        </p>
-        <button onClick={()=>window.open(KITE_CHART_URL[sel],'_blank')} style={{padding:'14px 32px',background:'linear-gradient(135deg,#00d4ff,#0066ff)',border:'none',borderRadius:12,color:'#fff',fontWeight:700,fontSize:15,cursor:'pointer',fontFamily:'Space Grotesk,sans-serif',boxShadow:'0 0 30px rgba(0,212,255,0.3)'}}>
-          Open {sel} Chart in Kite ↗
-        </button>
-        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(130px,1fr))',gap:8,marginTop:24}}>
-          {syms.filter(s=>s!==sel).map(s=>(
-            <button key={s} onClick={()=>window.open(KITE_CHART_URL[s],'_blank')} style={{padding:'10px',background:'#0f1628',border:'1px solid #1e2d4a',borderRadius:10,cursor:'pointer',fontFamily:'Space Grotesk,sans-serif',display:'flex',flexDirection:'column',gap:3,alignItems:'flex-start'}}>
-              <span style={{color:'#475569',fontSize:10,fontWeight:600}}>KITE CHART</span>
-              <span style={{color:'#e2e8f0',fontSize:13,fontWeight:700}}>{s} ↗</span>
-            </button>
-          ))}
-        </div>
+      <KiteEmbed symbol={sel} t={t} h={500} key={sel} />
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(120px,1fr))',gap:8,marginTop:14}}>
+        {syms.filter(s=>s!==sel).map(s=><button key={s} onClick={()=>setSel(s)} style={{padding:'10px',background:t.card,border:`1px solid ${t.border}`,borderRadius:12,cursor:'pointer',fontFamily:'Space Grotesk,sans-serif',textAlign:'left',transition:'all 0.15s'}}><span style={{color:t.muted,fontSize:10,fontWeight:700,display:'block',marginBottom:3}}>CHART</span><span style={{color:t.text,fontSize:13,fontWeight:800}}>{s}</span></button>)}
       </div>
     </div>
   )
 }
 
-// ── Main Dashboard ─────────────────────────────────────────────
+function History({refresh,t}) {
+  const [trades,setTrades]=useState([]),[loading,setLoading]=useState(false)
+  useEffect(()=>{load()},[refresh])
+  async function load(){setLoading(true);try{const r=await fetch('/api/trades?limit=50');const d=await r.json();setTrades(d.trades||[])}catch{}setLoading(false)}
+  async function close(id,entry,dir){const ep=prompt(`Exit price? (Entry: ₹${entry})`);if(!ep||isNaN(ep))return;const r=await fetch('/api/trades',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,exit_price:parseFloat(ep)})});const d=await r.json();alert(`P&L: ₹${d.pnl?.toFixed(2)} ${d.pnl>0?'🟢':'🔴'}`);load()}
+  const closed=trades.filter(x=>x.status==='CLOSED'),openT=trades.filter(x=>x.status==='OPEN'),totalPnL=closed.reduce((a,x)=>a+(x.pnl||0),0),wr=closed.length>0?`${(closed.filter(x=>(x.pnl||0)>0).length/closed.length*100).toFixed(0)}%`:'—'
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:16}}>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12}}>
+        <SCard label="TOTAL" value={trades.length} icon="📋" t={t}/>
+        <SCard label="OPEN" value={openT.length} color={t.amber} icon="🔓" t={t}/>
+        <SCard label="WIN RATE" value={wr} color={parseInt(wr)>50?t.green:t.red} icon="🎯" t={t}/>
+        <SCard label="TOTAL P&L" value={`₹${fmt(totalPnL)}`} color={clr(totalPnL,t)} icon="💹" t={t}/>
+      </div>
+      {loading&&<div style={{textAlign:'center',padding:30}}><div style={{width:32,height:32,border:`3px solid ${t.border}`,borderTopColor:t.blue,borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'0 auto'}} /></div>}
+      {!loading&&trades.length===0&&<div style={{textAlign:'center',padding:50,background:t.surface,borderRadius:16,border:`1px solid ${t.border}`}}><p style={{fontSize:40,marginBottom:10}}>📋</p><p style={{color:t.text,fontWeight:700}}>No trades yet</p><p style={{color:t.muted,fontSize:13,marginTop:4}}>Execute a signal to start</p></div>}
+      {!loading&&trades.length>0&&<div style={{overflowX:'auto',borderRadius:16,border:`1px solid ${t.border}`}}><table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead><tr style={{background:t.surface}}>{['Date','Symbol','Strategy','Dir','Qty','Entry','Exit','P&L','Status',''].map(h=><th key={h} style={{padding:'12px 16px',textAlign:'left',color:t.muted,fontWeight:700,borderBottom:`1px solid ${t.border}`,whiteSpace:'nowrap'}}>{h}</th>)}</tr></thead><tbody>{trades.map((x,i)=>{const pc=clr(x.pnl||0,t),date=new Date(x.created_at).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',hour12:true});return <tr key={x.id} style={{borderBottom:`1px solid ${t.border}22`,background:i%2?t.surface+'44':'transparent'}}><td style={{padding:'12px 16px',color:t.muted,whiteSpace:'nowrap'}}>{date}</td><td style={{padding:'12px 16px',fontWeight:800,color:t.text}}>{x.symbol}</td><td style={{padding:'12px 16px',color:t.muted,maxWidth:120,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{x.strategy}</td><td style={{padding:'12px 16px'}}><Badge color={x.direction==='BUY'?t.green:t.red}>{x.direction}</Badge></td><td style={{padding:'12px 16px',fontFamily:'monospace',color:t.text2}}>{x.quantity}</td><td style={{padding:'12px 16px',fontFamily:'monospace',color:t.text}}>₹{fmt(x.entry_price)}</td><td style={{padding:'12px 16px',fontFamily:'monospace',color:t.text2}}>{x.exit_price?`₹${fmt(x.exit_price)}`:'—'}</td><td style={{padding:'12px 16px',color:pc,fontWeight:800,fontFamily:'monospace'}}>{x.pnl!=null?`${x.pnl>=0?'+':''}₹${fmt(x.pnl)}`:'—'}</td><td style={{padding:'12px 16px'}}><Badge color={x.status==='OPEN'?t.amber:x.status==='CLOSED'?t.green:t.red}>{x.status}</Badge></td><td style={{padding:'12px 16px'}}>{x.status==='OPEN'&&<button onClick={()=>close(x.id,x.entry_price,x.direction)} style={{padding:'5px 12px',background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,cursor:'pointer',fontSize:11,fontFamily:'Space Grotesk,sans-serif',fontWeight:600}}>Close</button>}</td></tr>})}</tbody></table></div>}
+    </div>
+  )
+}
+
 export default function Dashboard() {
-  const router = useRouter()
-  const [accessToken,   setAccessToken]   = useState('')
-  const [kiteUser,      setKiteUser]      = useState(null)
-  const [marketData,    setMarketData]    = useState({})
-  const [activeTab,     setActiveTab]     = useState('signals')
-  const [time,          setTime]          = useState('')
-  const [tradeRefresh,  setTradeRefresh]  = useState(0)
-  const [loginUrl,      setLoginUrl]      = useState('')
+  const router=useRouter()
+  const [dark,setDark]=useState(true),[at,setAt]=useState(''),[kiteUser,setKU]=useState(null),[mkt,setMkt]=useState({}),[tab,setTab]=useState('signals'),[time,setTime]=useState(''),[tr,setTr]=useState(0),[loginUrl,setLoginUrl]=useState('')
+  const t = dark ? DARK : LIGHT
 
-  useEffect(() => {
-    if (!localStorage.getItem('pz_token')) { router.push('/'); return }
+  useEffect(()=>{
+    if(!localStorage.getItem('pz_token')){router.push('/');return}
+    const sd=localStorage.getItem('pz_dark');if(sd!==null)setDark(sd==='true')
+    const a=localStorage.getItem('kite_access_token'),u=localStorage.getItem('kite_user'),d=localStorage.getItem('kite_connected_date')
+    if(a&&d===new Date().toDateString()){setAt(a);if(u)setKU(JSON.parse(u))}
+    else ['kite_access_token','kite_user','kite_connected_date'].forEach(k=>localStorage.removeItem(k))
+    fetch('/api/kite-login').then(r=>r.json()).then(d=>setLoginUrl(d.loginUrl))
+    const tick=()=>setTime(new Date().toLocaleTimeString('en-IN',{hour12:true,timeZone:'Asia/Kolkata'})+' IST')
+    tick();const ti=setInterval(tick,1000);return()=>clearInterval(ti)
+  },[])
 
-    // Restore Kite session
-    const at   = localStorage.getItem('kite_access_token')
-    const user = localStorage.getItem('kite_user')
-    const date = localStorage.getItem('kite_connected_date')
+  function toggleDark(){const nd=!dark;setDark(nd);localStorage.setItem('pz_dark',String(nd))}
 
-    // Check if session is from today
-    if (at && date === new Date().toDateString()) {
-      setAccessToken(at)
-      if (user) setKiteUser(JSON.parse(user))
-    } else {
-      // Clear stale session
-      localStorage.removeItem('kite_access_token')
-      localStorage.removeItem('kite_user')
-      localStorage.removeItem('kite_connected_date')
-    }
+  useEffect(()=>{fetchMkt();const ti=setInterval(fetchMkt,15000);return()=>clearInterval(ti)},[at])
 
-    // Get login URL
-    fetch('/api/kite-login').then(r=>r.json()).then(d => setLoginUrl(d.loginUrl))
-
-    // Clock
-    const tick = () => setTime(new Date().toLocaleTimeString('en-IN',{hour12:true,timeZone:'Asia/Kolkata'})+' IST')
-    tick(); const t = setInterval(tick,1000); return ()=>clearInterval(t)
-  }, [])
-
-  useEffect(() => {
-    fetchMarket()
-    const t = setInterval(fetchMarket, 15000)
-    return () => clearInterval(t)
-  }, [accessToken])
-
-  async function fetchMarket() {
-    try {
-      // Use Kite live quotes if connected
-      if (accessToken) {
-        const r = await fetch('/api/kite-pro?action=quote&instruments=NSE:NIFTY+50,NSE:NIFTY+BANK,BSE:SENSEX,NSE:TCS', {
-          headers: {'x-kite-access-token': accessToken}
-        })
-        const d = await r.json()
-        if (d.data) {
-          const mapped = {}
-          const keyMap = {'NIFTY 50':'NIFTY','NIFTY BANK':'BANKNIFTY','SENSEX':'SENSEX','TCS':'TCS'}
-          Object.entries(d.data).forEach(([key, val]) => {
-            const sym = keyMap[key.split(':')[1]] || key.split(':')[1]
-            mapped[sym] = {
-              price:  val.last_price,
-              change: val.net_change,
-              pct:    val.change,
-              high:   val.ohlc?.high,
-              low:    val.ohlc?.low,
-            }
-          })
-          setMarketData(mapped)
-          return
-        }
-      }
-      // Fallback: Yahoo Finance
-      const r = await fetch('/api/market?symbols=NIFTY,BANKNIFTY,SENSEX,BTC')
-      const d = await r.json()
-      if (d.data) setMarketData(d.data)
-    } catch {}
+  async function fetchMkt(){
+    try{
+      if(at){const r=await fetch('/api/kite-pro?action=quote&instruments=NSE:NIFTY+50,NSE:NIFTY+BANK,BSE:SENSEX',{headers:{'x-kite-access-token':at}});const d=await r.json();if(d.data){const m={},km={'NIFTY 50':'NIFTY','NIFTY BANK':'BANKNIFTY','SENSEX':'SENSEX'};Object.entries(d.data).forEach(([k,v])=>{const s=km[k.split(':')[1]]||k.split(':')[1];m[s]={price:v.last_price,change:v.net_change,pct:v.change}});setMkt(m);return}}
+      const r=await fetch('/api/market?symbols=NIFTY,BANKNIFTY,SENSEX,BTC');const d=await r.json();if(d.data)setMkt(d.data)
+    }catch{}
   }
 
-  function disconnectKite() {
-    localStorage.removeItem('kite_access_token')
-    localStorage.removeItem('kite_user')
-    localStorage.removeItem('kite_connected_date')
-    setAccessToken(''); setKiteUser(null)
-  }
+  function disc(){['kite_access_token','kite_user','kite_connected_date'].forEach(k=>localStorage.removeItem(k));setAt('');setKU(null)}
 
-  const tabs = [
-    {id:'signals',   label:'📡 Signals'},
-    {id:'positions', label:'💼 Portfolio'},
-    {id:'trades',    label:'📋 History'},
-    {id:'charts',    label:'📈 Charts'},
-  ]
-
-  const isConnected = !!accessToken
+  const tabs=[{id:'signals',l:'📡 Signals'},{id:'positions',l:'💼 Portfolio'},{id:'trades',l:'📋 History'},{id:'charts',l:'📈 Charts'}]
+  const isConn=!!at
 
   return (
     <>
       <Head>
         <title>Projectzero</title>
-        <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+        <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
       </Head>
+      <div style={{minHeight:'100vh',background:t.bg,fontFamily:'Space Grotesk,sans-serif',color:t.text,transition:'background 0.3s'}}>
+        {dark&&<><div style={{position:'fixed',top:-150,left:-150,width:500,height:500,borderRadius:'50%',background:'radial-gradient(circle,rgba(59,158,255,0.06),transparent 70%)',pointerEvents:'none',zIndex:0}}/><div style={{position:'fixed',bottom:-150,right:-150,width:400,height:400,borderRadius:'50%',background:'radial-gradient(circle,rgba(167,139,250,0.06),transparent 70%)',pointerEvents:'none',zIndex:0}}/></>}
 
-      <div style={{minHeight:'100vh',background:'#0a0e1a',fontFamily:'Space Grotesk,sans-serif',color:'#e2e8f0'}}>
-        <div style={{position:'fixed',inset:0,opacity:0.025,pointerEvents:'none',backgroundImage:'linear-gradient(#00d4ff 1px,transparent 1px),linear-gradient(90deg,#00d4ff 1px,transparent 1px)',backgroundSize:'40px 40px'}} />
-
-        {/* Header */}
-        <header style={{background:'#0f162888',backdropFilter:'blur(12px)',borderBottom:'1px solid #1e2d4a',padding:'0 24px',display:'flex',alignItems:'center',justifyContent:'space-between',height:64,position:'sticky',top:0,zIndex:100}}>
-          <div style={{display:'flex',alignItems:'center',gap:12}}>
-            <div style={{width:34,height:34,borderRadius:10,background:'linear-gradient(135deg,#00d4ff,#0066ff)',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:800,fontSize:13,color:'#fff',boxShadow:'0 0 20px rgba(0,212,255,0.4)'}}>P0</div>
-            <span style={{fontWeight:700,fontSize:17}}>Projectzero</span>
-            <Badge>FHP228</Badge>
+        <header style={{background:dark?'rgba(11,14,22,0.9)':'rgba(255,255,255,0.9)',backdropFilter:'blur(16px)',borderBottom:`1px solid ${t.border}`,padding:'0 28px',display:'flex',alignItems:'center',justifyContent:'space-between',height:64,position:'sticky',top:0,zIndex:100}}>
+          <div style={{display:'flex',alignItems:'center',gap:14}}>
+            <div style={{width:38,height:38,borderRadius:12,background:'linear-gradient(135deg,#3b9eff,#a78bfa)',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:900,fontSize:14,color:'#fff',boxShadow:'0 0 24px rgba(59,158,255,0.35)'}}>P0</div>
+            <div><span style={{fontWeight:900,fontSize:17,color:t.text}}>Projectzero</span><span style={{color:t.muted,fontSize:11,marginLeft:8}}>FHP228</span></div>
+            <Badge color={t.purple}>Connect</Badge>
           </div>
-
           <div style={{display:'flex',alignItems:'center',gap:10}}>
-            <span style={{color:'#334155',fontSize:11,fontFamily:'JetBrains Mono,monospace'}}>{time}</span>
-
-            {isConnected ? (
-              <div style={{display:'flex',alignItems:'center',gap:8}}>
-                <div style={{display:'flex',alignItems:'center',gap:6,background:'#00e67222',border:'1px solid #00e67244',borderRadius:8,padding:'6px 12px'}}>
-                  <span style={{width:7,height:7,borderRadius:'50%',background:'#00e676',animation:'pulse 1.5s infinite',display:'inline-block'}} />
-                  <span style={{color:'#00e676',fontSize:12,fontWeight:600}}>Zerodha Live</span>
-                  {kiteUser && <span style={{color:'#4caf7044',fontSize:11}}>· {kiteUser.user_id}</span>}
+            <span style={{color:t.muted,fontSize:11,fontFamily:'JetBrains Mono,monospace'}}>{time}</span>
+            <button onClick={toggleDark} style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:20,padding:'5px 14px',cursor:'pointer',fontSize:13,color:t.text,fontFamily:'Space Grotesk,sans-serif',fontWeight:500}}>{dark?'☀️ Light':'🌙 Dark'}</button>
+            {isConn
+              ? <div style={{display:'flex',alignItems:'center',gap:8}}>
+                  <div style={{display:'flex',alignItems:'center',gap:7,background:t.green+'15',border:`1px solid ${t.green}33`,borderRadius:10,padding:'6px 14px'}}>
+                    <span style={{width:7,height:7,borderRadius:'50%',background:t.green,display:'inline-block',animation:'pulse 1.5s infinite'}}/>
+                    <span style={{color:t.green,fontSize:12,fontWeight:700}}>Zerodha Live</span>
+                    {kiteUser&&<span style={{color:t.green+'55',fontSize:11}}>· {kiteUser.user_id}</span>}
+                  </div>
+                  <button onClick={disc} style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,color:t.muted,cursor:'pointer',fontSize:11,padding:'6px 10px',fontFamily:'Space Grotesk,sans-serif'}}>Disconnect</button>
                 </div>
-                <button onClick={disconnectKite} style={{background:'none',border:'1px solid #1e2d4a',borderRadius:8,color:'#64748b',cursor:'pointer',fontSize:11,padding:'6px 10px',fontFamily:'Space Grotesk,sans-serif'}}>Disconnect</button>
-              </div>
-            ) : (
-              <button onClick={()=>loginUrl&&window.location.assign(loginUrl)} style={{display:'flex',alignItems:'center',gap:6,padding:'8px 16px',background:'linear-gradient(135deg,#ff3d57,#c62828)',border:'none',borderRadius:8,cursor:'pointer',color:'#fff',fontSize:13,fontFamily:'Space Grotesk,sans-serif',fontWeight:600,boxShadow:'0 0 20px rgba(255,61,87,0.3)'}}>
-                🔐 Login with Zerodha
-              </button>
-            )}
-            <button onClick={()=>{localStorage.removeItem('pz_token');router.push('/')}} style={{background:'none',border:'none',color:'#334155',cursor:'pointer',fontSize:12}}>Logout</button>
+              : <button onClick={()=>loginUrl&&window.location.assign(loginUrl)} style={{display:'flex',alignItems:'center',gap:7,padding:'9px 18px',background:'linear-gradient(135deg,#ff4466,#ff6688)',border:'none',borderRadius:10,cursor:'pointer',color:'#fff',fontSize:13,fontFamily:'Space Grotesk,sans-serif',fontWeight:700,boxShadow:'0 4px 20px rgba(255,68,102,0.4)'}}>🔐 Login with Zerodha</button>
+            }
+            <button onClick={()=>{localStorage.removeItem('pz_token');router.push('/')}} style={{background:'none',border:'none',color:t.muted,cursor:'pointer',fontSize:12,padding:'4px 8px'}}>Logout</button>
           </div>
         </header>
 
-        {/* Market ticker — live from Kite if connected */}
-        <div style={{background:'#060c1a',borderBottom:'1px solid #1e2d4a',padding:'8px 24px',display:'flex',gap:24,overflowX:'auto',alignItems:'center'}}>
-          {['NIFTY','BANKNIFTY','SENSEX','BTC'].map(sym=>{
-            const d=marketData[sym]; const up=(d?.pct||0)>=0
-            return (
-              <div key={sym} style={{display:'flex',gap:8,alignItems:'center',flexShrink:0,cursor:'pointer'}} onClick={()=>setActiveTab('charts')}>
-                <span style={{color:'#334155',fontSize:11,fontWeight:700}}>{sym}</span>
-                <span style={{fontFamily:'JetBrains Mono,monospace',fontSize:12,color:'#e2e8f0',fontWeight:600}}>{d?fmt(d.price):'—'}</span>
-                <span style={{fontSize:11,color:up?'#00e676':'#ff3d57',fontWeight:600}}>{d?`${up?'+':''}${fmt(d.pct,2)}%`:''}</span>
-              </div>
-            )
-          })}
-          <span style={{marginLeft:'auto',fontSize:10,color:'#1e2d4a',flexShrink:0}}>{isConnected?'🟢 Live from Kite':'⚪ Yahoo Finance (15-min delay)'}</span>
-        </div>
-
-        {/* Tabs */}
-        <div style={{padding:'16px 24px 0',display:'flex',gap:2}}>
-          {tabs.map(t=>(
-            <button key={t.id} onClick={()=>setActiveTab(t.id)} style={{padding:'8px 18px',borderRadius:'8px 8px 0 0',background:activeTab===t.id?'#0f1628':'transparent',border:`1px solid ${activeTab===t.id?'#1e2d4a':'transparent'}`,borderBottom:activeTab===t.id?'1px solid #0f1628':'none',color:activeTab===t.id?'#e2e8f0':'#334155',cursor:'pointer',fontSize:13,fontWeight:500,fontFamily:'Space Grotesk,sans-serif'}}>{t.label}</button>
+        <div style={{background:t.tickBg,borderBottom:`1px solid ${t.border}`,padding:'9px 28px',display:'flex',gap:28,overflowX:'auto',alignItems:'center'}}>
+          {['NIFTY','BANKNIFTY','SENSEX','BTC'].map(sym=>{const d=mkt[sym],up=(d?.pct||0)>=0;return(
+            <div key={sym} onClick={()=>setTab('charts')} style={{display:'flex',gap:10,alignItems:'center',flexShrink:0,cursor:'pointer'}}>
+              <span style={{color:t.muted,fontSize:11,fontWeight:700}}>{sym}</span>
+              <span style={{fontFamily:'JetBrains Mono,monospace',fontSize:13,color:t.text,fontWeight:700}}>{d?fmt(d.price):'—'}</span>
+              {d&&<span style={{fontSize:11,fontWeight:700,color:up?t.green:t.red,background:(up?t.green:t.red)+'18',borderRadius:6,padding:'1px 6px'}}>{up?'+':''}{fmt(d.pct,2)}%</span>}
+            </div>
           ))}
+          <span style={{marginLeft:'auto',fontSize:10,color:t.muted,flexShrink:0,display:'flex',alignItems:'center',gap:4}}><span style={{width:5,height:5,borderRadius:'50%',background:isConn?t.green:t.amber,display:'inline-block'}}/>{isConn?'Live · Kite':'Delayed · Yahoo'}</span>
         </div>
 
-        <main style={{padding:'0 24px 60px',maxWidth:1400,margin:'0 auto'}}>
-          <div style={{background:'#0f1628',border:'1px solid #1e2d4a',borderRadius:'0 12px 12px 12px',padding:24}}>
+        <div style={{padding:'18px 28px 0',display:'flex',gap:4}}>
+          {tabs.map(tb=><button key={tb.id} onClick={()=>setTab(tb.id)} style={{padding:'9px 20px',borderRadius:'10px 10px 0 0',fontSize:13,fontWeight:600,background:tab===tb.id?t.card:t.surface+'88',border:`1px solid ${tab===tb.id?t.border:'transparent'}`,borderBottom:tab===tb.id?`1px solid ${t.card}`:'none',color:tab===tb.id?t.text:t.muted,cursor:'pointer',fontFamily:'Space Grotesk,sans-serif',transition:'all 0.15s'}}>{tb.l}</button>)}
+        </div>
 
-            {!isConnected && activeTab !== 'charts' && (
-              <div style={{background:'#0d1a0d',border:'1px solid #1e3d1e',borderRadius:12,padding:16,marginBottom:20,display:'flex',alignItems:'center',justifyContent:'space-between',gap:12}}>
-                <div>
-                  <p style={{color:'#4caf50',fontWeight:600,fontSize:13}}>🔐 Connect Zerodha for live data & one-click execution</p>
-                  <p style={{color:'#2d6a2d',fontSize:12,marginTop:3}}>Live prices · Real positions · Auto stop loss · One-click orders</p>
-                </div>
-                <button onClick={()=>loginUrl&&window.location.assign(loginUrl)} style={{padding:'10px 20px',background:'linear-gradient(135deg,#00e676,#00b248)',border:'none',borderRadius:10,color:'#fff',fontWeight:700,cursor:'pointer',fontSize:13,fontFamily:'Space Grotesk,sans-serif',flexShrink:0}}>
-                  Login with Zerodha →
-                </button>
-              </div>
-            )}
+        <main style={{padding:'0 28px 60px',maxWidth:1440,margin:'0 auto',position:'relative',zIndex:1}}>
+          <div style={{background:t.card,border:`1px solid ${t.border}`,borderRadius:'0 16px 16px 16px',padding:28}}>
+            {!isConn&&tab!=='charts'&&<div style={{background:dark?t.blue+'0d':t.blue+'0a',border:`1px solid ${t.blue}33`,borderRadius:16,padding:18,marginBottom:24,display:'flex',alignItems:'center',justifyContent:'space-between',gap:16}}><div><p style={{color:t.blue,fontWeight:700,fontSize:14}}>🔐 Login with Zerodha for live data & 1-click execution</p><p style={{color:t.muted,fontSize:12,marginTop:3}}>Live prices · Real positions · Auto stop loss · SL + Target in one click</p></div><button onClick={()=>loginUrl&&window.location.assign(loginUrl)} style={{padding:'10px 22px',background:`linear-gradient(135deg,${t.green},${t.teal})`,border:'none',borderRadius:12,color:'#fff',fontWeight:700,cursor:'pointer',fontSize:13,fontFamily:'Space Grotesk,sans-serif',flexShrink:0,boxShadow:`0 4px 20px ${t.green}33`}}>Connect Now →</button></div>}
 
-            {activeTab==='signals' && (
-              <div>
-                <div style={{marginBottom:20}}>
-                  <h2 style={{fontSize:18,fontWeight:700}}>Live Signals — Projectzero Strategies</h2>
-                  <p style={{color:'#64748b',fontSize:13,marginTop:4}}>Built from 3-month NSE analysis · 76% ORB rate · Tuesday best day · Bearish market mode</p>
-                </div>
-                <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(360px,1fr))',gap:20}}>
-                  {PZ_STRATEGIES.map(s=><SignalCard key={s.id} strat={s} accessToken={accessToken} onTradeExecuted={()=>setTradeRefresh(r=>r+1)} />)}
-                </div>
-              </div>
-            )}
-
-            {activeTab==='positions' && <PositionsPanel accessToken={accessToken} />}
-            {activeTab==='trades'    && (
-              <div>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20}}>
-                  <div><h2 style={{fontSize:18,fontWeight:700}}>Trade History & P&L</h2><p style={{color:'#64748b',fontSize:13,marginTop:4}}>All executed trades · Entry/Exit · P&L tracking</p></div>
-                  <button onClick={()=>setTradeRefresh(r=>r+1)} style={{padding:'7px 14px',background:'#1e2d4a',border:'1px solid #2d4a6a',borderRadius:8,color:'#e2e8f0',cursor:'pointer',fontSize:12,fontFamily:'Space Grotesk,sans-serif'}}>🔄 Refresh</button>
-                </div>
-                <TradeHistory refresh={tradeRefresh} />
-              </div>
-            )}
-            {activeTab==='charts' && <ChartsTab />}
-
+            {tab==='signals'&&<div><div style={{marginBottom:22}}><h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Live Signals</h2><p style={{color:t.muted,fontSize:13,marginTop:5}}>4 custom PZ strategies built from 3-month NSE data · 76% ORB · Tue/Wed best days</p></div><div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(370px,1fr))',gap:20}}>{PZ_STRATEGIES.map(s=><SignalCard key={s.id} strat={s} at={at} onTrade={()=>setTr(r=>r+1)} t={t}/>)}</div></div>}
+            {tab==='positions'&&<div><div style={{marginBottom:22}}><h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Portfolio</h2><p style={{color:t.muted,fontSize:13,marginTop:5}}>Live from Zerodha · Positions · Margins · Today's orders</p></div><Positions at={at} t={t}/></div>}
+            {tab==='trades'&&<div><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:22}}><div><h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Trade History</h2><p style={{color:t.muted,fontSize:13,marginTop:5}}>All trades · Entry/Exit · P&L</p></div><button onClick={()=>setTr(r=>r+1)} style={{padding:'8px 16px',background:t.surface,border:`1px solid ${t.border}`,borderRadius:10,color:t.text,cursor:'pointer',fontSize:12,fontFamily:'Space Grotesk,sans-serif',fontWeight:600}}>🔄 Refresh</button></div><History refresh={tr} t={t}/></div>}
+            {tab==='charts'&&<Charts t={t}/>}
           </div>
         </main>
       </div>
-      <style>{`@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(1.4)}} *{box-sizing:border-box}`}</style>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(1.3)}}*{box-sizing:border-box;margin:0;padding:0}::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:#374151;border-radius:2px}`}</style>
     </>
   )
 }
