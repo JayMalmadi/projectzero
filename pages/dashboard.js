@@ -745,7 +745,15 @@ function AreaChartMini({data, color}) {
 // ── Crypto Execute Modal (Binance) ─────────────────────────────
 function CryptoExecModal({data, sym, stratName, onClose, onDone, t}) {
   const fmtD  = (n) => n ? `$${Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}` : '—'
-  const [qty,     setQty]    = useState(0.001)
+  const getDefaultQty = () => {
+    if(sym==='BTC')  return 0.001
+    if(sym==='ETH')  return 0.01
+    if(sym==='BNB')  return 0.01
+    if(sym==='XRP')  return 1
+    if(sym==='DOGE') return 10
+    return 0.1
+  }
+  const [qty, setQty] = useState(() => getDefaultQty())
   const QTY_STEP = sym==='BTC'?0.001:sym==='ETH'?0.01:sym==='BNB'?0.01:sym==='XRP'?1:sym==='DOGE'?10:0.1
   const [placing, setPlacing]= useState(false)
   const [result,  setResult] = useState(null)
@@ -844,7 +852,7 @@ function CryptoExecModal({data, sym, stratName, onClose, onDone, t}) {
               <button onClick={()=>setQty(q=>Math.max(QTY_STEP, parseFloat((q-QTY_STEP).toFixed(6))))} style={{width:34,height:34,background:t.card,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,cursor:'pointer',fontSize:20}}>−</button>
               <span style={{color:t.text,fontWeight:800,fontSize:18,minWidth:80,textAlign:'center',fontFamily:'monospace'}}>{qty}</span>
               <button onClick={()=>setQty(q=>parseFloat((q+QTY_STEP).toFixed(6)))} style={{width:34,height:34,background:t.card,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,cursor:'pointer',fontSize:20}}>+</button>
-              <span style={{color:t.muted,fontSize:11}}>≈ ${(qty*data.price).toFixed(2)} USDT</span>
+              <span style={{color:t.muted,fontSize:11}}>≈ ${(qty*data.price) < 1 ? (qty*data.price).toFixed(4) : (qty*data.price).toFixed(2)} USDT</span>
             </div>
           </div>
           <div style={{display:'flex',gap:20}}>
@@ -878,7 +886,7 @@ function CryptoExecModal({data, sym, stratName, onClose, onDone, t}) {
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:8}}>
                 <div style={{background:t.blue+'0d',borderRadius:8,padding:'8px 12px',border:`1px solid ${t.blue}22`}}>
                   <p style={{color:t.muted,fontSize:10,fontWeight:600,marginBottom:3}}>CAPITAL REQUIRED</p>
-                  <p style={{color:t.blue,fontSize:15,fontWeight:800,fontFamily:'monospace'}}>{fmtD(entryAmt)}</p>
+                  <p style={{color:t.blue,fontSize:15,fontWeight:800,fontFamily:'monospace'}}>{{entryAmt < 1 ? '$'+entryAmt.toFixed(4) : fmtD(entryAmt)}</p>
                   <p style={{color:t.muted,fontSize:10,marginTop:2}}>{qty} {sym} × ${data.price?.toLocaleString('en-US',{maximumFractionDigits:2})}</p>
                 </div>
                 <div style={{background:t.amber+'0d',borderRadius:8,padding:'8px 12px',border:`1px solid ${t.amber}22`}}>
