@@ -569,14 +569,7 @@ function SignalCard({strat,at,onTrade,t}) {
 
           {data.chartData&&<div style={{height:75}}><ResponsiveContainer width="100%" height="100%"><AreaChart data={data.chartData}><defs><linearGradient id={`g${strat.id}`} x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={sc} stopOpacity={0.3}/><stop offset="95%" stopColor={sc} stopOpacity={0}/></linearGradient></defs><XAxis dataKey="date" hide/><YAxis domain={['auto','auto']} hide/><Tooltip contentStyle={{background:t.card,border:`1px solid ${t.border}`,borderRadius:8,fontSize:11,color:t.text}}/><Area type="monotone" dataKey="close" stroke={sc} fill={`url(#g${strat.id})`} dot={false} strokeWidth={2}/></AreaChart></ResponsiveContainer></div>}
 
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-            <button onClick={()=>setChart(!chart)} style={{padding:'11px',background:t.surface,border:`1.5px solid ${chart?t.blue:t.border}`,borderRadius:10,color:t.blue,cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:'Inter,sans-serif',transition:'all 0.15s'}}>{chart?'✕ Close Chart':'📈 Kite Chart'}</button>
-            <button onClick={()=>setModal(true)} disabled={data.signal==='HOLD'} style={{padding:'11px',border:'none',borderRadius:10,fontWeight:800,fontSize:12,cursor:data.signal==='HOLD'?'not-allowed':'pointer',background:data.signal==='HOLD'?t.surface:data.signal==='BUY'?`linear-gradient(135deg,${t.green},${t.teal})`:`linear-gradient(135deg,${t.red},#ff6688)`,color:data.signal==='HOLD'?t.muted:'#fff',fontFamily:'Inter,sans-serif',opacity:data.signal==='HOLD'?0.5:1,boxShadow:data.signal!=='HOLD'?`0 2px 12px ${sc}44`:'none'}}>
-              {data.signal==='HOLD'?'Hold':'⚡ '+data.signal+' + SL + Target'}
-            </button>
-          </div>
-
-          {/* Multi-Timeframe Confluence */}
+          <div sty   {/* Multi-Timeframe Confluence */}
           {mtf&&(
             <div style={{background:t.surface,borderRadius:12,padding:'12px 14px',border:`1px solid ${mtf.color}44`}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
@@ -595,6 +588,48 @@ function SignalCard({strat,at,onTrade,t}) {
               <p style={{color:t.text2,fontSize:11,lineHeight:1.6}}>{mtf.recommendation}</p>
             </div>
           )}
+
+          
+          {/* Deep Dive Panel */}
+          {(deepDive||deepLoading)&&(
+            <div style={{background:t.surface,borderRadius:12,padding:'14px 16px',border:`1px solid ${t.purple}44`}}>
+              <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:10}}>
+                <span style={{fontSize:14}}>🔬</span>
+                <span style={{color:t.purple,fontSize:11,fontWeight:700,letterSpacing:'0.08em'}}>DEEP DIVE — {sym}</span>
+                {deepLoading&&<div style={{width:10,height:10,border:`2px solid ${t.purple}44`,borderTopColor:t.purple,borderRadius:'50%',animation:'spin 0.8s linear infinite',marginLeft:'auto'}}/>}
+              </div>
+              {deepLoading
+                ?<p style={{color:t.muted,fontSize:12,fontStyle:'italic'}}>Fetching {sym} data, news, global context...</p>
+                :<>
+                  <p style={{color:t.text2,fontSize:12,lineHeight:1.8,whiteSpace:'pre-wrap'}}>{deepDive?.analysis}</p>
+                  {deepDive?.news?.length>0&&(
+                    <div style={{marginTop:10,borderTop:`1px solid ${t.border}`,paddingTop:8}}>
+                      <p style={{color:t.muted,fontSize:10,fontWeight:700,marginBottom:6}}>RECENT NEWS</p>
+                      {deepDive.news.slice(0,4).map((n,i)=>(
+                        <p key={i} style={{color:t.muted,fontSize:11,marginBottom:4}}>• [{n.timeAgo}] {n.title?.slice(0,90)}</p>
+                      ))}
+                    </div>
+                  )}
+                </>
+              }
+            </div>
+          )}
+
+          {/* Action buttons */}
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}}>
+            <button onClick={()=>{setDeepDive(null);fetchDeepDive()}} disabled={deepLoading}
+              style={{padding:'10px',background:deepDive?t.purple+'22':t.surface,border:`1.5px solid ${deepDive?t.purple:t.border}`,borderRadius:10,color:deepDive?t.purple:t.muted,cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'Inter,sans-serif'}}>
+              {deepLoading?'⏳...':'🔬 Deep Dive'}
+            </button>
+            <button onClick={()=>setChart(!chart)}
+              style={{padding:'10px',background:t.surface,border:`1.5px solid ${chart?t.blue:t.border}`,borderRadius:10,color:t.blue,cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'Inter,sans-serif'}}>
+              {chart?'✕ Chart':'📈 Chart'}
+            </button>
+            <button onClick={()=>setModal(true)} disabled={data.signal==='HOLD'}
+              style={{padding:'10px',border:'none',borderRadius:10,fontWeight:800,fontSize:11,cursor:data.signal==='HOLD'?'not-allowed':'pointer',background:data.signal==='HOLD'?t.surface:data.signal==='BUY'?`linear-gradient(135deg,${t.green},${t.teal})`:`linear-gradient(135deg,${t.red},#ff6688)`,color:data.signal==='HOLD'?t.muted:'#fff',fontFamily:'Inter,sans-serif',opacity:data.signal==='HOLD'?0.5:1}}>
+              {data.signal==='HOLD'?'Hold':'⚡ '+data.signal}
+            </button>
+          </div>
 
           {chart&&<PZChart symbol={sym} t={t} h={380} accessToken={at} />}
         </>}
