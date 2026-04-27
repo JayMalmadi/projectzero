@@ -441,17 +441,26 @@ function SignalCard({strat,at,onTrade,t}) {
   useEffect(()=>{load()},[sym,strat.id])
   const [aiNote,   setAiNote]   = useState('')
   const [aiLoading,setAiLoading]= useState(false)
+  const [mtf,      setMtf]      = useState(null)
 
   async function load(){
-    setLoading(true);setData(null)
+    setLoading(true);setData(null);setMtf(null)
     try{
       const r=await fetch(`/api/pz-strategies?symbol=${sym}&strategy=${strat.id}`)
       const d=await r.json()
       setData(d)
-      if(d.signal!=='HOLD') fetchAI(d)
+      if(d.signal!=='HOLD'){fetchAI(d);fetchMTF()}
       else setAiNote('')
     }catch{}
     setLoading(false)
+  }
+
+  async function fetchMTF(){
+    try{
+      const r=await fetch(`/api/multi-timeframe?symbol=${sym}&market=india`)
+      const d=await r.json()
+      if(d.status==='success') setMtf(d)
+    }catch{}
   }
 
   async function fetchAI(d) {
@@ -549,6 +558,26 @@ function SignalCard({strat,at,onTrade,t}) {
               {data.signal==='HOLD'?'Hold':'⚡ '+data.signal+' + SL + Target'}
             </button>
           </div>
+
+          {/* Multi-Timeframe Confluence */}
+          {mtf&&(
+            <div style={{background:t.surface,borderRadius:12,padding:'12px 14px',border:`1px solid ${mtf.color}44`}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+                <span style={{color:t.muted,fontSize:10,fontWeight:700,letterSpacing:'0.08em'}}>🔀 MULTI-TIMEFRAME</span>
+                <span style={{color:mtf.color,fontWeight:800,fontSize:11,background:mtf.color+'18',padding:'2px 8px',borderRadius:20,border:`1px solid ${mtf.color}44`}}>{mtf.confluence} ({mtf.score}/3)</span>
+              </div>
+              <div style={{display:'flex',gap:6,marginBottom:8}}>
+                {Object.entries(mtf.timeframes||{}).map(([tf,d])=>(
+                  <div key={tf} style={{flex:1,background:t.card,borderRadius:8,padding:'8px',textAlign:'center',border:`1px solid ${d.trend==='BULLISH'?t.green:d.trend==='BEARISH'?t.red:t.border}33`}}>
+                    <p style={{color:t.muted,fontSize:9,fontWeight:700,marginBottom:3}}>{d.label}</p>
+                    <p style={{color:d.trend==='BULLISH'?t.green:d.trend==='BEARISH'?t.red:t.amber,fontSize:14,fontWeight:900,lineHeight:1}}>{d.trend==='BULLISH'?'▲':d.trend==='BEARISH'?'▼':'⟃'}</p>
+                    <p style={{color:t.muted,fontSize:9,marginTop:2}}>RSI {d.rsi}</p>
+                  </div>
+                ))}
+              </div>
+              <p style={{color:t.text2,fontSize:11,lineHeight:1.6}}>{mtf.recommendation}</p>
+            </div>
+          )}
 
           {chart&&<PZChart symbol={sym} t={t} h={380} accessToken={at} />}
         </>}
@@ -872,15 +901,25 @@ function CryptoSignalCard({symbol, strategy, stratName, t}) {
 
   useEffect(() => { load() }, [symbol, strategy])
 
+  const [mtf, setMtf] = useState(null)
+
   async function load() {
-    setLoading(true); setData(null); setAiNote('')
+    setLoading(true); setData(null); setAiNote(''); setMtf(null)
     try {
       const r = await fetch(`/api/crypto-signals?symbol=${symbol}&strategy=${strategy}`)
       const d = await r.json()
       setData(d)
-      if (d.signal !== 'HOLD') fetchAI(d)
+      if (d.signal !== 'HOLD') { fetchAI(d); fetchMTF() }
     } catch {}
     setLoading(false)
+  }
+
+  async function fetchMTF() {
+    try {
+      const r = await fetch(`/api/multi-timeframe?symbol=${symbol}&market=crypto`)
+      const d = await r.json()
+      if (d.status === 'success') setMtf(d)
+    } catch {}
   }
 
   async function fetchAI(d) {
@@ -1031,6 +1070,26 @@ function CryptoSignalCard({symbol, strategy, stratName, t}) {
             </div>
           )}
 
+          {/* Multi-Timeframe */}
+          {mtf&&(
+            <div style={{background:t.surface,borderRadius:12,padding:'12px 14px',border:`1px solid ${mtf.color}44`}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+                <span style={{color:t.muted,fontSize:10,fontWeight:700,letterSpacing:'0.08em'}}>🔀 MULTI-TIMEFRAME</span>
+                <span style={{color:mtf.color,fontWeight:800,fontSize:11,background:mtf.color+'18',padding:'2px 8px',borderRadius:20}}>{mtf.confluence} ({mtf.score}/3)</span>
+              </div>
+              <div style={{display:'flex',gap:6,marginBottom:8}}>
+                {Object.entries(mtf.timeframes||{}).map(([tf,d])=>(
+                  <div key={tf} style={{flex:1,background:t.card,borderRadius:8,padding:'8px',textAlign:'center',border:`1px solid ${d.trend==='BULLISH'?t.green:d.trend==='BEARISH'?t.red:t.border}33`}}>
+                    <p style={{color:t.muted,fontSize:9,fontWeight:700,marginBottom:3}}>{d.label}</p>
+                    <p style={{color:d.trend==='BULLISH'?t.green:d.trend==='BEARISH'?t.red:t.amber,fontSize:14,fontWeight:900}}>{d.trend==='BULLISH'?'▲':d.trend==='BEARISH'?'▼':'⟃'}</p>
+                    <p style={{color:t.muted,fontSize:9,marginTop:2}}>RSI {d.rsi}</p>
+                  </div>
+                ))}
+              </div>
+              <p style={{color:t.text2,fontSize:11,lineHeight:1.6}}>{mtf.recommendation}</p>
+            </div>
+          )}
+
           {/* Action buttons */}
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
             <button
@@ -1154,8 +1213,13 @@ function CryptoTab({t, at}) {
         ))}
       </div>
 
+      {/* Crypto News */}
+      <div style={{marginTop:20}}>
+        <NewsBar t={t} market='crypto'/>
+      </div>
+
       {/* Info bar */}
-      <div style={{marginTop:20,background:t.surface,borderRadius:12,padding:'12px 16px',border:`1px solid ${t.border}`,display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+      <div style={{marginTop:12,background:t.surface,borderRadius:12,padding:'12px 16px',border:`1px solid ${t.border}`,display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
         <span style={{fontSize:14}}>🪙</span>
         <p style={{color:t.muted,fontSize:12}}>
           Crypto markets run 24/7. Charts open in fullscreen with all 9 timeframes (1m to 1W).
@@ -1563,6 +1627,112 @@ function PerformanceTab({t}) {
 }
 
 
+// ── Options Chain Tab ──────────────────────────────────────────
+function OptionsTab({t}) {
+  const [symbol,  setSymbol]  = useState('NIFTY')
+  const [data,    setData]    = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [error,   setError]   = useState('')
+
+  useEffect(()=>{ load() }, [symbol])
+
+  async function load() {
+    setLoading(true); setError(''); setData(null)
+    try {
+      const r = await fetch(`/api/options-chain?symbol=${symbol}`)
+      const d = await r.json()
+      if (d.status==='success') setData(d)
+      else setError(d.error || 'Failed to load options chain')
+    } catch(e) { setError(e.message) }
+    setLoading(false)
+  }
+
+  const fmtOI  = (n) => n >= 1000000 ? (n/1000000).toFixed(1)+'M' : n >= 1000 ? (n/1000).toFixed(0)+'K' : n
+  const fmtRs  = (n) => n ? `₹${n.toFixed(1)}` : '—'
+
+  return (
+    <div>
+      <div style={{marginBottom:20,display:'flex',justifyContent:'space-between',alignItems:'flex-start',flexWrap:'wrap',gap:12}}>
+        <div>
+          <h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Options Chain</h2>
+          <p style={{color:t.muted,fontSize:13,marginTop:5}}>NSE live options · OI · LTP · IV · PCR · Max Pain</p>
+        </div>
+        <div style={{display:'flex',gap:8,alignItems:'center'}}>
+          {['NIFTY','BANKNIFTY'].map(s=>(
+            <button key={s} onClick={()=>setSymbol(s)}
+              style={{padding:'8px 20px',borderRadius:10,border:`1px solid ${symbol===s?t.blue:t.border}`,background:symbol===s?t.blue+'22':t.surface,color:symbol===s?t.blue:t.muted,fontWeight:700,cursor:'pointer',fontSize:13,fontFamily:'Space Grotesk,sans-serif'}}>
+              {s}
+            </button>
+          ))}
+          <button onClick={load} style={{padding:'8px 14px',borderRadius:10,border:`1px solid ${t.border}`,background:t.surface,color:t.muted,cursor:'pointer',fontSize:13}}>↻</button>
+        </div>
+      </div>
+
+      {loading&&<div style={{textAlign:'center',padding:40}}><div style={{width:32,height:32,border:`3px solid ${t.border}`,borderTopColor:t.blue,borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'0 auto 12px'}}/><p style={{color:t.muted}}>Loading NSE options chain...</p></div>}
+
+      {error&&(
+        <div style={{background:t.red+'11',border:`1px solid ${t.red}33`,borderRadius:14,padding:24,textAlign:'center'}}>
+          <p style={{fontSize:28,marginBottom:8}}>⚠️</p>
+          <p style={{color:t.red,fontWeight:700,marginBottom:6}}>NSE Connection Issue</p>
+          <p style={{color:t.muted,fontSize:13,marginBottom:16}}>{error}</p>
+          <p style={{color:t.muted,fontSize:12}}>NSE blocks automated requests during market hours. Try again after 3:30 PM or outside market hours. The data is available on the NSE website directly.</p>
+          <button onClick={()=>window.open(`https://www.nseindia.com/option-chain`,'_blank')} style={{marginTop:12,padding:'10px 24px',background:t.blue+'22',border:`1px solid ${t.blue}44`,borderRadius:10,color:t.blue,cursor:'pointer',fontWeight:700,fontFamily:'Space Grotesk,sans-serif'}}>Open NSE Options Chain ↗</button>
+        </div>
+      )}
+
+      {!loading&&!error&&data&&(
+        <>
+          {/* Summary cards */}
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(150px,1fr))',gap:12,marginBottom:20}}>
+            {[
+              {l:'SPOT PRICE', v:`₹${data.spotPrice?.toLocaleString('en-IN',{maximumFractionDigits:1})}`, c:t.text},
+              {l:'EXPIRY',     v:data.expiry, c:t.blue},
+              {l:'PCR',       v:data.pcr, c:data.pcr>1.3?t.green:data.pcr<0.7?t.red:t.amber, s:data.pcrSentiment},
+              {l:'MAX PAIN',  v:`₹${data.maxPain?.toLocaleString('en-IN')}`, c:t.purple, s:'Strike with max OI'},
+            ].map(x=>(
+              <div key={x.l} style={{background:t.card,borderRadius:14,padding:'14px 16px',border:`1px solid ${t.border}`,textAlign:'center'}}>
+                <p style={{color:t.muted,fontSize:10,fontWeight:700,letterSpacing:'0.08em',marginBottom:4}}>{x.l}</p>
+                <p style={{color:x.c,fontSize:16,fontWeight:900,fontFamily:'monospace'}}>{x.v}</p>
+                {x.s&&<p style={{color:t.muted,fontSize:10,marginTop:4}}>{x.s}</p>}
+              </div>
+            ))}
+          </div>
+
+          {/* Options table */}
+          <div style={{background:t.card,borderRadius:16,border:`1px solid ${t.border}`,overflow:'auto'}}>
+            {/* Header */}
+            <div style={{display:'grid',gridTemplateColumns:'1fr 0.6fr 0.6fr 0.6fr 0.8fr 0.8fr 1fr 0.6fr 0.6fr 0.6fr',gap:0,padding:'10px 16px',background:t.surface,borderBottom:`1px solid ${t.border}`,fontSize:10,fontWeight:700,color:t.muted,letterSpacing:'0.07em',minWidth:700}}>
+              <span>CALL OI</span><span>CALL VOL</span><span>CALL IV</span><span>CALL LTP</span>
+              <span style={{textAlign:'center',color:t.text}}>STRIKE</span>
+              <span style={{textAlign:'right'}}>PUT LTP</span><span style={{textAlign:'right'}}>PUT IV</span><span style={{textAlign:'right'}}>PUT VOL</span><span style={{textAlign:'right'}}>PUT OI</span><span/>
+            </div>
+            {data.chain.map(row=>(
+              <div key={row.strike}
+                style={{display:'grid',gridTemplateColumns:'1fr 0.6fr 0.6fr 0.6fr 0.8fr 0.8fr 1fr 0.6fr 0.6fr 0.6fr',gap:0,padding:'8px 16px',borderBottom:`1px solid ${t.border}`,fontSize:12,minWidth:700,background:row.isATM?t.blue+'0a':'transparent'}}>
+                <span style={{color:t.green,fontFamily:'monospace',fontWeight:row.isATM?700:400}}>{fmtOI(row.call?.oi||0)}</span>
+                <span style={{color:t.muted,fontFamily:'monospace'}}>{fmtOI(row.call?.volume||0)}</span>
+                <span style={{color:t.muted,fontFamily:'monospace'}}>{row.call?.iv?.toFixed(1)||'—'}%</span>
+                <span style={{color:t.text,fontFamily:'monospace',fontWeight:600}}>{fmtRs(row.call?.ltp)}</span>
+                <span style={{textAlign:'center',fontWeight:900,color:row.isATM?t.blue:t.text,fontFamily:'monospace',fontSize:row.isATM?14:12}}>
+                  {row.strike?.toLocaleString('en-IN')}
+                  {row.isATM&&<span style={{fontSize:9,color:t.blue,display:'block'}}>ATM</span>}
+                </span>
+                <span style={{textAlign:'right',color:t.text,fontFamily:'monospace',fontWeight:600}}>{fmtRs(row.put?.ltp)}</span>
+                <span style={{textAlign:'right',color:t.muted,fontFamily:'monospace'}}>{row.put?.iv?.toFixed(1)||'—'}%</span>
+                <span style={{textAlign:'right',color:t.muted,fontFamily:'monospace'}}>{fmtOI(row.put?.volume||0)}</span>
+                <span style={{textAlign:'right',color:t.red,fontFamily:'monospace',fontWeight:row.isATM?700:400}}>{fmtOI(row.put?.oi||0)}</span>
+                <span/>
+              </div>
+            ))}
+          </div>
+          <p style={{color:t.muted,fontSize:11,marginTop:10,textAlign:'center'}}>Green OI = Calls (bears) · Red OI = Puts (bulls) · High Put OI = support level · High Call OI = resistance</p>
+        </>
+      )}
+    </div>
+  )
+}
+
+
 function TickerBar({mkt, t, setTab, isConn}) {
   const syms = ['NIFTY','BANKNIFTY','SENSEX','BTC','ETH','SOL']
   return (
@@ -1624,7 +1794,7 @@ export default function Dashboard() {
 
   function disc(){['kite_access_token','kite_user','kite_connected_date'].forEach(k=>localStorage.removeItem(k));setAt('');setKU(null)}
 
-  const tabs=[{id:'signals',l:'📡 Signals'},{id:'crypto',l:'🪙 Crypto'},{id:'positions',l:'💼 Portfolio'},{id:'trades',l:'📋 History'},{id:'charts',l:'📈 Charts'},{id:'alerts',l:'🔔 Alerts'},{id:'performance',l:'🏆 Performance'}]
+  const tabs=[{id:'signals',l:'📡 Signals'},{id:'crypto',l:'🪙 Crypto'},{id:'positions',l:'💼 Portfolio'},{id:'trades',l:'📋 History'},{id:'charts',l:'📈 Charts'},{id:'alerts',l:'🔔 Alerts'},{id:'performance',l:'🏆 Performance'},{id:'options',l:'⛓ Options'}]
   const isConn=!!at
 
   return (
@@ -1675,6 +1845,7 @@ export default function Dashboard() {
             {tab==='crypto'&&<CryptoTab t={t} />}
             {tab==='alerts'&&<AlertsTab t={t}/>}
             {tab==='performance'&&<PerformanceTab t={t}/>}
+            {tab==='options'&&<OptionsTab t={t}/>}
             {tab==='positions'&&<div><div style={{marginBottom:22}}><h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Portfolio</h2><p style={{color:t.muted,fontSize:13,marginTop:5}}>Live from Zerodha · Positions · Available Margin · Today's Orders</p></div><Positions at={at} t={t}/></div>}
             {tab==='trades'&&<div><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:22}}><div><h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Trade History</h2><p style={{color:t.muted,fontSize:13,marginTop:5}}>All trades · Entry/Exit · P&L</p></div><button onClick={()=>setTr(r=>r+1)} style={{padding:'8px 16px',background:t.surface,border:`1px solid ${t.border}`,borderRadius:10,color:t.text,cursor:'pointer',fontSize:12,fontFamily:'Space Grotesk,sans-serif',fontWeight:600}}>🔄 Refresh</button></div><History refresh={tr} t={t}/></div>}
             {tab==='charts'&&<Charts t={t} at={at}/>}
