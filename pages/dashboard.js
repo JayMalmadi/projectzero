@@ -962,10 +962,13 @@ function CryptoSignalCard({symbol, strategy, stratName, t}) {
   const [aiLoading,setAiLoading] = useState(false)
 
   useEffect(() => {
-    load()
-    // Crypto auto-refresh every 2 minutes (24/7)
-    const iv = setInterval(() => load(), 2*60*1000)
-    return () => clearInterval(iv)
+    // Stagger loads to avoid hitting API rate limits (8 cards load simultaneously)
+    const symbols = ['BTC','ETH','SOL','BNB','XRP','DOGE','ADA']
+    const delay   = symbols.indexOf(symbol) * 500  // 500ms stagger per card
+    const timer   = setTimeout(() => load(), delay)
+    
+    const iv = setInterval(() => load(), 3*60*1000)  // refresh every 3 min
+    return () => { clearTimeout(timer); clearInterval(iv) }
   }, [symbol, strategy])
 
   const [mtf,          setMtf]          = useState(null)
@@ -984,13 +987,22 @@ function CryptoSignalCard({symbol, strategy, stratName, t}) {
   }
 
   async function load() {
-    setLoading(true); setData(null); setAiNote(''); setMtf(null)
+    setLoading(true); setData(null)
     try {
       const r = await fetch(`/api/crypto-signals?symbol=${symbol}&strategy=${strategy}`)
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
       const d = await r.json()
-      setData(d)
-      if (d.signal !== 'HOLD') { fetchAI(d); fetchMTF() }
-    } catch {}
+      if (d && d.signal) {
+        setData(d)
+        // Only fetch AI and MTF for active signals, with delay
+        if (d.signal !== 'HOLD' && d.confidence >= 50) {
+          setTimeout(() => fetchAI(d), 1000)
+          setTimeout(() => fetchMTF(), 2000)
+        }
+      }
+    } catch(e) {
+      console.warn('Crypto signal load error:', e.message)
+    }
     setLoading(false)
   }
 
