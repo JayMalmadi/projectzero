@@ -39,6 +39,30 @@ const CRYPTO_INTERVALS = [
   {v:'1w',  l:'1W',  refresh:300},
 ]
 
+
+// External app chart URLs
+const KITE_URLS = {
+  NIFTY:    'https://kite.zerodha.com/chart/web/ciq/INDICES/NIFTY%2050/INDICES',
+  BANKNIFTY:'https://kite.zerodha.com/chart/web/ciq/INDICES/NIFTY%20BANK/INDICES',
+  SENSEX:   'https://kite.zerodha.com/chart/web/ciq/INDICES/SENSEX/INDICES',
+  TCS:      'https://kite.zerodha.com/chart/web/ciq/NSE/TCS/EQ',
+  INFY:     'https://kite.zerodha.com/chart/web/ciq/NSE/INFY/EQ',
+  ICICIBANK:'https://kite.zerodha.com/chart/web/ciq/NSE/ICICIBANK/EQ',
+  RELIANCE: 'https://kite.zerodha.com/chart/web/ciq/NSE/RELIANCE/EQ',
+  HDFCBANK: 'https://kite.zerodha.com/chart/web/ciq/NSE/HDFCBANK/EQ',
+  SBIN:     'https://kite.zerodha.com/chart/web/ciq/NSE/SBIN/EQ',
+  WIPRO:    'https://kite.zerodha.com/chart/web/ciq/NSE/WIPRO/EQ',
+}
+const BINANCE_URLS = {
+  BTC: 'https://www.binance.com/en/trade/BTC_USDT?type=spot',
+  ETH: 'https://www.binance.com/en/trade/ETH_USDT?type=spot',
+  SOL: 'https://www.binance.com/en/trade/SOL_USDT?type=spot',
+  BNB: 'https://www.binance.com/en/trade/BNB_USDT?type=spot',
+  XRP: 'https://www.binance.com/en/trade/XRP_USDT?type=spot',
+  DOGE:'https://www.binance.com/en/trade/DOGE_USDT?type=spot',
+  ADA: 'https://www.binance.com/en/trade/ADA_USDT?type=spot',
+}
+
 const INDIA_SYMS  = ['NIFTY','BANKNIFTY','SENSEX','TCS','INFY','ICICIBANK','RELIANCE','HDFCBANK','SBIN','WIPRO']
 const CRYPTO_SYMS = ['BTC','ETH','SOL','BNB','XRP','DOGE','ADA']
 
@@ -288,10 +312,21 @@ export default function FullChart() {
               {live ? `⚡ ${cfg.refresh}s` : '⏸'}
             </button>
             <button onClick={()=>loadData()} style={{padding:'4px 8px',borderRadius:6,fontSize:14,background:'none',border:'1px solid #374151',color:'#9ca3af',cursor:'pointer'}}>↻</button>
-          </div>
-        </div>
 
-        {/* Interval bar */}
+          {isCrypto
+            ? (BINANCE_URLS[symbol] &&
+              <button onClick={()=>window.open(BINANCE_URLS[symbol],'_blank')} style={{padding:'5px 12px',borderRadius:6,fontSize:11,fontWeight:700,background:'#f59e0b22',border:'1px solid #f59e0b66',color:'#f59e0b',cursor:'pointer',fontFamily:'Space Grotesk,sans-serif',flexShrink:0}}>
+                🔗 Binance ↗
+              </button>)
+            : (KITE_URLS[symbol] &&
+              <button onClick={()=>window.open(KITE_URLS[symbol],'_blank')} style={{padding:'5px 12px',borderRadius:6,fontSize:11,fontWeight:700,background:'#ff922b22',border:'1px solid #ff922b66',color:'#ff922b',cursor:'pointer',fontFamily:'Space Grotesk,sans-serif',flexShrink:0}}>
+                🔗 Kite ↗
+              </button>)
+          }
+        </div>
+      </div>
+
+      {/* Interval bar */}
         <div style={{background:'#0d1117',borderBottom:'1px solid #1f293744',padding:'6px 16px',display:'flex',gap:4,flexShrink:0}}>
           {INTERVALS.map(i => (
             <button key={i.v} onClick={()=>setIntv(i.v)} style={{
