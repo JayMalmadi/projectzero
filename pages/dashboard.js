@@ -1997,6 +1997,179 @@ function MarketStatusBanner({t}) {
 }
 
 
+// ── Watchlist Tab ──────────────────────────────────────────────
+function WatchlistTab({t, at}) {
+  const [items,   setItems]   = useState([])
+  const [prices,  setPrices]  = useState({})
+  const [loading, setLoading] = useState(true)
+  const [form,    setForm]    = useState({symbol:'NIFTY',market:'india',note:''})
+  const [saving,  setSaving]  = useState(false)
+  const [msg,     setMsg]     = useState('')
+
+  useEffect(() => { load() }, [])
+  useEffect(() => { if(items.length) fetchPrices() }, [items])
+
+  async function load() {
+    setLoading(true)
+    try {
+      const r = await fetch('/api/watchlist')
+      const d = await r.json()
+      setItems(d.items || [])
+    } catch {}
+    setLoading(false)
+  }
+
+  async function fetchPrices() {
+    try {
+      const indSyms = items.filter(i=>i.market==='india').map(i=>i.symbol)
+      const cryptoSyms = items.filter(i=>i.market==='crypto').map(i=>i.symbol)
+      const newPrices = {}
+
+      if (indSyms.length) {
+        const r = await fetch(`/api/market?symbols=${indSyms.join(',')}`)
+        const d = await r.json()
+        if (d.data) Object.assign(newPrices, d.data)
+      }
+      if (cryptoSyms.length) {
+        const r = await fetch('/api/binance?action=prices')
+        const d = await r.json()
+        if (d.prices) Object.assign(newPrices, d.prices)
+      }
+      setPrices(newPrices)
+    } catch {}
+  }
+
+  async function add() {
+    if (!form.symbol) return
+    setSaving(true)
+    const r = await fetch('/api/watchlist', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(form)
+    })
+    const d = await r.json()
+    if (d.item) { setMsg('Added!'); load(); setForm(f=>({...f,note:''})) }
+    else setMsg('Error: ' + d.error)
+    setSaving(false)
+    setTimeout(() => setMsg(''), 2000)
+  }
+
+  async function remove(id) {
+    await fetch('/api/watchlist', {
+      method: 'DELETE', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({id})
+    })
+    load()
+  }
+
+  const INDIA_SYMS  = ['NIFTY','BANKNIFTY','SENSEX','TCS','INFY','RELIANCE','HDFCBANK','ICICIBANK','SBIN','WIPRO','AXISBANK','LT','BAJFINANCE']
+  const CRYPTO_SYMS = ['BTC','ETH','SOL','BNB','XRP','DOGE','ADA']
+  const syms = form.market === 'crypto' ? CRYPTO_SYMS : INDIA_SYMS
+  const curr = (mkt) => mkt === 'crypto' ? '$' : '₹'
+
+  return (
+    <div>
+      <div style={{marginBottom:20}}>
+        <h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Watchlist</h2>
+        <p style={{color:t.muted,fontSize:13,marginTop:5}}>Track symbols with live prices and personal notes</p>
+      </div>
+
+      {/* Add form */}
+      <div style={{background:t.card,borderRadius:16,padding:20,border:`1px solid ${t.border}`,marginBottom:20}}>
+        <p style={{color:t.text,fontWeight:700,fontSize:14,marginBottom:14}}>+ Add Symbol</p>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(160px,1fr))',gap:12,marginBottom:14}}>
+          <div>
+            <p style={{color:t.muted,fontSize:11,fontWeight:600,marginBottom:6}}>MARKET</p>
+            <select value={form.market} onChange={e=>setForm(f=>({...f,market:e.target.value,symbol:e.target.value==='crypto'?'BTC':'NIFTY'}))}
+              style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,fontSize:13,padding:'8px 10px',width:'100%',fontFamily:'Inter,sans-serif'}}>
+              <option value="india">🇮🇳 Indian</option>
+              <option value="crypto">🪙 Crypto</option>
+            </select>
+          </div>
+          <div>
+            <p style={{color:t.muted,fontSize:11,fontWeight:600,marginBottom:6}}>SYMBOL</p>
+            <select value={form.symbol} onChange={e=>setForm(f=>({...f,symbol:e.target.value}))}
+              style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,fontSize:13,padding:'8px 10px',width:'100%',fontFamily:'Inter,sans-serif'}}>
+              {syms.map(s=><option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div style={{gridColumn:'span 2'}}>
+            <p style={{color:t.muted,fontSize:11,fontWeight:600,marginBottom:6}}>NOTE (optional)</p>
+            <input value={form.note} onChange={e=>setForm(f=>({...f,note:e.target.value}))}
+              placeholder="e.g. watching for breakout above 24500, earnings next week..."
+              style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,fontSize:13,padding:'8px 12px',width:'100%',fontFamily:'Inter,sans-serif',boxSizing:'border-box'}}/>
+          </div>
+        </div>
+        {msg&&<p style={{color:msg.includes('Error')?t.red:t.green,fontSize:13,marginBottom:8,fontWeight:600}}>{msg}</p>}
+        <button onClick={add} disabled={saving}
+          style={{padding:'10px 24px',background:'linear-gradient(135deg,#ff6600,#ff9500)',border:'none',borderRadius:10,color:'#fff',fontWeight:700,cursor:'pointer',fontFamily:'Inter,sans-serif',fontSize:13,boxShadow:'0 4px 16px #ff660033'}}>
+          {saving?'Adding...':'Add to Watchlist'}
+        </button>
+      </div>
+
+      {/* Watchlist */}
+      {loading ? (
+        <div style={{textAlign:'center',padding:40}}>
+          <div style={{width:28,height:28,border:`3px solid ${t.border}`,borderTopColor:'#ff6600',borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'0 auto'}}/>
+        </div>
+      ) : items.length === 0 ? (
+        <div style={{background:t.card,borderRadius:16,padding:40,border:`1px solid ${t.border}`,textAlign:'center'}}>
+          <p style={{fontSize:36,marginBottom:12}}>👁</p>
+          <p style={{color:t.text,fontWeight:700,fontSize:16,marginBottom:6}}>Watchlist is empty</p>
+          <p style={{color:t.muted,fontSize:13}}>Add symbols above to track live prices with your notes</p>
+        </div>
+      ) : (
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(300px,1fr))',gap:14}}>
+          {items.map(item => {
+            const p = prices[item.symbol]
+            const pct = p?.pct || 0
+            const price = p?.price
+            return (
+              <div key={item.id} style={{background:t.card,borderRadius:14,padding:18,border:`1px solid ${t.border}`,position:'relative'}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:10}}>
+                  <div>
+                    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+                      <span style={{fontWeight:800,fontSize:17,color:t.text}}>{item.symbol}</span>
+                      <span style={{background:item.market==='crypto'?'#ff990022':'#ff660022',color:item.market==='crypto'?t.amber:'#ff6600',fontSize:10,fontWeight:700,padding:'1px 7px',borderRadius:20,border:`1px solid ${item.market==='crypto'?t.amber+'44':'#ff660033'}`}}>
+                        {item.market==='crypto'?'🪙 Crypto':'🇮🇳 India'}
+                      </span>
+                    </div>
+                    {price ? (
+                      <div style={{display:'flex',alignItems:'center',gap:8}}>
+                        <span style={{fontFamily:'JetBrains Mono,monospace',fontWeight:700,fontSize:16,color:t.text}}>{curr(item.market)}{Number(price).toLocaleString('en-IN',{maximumFractionDigits:2})}</span>
+                        <span style={{color:pct>=0?t.green:t.red,fontWeight:700,fontSize:13}}>{pct>=0?'+':''}{pct.toFixed(2)}%</span>
+                      </div>
+                    ) : (
+                      <span style={{color:t.muted,fontSize:13}}>Loading...</span>
+                    )}
+                  </div>
+                  <button onClick={()=>remove(item.id)}
+                    style={{background:'none',border:'none',color:t.muted,cursor:'pointer',fontSize:18,padding:4,borderRadius:6}}>×</button>
+                </div>
+                {item.note && (
+                  <div style={{background:t.surface,borderRadius:8,padding:'8px 10px',border:`1px solid ${t.border}`}}>
+                    <p style={{color:t.text2,fontSize:12,lineHeight:1.5}}>📝 {item.note}</p>
+                  </div>
+                )}
+                <div style={{display:'flex',gap:6,marginTop:10}}>
+                  <button onClick={()=>window.open(`/chart?symbol=${item.symbol}&market=${item.market}`,'_blank','width=1440,height=860')}
+                    style={{flex:1,padding:'7px',background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,color:t.blue,cursor:'pointer',fontSize:11,fontWeight:600,fontFamily:'Inter,sans-serif'}}>
+                    📈 Chart
+                  </button>
+                  <button onClick={()=>window.open(`/api/asset-deep-dive?symbol=${item.symbol}&market=${item.market}`,'_blank')}
+                    style={{flex:1,padding:'7px',background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,color:t.purple,cursor:'pointer',fontSize:11,fontWeight:600,fontFamily:'Inter,sans-serif'}}>
+                    🔬 Deep Dive
+                  </button>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+
 function TickerBar({mkt, t, setTab, isConn}) {
   const syms = ['NIFTY','BANKNIFTY','SENSEX','BTC','ETH','SOL']
   return (
@@ -2084,7 +2257,7 @@ export default function Dashboard() {
     return () => window.removeEventListener('keydown', handler)
   }, [])
 
-  const tabs=[{id:'signals',l:'📡 Signals'},{id:'crypto',l:'🪙 Crypto'},{id:'positions',l:'💼 Portfolio'},{id:'trades',l:'📋 History'},{id:'charts',l:'📈 Charts'},{id:'alerts',l:'🔔 Alerts'},{id:'performance',l:'🏆 Performance'},{id:'options',l:'⛓ Options'}]
+  const tabs=[{id:'signals',l:'📡 Signals'},{id:'crypto',l:'🪙 Crypto'},{id:'positions',l:'💼 Portfolio'},{id:'trades',l:'📋 History'},{id:'charts',l:'📈 Charts'},{id:'alerts',l:'🔔 Alerts'},{id:'performance',l:'🏆 Performance'},{id:'options',l:'⛓ Options'},{id:'watchlist',l:'👁 Watchlist'}]
   const isConn=!!at
 
   return (
@@ -2212,6 +2385,7 @@ export default function Dashboard() {
             {tab==='alerts'&&<AlertsTab t={t}/>}
             {tab==='performance'&&<PerformanceTab t={t}/>}
             {tab==='options'&&<OptionsTab t={t}/>}
+            {tab==='watchlist'&&<WatchlistTab t={t} at={at}/>}
             {tab==='positions'&&<div><div style={{marginBottom:22}}><h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Portfolio</h2><p style={{color:t.muted,fontSize:13,marginTop:5}}>Live from Zerodha · Positions · Available Margin · Today's Orders</p></div><Positions at={at} t={t}/></div>}
             {tab==='trades'&&<div><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:22}}><div><h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Trade History</h2><p style={{color:t.muted,fontSize:13,marginTop:5}}>All trades · Entry/Exit · P&L</p></div><button onClick={()=>setTr(r=>r+1)} style={{padding:'8px 16px',background:t.surface,border:`1px solid ${t.border}`,borderRadius:10,color:t.text,cursor:'pointer',fontSize:12,fontFamily:'Inter,sans-serif',fontWeight:600}}>🔄 Refresh</button></div><History refresh={tr} t={t}/></div>}
             {tab==='charts'&&<Charts t={t} at={at}/>}

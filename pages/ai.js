@@ -202,6 +202,25 @@ export default function AIPage() {
                 Send
               </button>
             </div>
+
+            {/* Quick prompts */}
+            <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:12}}>
+              {[
+                'What is the best strategy for today?',
+                'Analyse current market conditions',
+                'Should I trade NIFTY or BankNifty today?',
+                'Explain PZ-ORB strategy with entry rules',
+                'What does RSI mean in trading?',
+                'How to manage risk in intraday trading?',
+                'Best time to enter a BUY trade today?',
+                'Crypto market outlook for today',
+              ].map(q=>(
+                <button key={q} onClick={()=>setMsg(q)}
+                  style={{padding:'5px 12px',background:t.surface,border:`1px solid ${t.border}`,borderRadius:20,color:t.text2,cursor:'pointer',fontSize:11,fontFamily:'Inter,sans-serif',fontWeight:500,transition:'all 0.15s'}}>
+                  {q}
+                </button>
+              ))}
+            </div>
           </div>
         </main>
       </div>

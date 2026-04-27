@@ -88,3 +88,12 @@ CREATE TABLE IF NOT EXISTS price_alerts (
   triggered     BOOLEAN DEFAULT FALSE,
   created_at    TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Watchlist table
+CREATE TABLE IF NOT EXISTS watchlist (
+  id         UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  symbol     TEXT NOT NULL,
+  market     TEXT DEFAULT 'india',
+  note       TEXT DEFAULT '',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
