@@ -296,6 +296,31 @@ function History({refresh,t}) {
   )
 }
 
+
+function TickerBar({mkt, t, setTab, isConn}) {
+  const syms = ['NIFTY','BANKNIFTY','SENSEX','BTC']
+  return (
+    <div style={{background:t.tickBg,borderBottom:`1px solid ${t.border}`,padding:'9px 28px',display:'flex',gap:28,overflowX:'auto',alignItems:'center'}}>
+      {syms.map(sym => {
+        const d = mkt[sym]
+        const up = (d?.pct||0) >= 0
+        const pctStr = d ? (up ? '+' : '') + fmt(d.pct, 2) + '%' : ''
+        return (
+          <div key={sym} onClick={() => setTab('charts')} style={{display:'flex',gap:10,alignItems:'center',flexShrink:0,cursor:'pointer'}}>
+            <span style={{color:t.muted,fontSize:11,fontWeight:700}}>{sym}</span>
+            <span style={{fontFamily:'JetBrains Mono,monospace',fontSize:13,color:t.text,fontWeight:700}}>{d ? fmt(d.price) : '—'}</span>
+            {d && <span style={{fontSize:11,fontWeight:700,color:up?t.green:t.red,background:(up?t.green:t.red)+'18',borderRadius:6,padding:'1px 6px'}}>{pctStr}</span>}
+          </div>
+        )
+      })}
+      <span style={{marginLeft:'auto',fontSize:10,color:t.muted,flexShrink:0,display:'flex',alignItems:'center',gap:4}}>
+        <span style={{width:5,height:5,borderRadius:'50%',background:isConn?t.green:t.amber,display:'inline-block'}} />
+        {isConn ? 'Live · Kite' : 'Delayed · Yahoo'}
+      </span>
+    </div>
+  )
+}
+
 export default function Dashboard() {
   const router=useRouter()
   const [dark,setDark]=useState(true),[at,setAt]=useState(''),[kiteUser,setKU]=useState(null),[mkt,setMkt]=useState({}),[tab,setTab]=useState('signals'),[time,setTime]=useState(''),[tr,setTr]=useState(0),[loginUrl,setLoginUrl]=useState('')
@@ -361,16 +386,7 @@ export default function Dashboard() {
           </div>
         </header>
 
-        <div style={{background:t.tickBg,borderBottom:`1px solid ${t.border}`,padding:'9px 28px',display:'flex',gap:28,overflowX:'auto',alignItems:'center'}}>
-          {['NIFTY','BANKNIFTY','SENSEX','BTC'].map(sym=>{const d=mkt[sym],up=(d?.pct||0)>=0;return(
-            <div key={sym} onClick={()=>setTab('charts')} style={{display:'flex',gap:10,alignItems:'center',flexShrink:0,cursor:'pointer'}}>
-              <span style={{color:t.muted,fontSize:11,fontWeight:700}}>{sym}</span>
-              <span style={{fontFamily:'JetBrains Mono,monospace',fontSize:13,color:t.text,fontWeight:700}}>{d?fmt(d.price):'—'}</span>
-              {d&&<span style={{fontSize:11,fontWeight:700,color:up?t.green:t.red,background:(up?t.green:t.red)+'18',borderRadius:6,padding:'1px 6px'}}>{up?'+':''}{fmt(d.pct,2)}{'%'}</span>}
-            </div>
-          ))}
-          <span style={{marginLeft:'auto',fontSize:10,color:t.muted,flexShrink:0,display:'flex',alignItems:'center',gap:4}}><span style={{width:5,height:5,borderRadius:'50%',background:isConn?t.green:t.amber,display:'inline-block'}}/>{isConn?'Live · Kite':'Delayed · Yahoo'}</span>
-        </div>
+        <TickerBar mkt={mkt} t={t} setTab={setTab} isConn={isConn} />
 
         <div style={{padding:'18px 28px 0',display:'flex',gap:4}}>
           {tabs.map(tb=><button key={tb.id} onClick={()=>setTab(tb.id)} style={{padding:'9px 20px',borderRadius:'10px 10px 0 0',fontSize:13,fontWeight:600,background:tab===tb.id?t.card:t.surface+'88',border:`1px solid ${tab===tb.id?t.border:'transparent'}`,borderBottom:tab===tb.id?`1px solid ${t.card}`:'none',color:tab===tb.id?t.text:t.muted,cursor:'pointer',fontFamily:'Space Grotesk,sans-serif',transition:'all 0.15s'}}>{tb.l}</button>)}
