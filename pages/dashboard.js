@@ -886,7 +886,7 @@ function CryptoExecModal({data, sym, stratName, onClose, onDone, t}) {
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:8}}>
                 <div style={{background:t.blue+'0d',borderRadius:8,padding:'8px 12px',border:`1px solid ${t.blue}22`}}>
                   <p style={{color:t.muted,fontSize:10,fontWeight:600,marginBottom:3}}>CAPITAL REQUIRED</p>
-                  <p style={{color:t.blue,fontSize:15,fontWeight:800,fontFamily:'monospace'}}>{{entryAmt < 1 ? '$'+entryAmt.toFixed(4) : fmtD(entryAmt)}</p>
+                  <p style={{color:t.blue,fontSize:15,fontWeight:800,fontFamily:'monospace'}}>{entryAmt < 1 ? '$'+entryAmt.toFixed(4) : fmtD(entryAmt)}</p>
                   <p style={{color:t.muted,fontSize:10,marginTop:2}}>{qty} {sym} × ${data.price?.toLocaleString('en-US',{maximumFractionDigits:2})}</p>
                 </div>
                 <div style={{background:t.amber+'0d',borderRadius:8,padding:'8px 12px',border:`1px solid ${t.amber}22`}}>
