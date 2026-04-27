@@ -2190,6 +2190,153 @@ function WatchlistTab({t, at}) {
 }
 
 
+// ── Binance Portfolio ──────────────────────────────────────────
+function BinancePortfolio({t}) {
+  const [account,  setAccount]  = useState(null)
+  const [loading,  setLoading]  = useState(true)
+  const [error,    setError]    = useState('')
+  const [prices,   setPrices]   = useState({})
+  const [showAll,  setShowAll]  = useState(false)
+
+  useEffect(() => { load() }, [])
+
+  async function load() {
+    setLoading(true); setError('')
+    try {
+      // Fetch account + prices in parallel
+      const [acctR, priceR] = await Promise.all([
+        fetch('/api/binance?action=account'),
+        fetch('/api/binance?action=prices'),
+      ])
+      const acctD  = await acctR.json()
+      const priceD = await priceR.json()
+
+      if (acctD.error) throw new Error(acctD.error)
+      setAccount(acctD)
+      setPrices(priceD.prices || {})
+    } catch(e) {
+      setError(e.message)
+    }
+    setLoading(false)
+  }
+
+  if (loading) return (
+    <div style={{textAlign:'center',padding:40}}>
+      <div style={{width:28,height:28,border:`3px solid ${t.border}`,borderTopColor:t.amber,borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'0 auto 10px'}}/>
+      <p style={{color:t.muted,fontSize:12}}>Loading Binance account...</p>
+    </div>
+  )
+
+  if (error) return (
+    <div style={{textAlign:'center',padding:32}}>
+      <p style={{fontSize:32,marginBottom:8}}>⚠️</p>
+      <p style={{color:t.red,fontWeight:600,fontSize:13,marginBottom:6}}>Connection Error</p>
+      <p style={{color:t.muted,fontSize:12,marginBottom:14}}>{error}</p>
+      <button onClick={load} style={{padding:'7px 18px',background:t.amber+'22',border:`1px solid ${t.amber}44`,borderRadius:8,color:t.amber,cursor:'pointer',fontFamily:'Inter,sans-serif',fontWeight:600,fontSize:12}}>↻ Retry</button>
+    </div>
+  )
+
+  if (!account) return null
+
+  // Compute total portfolio value in USDT
+  const balances = (account.balances || []).filter(b => parseFloat(b.free) > 0 || parseFloat(b.locked) > 0)
+  
+  const withValue = balances.map(b => {
+    const free   = parseFloat(b.free)
+    const locked = parseFloat(b.locked)
+    const total  = free + locked
+    let usdtVal  = 0
+    if (b.asset === 'USDT') usdtVal = total
+    else if (prices[b.asset]?.price) usdtVal = total * prices[b.asset].price
+    return { ...b, free, locked, total, usdtVal }
+  }).filter(b => b.usdtVal > 0.01).sort((a,b) => b.usdtVal - a.usdtVal)
+
+  const totalUSDT = withValue.reduce((sum, b) => sum + b.usdtVal, 0)
+  const usdtBal   = withValue.find(b => b.asset === 'USDT')
+  const availableForTrading = usdtBal?.free || 0
+
+  const shown = showAll ? withValue : withValue.slice(0, 6)
+
+  const fmtUSD = (n) => `$${Number(n).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}`
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:14}}>
+
+      {/* Summary cards */}
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+        <div style={{background:t.surface,borderRadius:12,padding:'14px 16px',border:`1px solid ${t.border}`,textAlign:'center'}}>
+          <p style={{color:t.muted,fontSize:10,fontWeight:700,letterSpacing:'0.08em',marginBottom:4}}>TOTAL VALUE</p>
+          <p style={{color:t.amber,fontSize:20,fontWeight:900,fontFamily:'JetBrains Mono,monospace'}}>{fmtUSD(totalUSDT)}</p>
+          <p style={{color:t.muted,fontSize:10,marginTop:3}}>USDT equivalent</p>
+        </div>
+        <div style={{background:t.surface,borderRadius:12,padding:'14px 16px',border:`1px solid ${t.border}`,textAlign:'center'}}>
+          <p style={{color:t.muted,fontSize:10,fontWeight:700,letterSpacing:'0.08em',marginBottom:4}}>AVAILABLE (USDT)</p>
+          <p style={{color:availableForTrading > 0 ? t.green : t.muted,fontSize:20,fontWeight:900,fontFamily:'JetBrains Mono,monospace'}}>{fmtUSD(availableForTrading)}</p>
+          <p style={{color:t.muted,fontSize:10,marginTop:3}}>ready to trade</p>
+        </div>
+      </div>
+
+      {/* Holdings */}
+      {withValue.length > 0 ? (
+        <div style={{background:t.surface,borderRadius:12,border:`1px solid ${t.border}`,overflow:'hidden'}}>
+          <div style={{padding:'10px 14px',borderBottom:`1px solid ${t.border}`,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <span style={{color:t.text,fontWeight:700,fontSize:13}}>Holdings ({withValue.length})</span>
+            <button onClick={load} style={{background:'none',border:'none',color:t.muted,cursor:'pointer',fontSize:13}}>↻</button>
+          </div>
+          {shown.map((b,i) => {
+            const pct = totalUSDT > 0 ? (b.usdtVal / totalUSDT * 100) : 0
+            const price = prices[b.asset]?.price
+            const change = prices[b.asset]?.pct || 0
+            return (
+              <div key={b.asset} style={{padding:'10px 14px',borderBottom:i<shown.length-1?`1px solid ${t.border}22`:'none',display:'flex',alignItems:'center',gap:10}}>
+                {/* Asset info */}
+                <div style={{width:32,height:32,borderRadius:'50%',background:t.amber+'22',display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,fontWeight:700,color:t.amber,flexShrink:0}}>
+                  {b.asset.slice(0,3)}
+                </div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                    <span style={{fontWeight:700,color:t.text,fontSize:13}}>{b.asset}</span>
+                    <span style={{fontFamily:'JetBrains Mono,monospace',fontWeight:700,color:t.text,fontSize:13}}>{fmtUSD(b.usdtVal)}</span>
+                  </div>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:2}}>
+                    <span style={{color:t.muted,fontSize:11}}>{b.total.toFixed(b.asset==='BTC'?6:b.asset==='ETH'?4:2)} {b.asset} {price?`@ $${Number(price).toLocaleString('en-US',{maximumFractionDigits:2})}`:''}
+                    </span>
+                    {change !== 0 && <span style={{color:change>=0?t.green:t.red,fontSize:11,fontWeight:600}}>{change>=0?'+':''}{change.toFixed(2)}%</span>}
+                  </div>
+                  {/* Portfolio weight bar */}
+                  <div style={{height:3,background:t.border,borderRadius:2,marginTop:4,overflow:'hidden'}}>
+                    <div style={{height:'100%',width:`${pct}%`,background:`linear-gradient(90deg,${t.amber},${t.orange})`,borderRadius:2}}/>
+                  </div>
+                </div>
+                <span style={{color:t.muted,fontSize:10,minWidth:32,textAlign:'right'}}>{pct.toFixed(1)}%</span>
+              </div>
+            )
+          })}
+          {withValue.length > 6 && (
+            <button onClick={()=>setShowAll(s=>!s)} style={{width:'100%',padding:'10px',background:'none',border:'none',color:t.blue,cursor:'pointer',fontFamily:'Inter,sans-serif',fontSize:12,fontWeight:600,borderTop:`1px solid ${t.border}`}}>
+              {showAll ? 'Show less ↑' : `Show ${withValue.length - 6} more ↓`}
+            </button>
+          )}
+        </div>
+      ) : (
+        <div style={{background:t.surface,borderRadius:12,padding:24,border:`1px solid ${t.border}`,textAlign:'center'}}>
+          <p style={{fontSize:28,marginBottom:8}}>💰</p>
+          <p style={{color:t.text,fontWeight:700,fontSize:14,marginBottom:4}}>No funds yet</p>
+          <p style={{color:t.muted,fontSize:12}}>Deposit USDT to start trading crypto</p>
+        </div>
+      )}
+
+      {/* Locked funds note */}
+      {withValue.some(b => b.locked > 0) && (
+        <div style={{background:t.amber+'0a',border:`1px solid ${t.amber}22`,borderRadius:10,padding:'8px 12px',fontSize:11,color:t.muted}}>
+          🔒 Some funds are locked in open orders. Close orders to free them.
+        </div>
+      )}
+    </div>
+  )
+}
+
+
 function TickerBar({mkt, t, setTab, isConn}) {
   const syms = ['NIFTY','BANKNIFTY','SENSEX','BTC','ETH','SOL']
   return (
@@ -2406,7 +2553,32 @@ export default function Dashboard() {
             {tab==='performance'&&<PerformanceTab t={t}/>}
             {tab==='options'&&<OptionsTab t={t}/>}
             {tab==='watchlist'&&<WatchlistTab t={t} at={at}/>}
-            {tab==='positions'&&<div><div style={{marginBottom:22}}><h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Portfolio</h2><p style={{color:t.muted,fontSize:13,marginTop:5}}>Live from Zerodha · Positions · Available Margin · Today's Orders</p></div><Positions at={at} t={t}/></div>}
+            {tab==='positions'&&<div>
+              <div style={{marginBottom:22,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                <div>
+                  <h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Portfolio</h2>
+                  <p style={{color:t.muted,fontSize:13,marginTop:5}}>Indian markets (Zerodha) + Crypto (Binance) · Live balances</p>
+                </div>
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:20,marginBottom:24}}>
+                <div style={{background:t.card,borderRadius:16,padding:20,border:`1px solid ${t.border}`}}>
+                  <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+                    <span style={{fontSize:20}}>🇮🇳</span>
+                    <p style={{fontWeight:800,fontSize:16,color:t.text}}>Zerodha</p>
+                    <span style={{background:at?t.green+'22':t.red+'22',color:at?t.green:t.red,fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20,border:`1px solid ${at?t.green:t.red}33`}}>{at?'Connected':'Not connected'}</span>
+                  </div>
+                  <Positions at={at} t={t}/>
+                </div>
+                <div style={{background:t.card,borderRadius:16,padding:20,border:`1px solid ${t.border}`}}>
+                  <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+                    <span style={{fontSize:20}}>🪙</span>
+                    <p style={{fontWeight:800,fontSize:16,color:t.text}}>Binance</p>
+                    <span style={{background:t.green+'22',color:t.green,fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20,border:`1px solid ${t.green}33`}}>API Connected</span>
+                  </div>
+                  <BinancePortfolio t={t}/>
+                </div>
+              </div>
+            </div>}
             {tab==='trades'&&<div><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:22}}><div><h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Trade History</h2><p style={{color:t.muted,fontSize:13,marginTop:5}}>All trades · Entry/Exit · P&L</p></div><button onClick={()=>setTr(r=>r+1)} style={{padding:'8px 16px',background:t.surface,border:`1px solid ${t.border}`,borderRadius:10,color:t.text,cursor:'pointer',fontSize:12,fontFamily:'Inter,sans-serif',fontWeight:600}}>🔄 Refresh</button></div><History refresh={tr} t={t}/></div>}
             {tab==='charts'&&<Charts t={t} at={at}/>}
           </div>
