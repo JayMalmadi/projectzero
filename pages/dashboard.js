@@ -366,7 +366,7 @@ export default function Dashboard() {
             <div key={sym} onClick={()=>setTab('charts')} style={{display:'flex',gap:10,alignItems:'center',flexShrink:0,cursor:'pointer'}}>
               <span style={{color:t.muted,fontSize:11,fontWeight:700}}>{sym}</span>
               <span style={{fontFamily:'JetBrains Mono,monospace',fontSize:13,color:t.text,fontWeight:700}}>{d?fmt(d.price):'—'}</span>
-              {d&&<span style={{fontSize:11,fontWeight:700,color:up?t.green:t.red,background:(up?t.green:t.red)+'18',borderRadius:6,padding:'1px 6px'}}>{up?'+':''}{fmt(d.pct,2)}%</span>}
+              {d&&<span style={{fontSize:11,fontWeight:700,color:up?t.green:t.red,background:(up?t.green:t.red)+'18',borderRadius:6,padding:'1px 6px'}}>{up?'+':''}{fmt(d.pct,2)}{'%'}</span>}
             </div>
           ))}
           <span style={{marginLeft:'auto',fontSize:10,color:t.muted,flexShrink:0,display:'flex',alignItems:'center',gap:4}}><span style={{width:5,height:5,borderRadius:'50%',background:isConn?t.green:t.amber,display:'inline-block'}}/>{isConn?'Live · Kite':'Delayed · Yahoo'}</span>
