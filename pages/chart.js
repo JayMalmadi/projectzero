@@ -7,10 +7,10 @@ import Head from 'next/head'
 import { useRouter } from 'next/router'
 
 const DARK = {
-  bg:'#07090f', surface:'#0d1117', card:'#111827', border:'#1f2937',
-  text:'#f9fafb', text2:'#9ca3af', muted:'#4b5563',
-  green:'#10f59e', red:'#ff4466', blue:'#3b9eff', amber:'#fbbf24',
-  orange:'#fb923c', accentC:'#3b9eff',
+  bg:'#080c14', surface:'#0e1420', card:'#111927', border:'#1c2535',
+  text:'#f0f4fc', text2:'#8b95a8', muted:'#4a5568',
+  green:'#00d17a', red:'#ff4060', blue:'#4da6ff', amber:'#ffaa00',
+  orange:'#ff7a00', accentC:'#ff7a00',
 }
 
 // Indian market intervals (Kite API format)
@@ -251,22 +251,22 @@ export default function FullChart() {
         <title>{symbol} {isCrypto ? 'USDT' : ''} Chart — Projectzero</title>
         <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
       </Head>
-      <div style={{minHeight:'100vh',background:'#07090f',fontFamily:'Space Grotesk,sans-serif',color:'#f9fafb',display:'flex',flexDirection:'column'}}>
+      <div style={{minHeight:'100vh',background:'#07090f',fontFamily:'Inter,sans-serif',color:'#f9fafb',display:'flex',flexDirection:'column'}}>
 
         {/* Header */}
         <div style={{background:'rgba(13,17,23,0.97)',borderBottom:'1px solid #1f2937',padding:'0 16px',height:56,display:'flex',alignItems:'center',gap:10,flexShrink:0}}>
 
           {/* Close */}
-          <button onClick={()=>window.close()} style={{background:'#1f2937',border:'none',borderRadius:8,color:'#9ca3af',cursor:'pointer',fontSize:12,padding:'5px 12px',fontFamily:'Space Grotesk,sans-serif',fontWeight:600,flexShrink:0}}>
+          <button onClick={()=>window.close()} style={{background:'#1f2937',border:'none',borderRadius:8,color:'#9ca3af',cursor:'pointer',fontSize:12,padding:'5px 12px',fontFamily:'Inter,sans-serif',fontWeight:600,flexShrink:0}}>
             ← Close
           </button>
 
           {/* Market switcher */}
           <div style={{display:'flex',gap:4,flexShrink:0}}>
-            <button onClick={()=>switchMarket('india')} style={{padding:'4px 12px',borderRadius:6,fontSize:12,fontWeight:700,background:!isCrypto?'#3b9eff':'#1f2937',border:`1px solid ${!isCrypto?'#3b9eff':'#374151'}`,color:!isCrypto?'#fff':'#9ca3af',cursor:'pointer',fontFamily:'Space Grotesk,sans-serif'}}>
+            <button onClick={()=>switchMarket('india')} style={{padding:'4px 12px',borderRadius:6,fontSize:12,fontWeight:700,background:!isCrypto?'#3b9eff':'#1f2937',border:`1px solid ${!isCrypto?'#3b9eff':'#374151'}`,color:!isCrypto?'#fff':'#9ca3af',cursor:'pointer',fontFamily:'Inter,sans-serif'}}>
               🇮🇳 India
             </button>
-            <button onClick={()=>switchMarket('crypto')} style={{padding:'4px 12px',borderRadius:6,fontSize:12,fontWeight:700,background:isCrypto?'#f59e0b':'#1f2937',border:`1px solid ${isCrypto?'#f59e0b':'#374151'}`,color:isCrypto?'#000':'#9ca3af',cursor:'pointer',fontFamily:'Space Grotesk,sans-serif'}}>
+            <button onClick={()=>switchMarket('crypto')} style={{padding:'4px 12px',borderRadius:6,fontSize:12,fontWeight:700,background:isCrypto?'#f59e0b':'#1f2937',border:`1px solid ${isCrypto?'#f59e0b':'#374151'}`,color:isCrypto?'#000':'#9ca3af',cursor:'pointer',fontFamily:'Inter,sans-serif'}}>
               🪙 Crypto
             </button>
           </div>
@@ -279,7 +279,7 @@ export default function FullChart() {
                 background: symbol===s ? (isCrypto?'#f59e0b':'#3b9eff') : 'transparent',
                 border:`1px solid ${symbol===s?(isCrypto?'#f59e0b':'#3b9eff'):'transparent'}`,
                 color: symbol===s ? (isCrypto?'#000':'#fff') : '#9ca3af',
-                cursor:'pointer',fontFamily:'Space Grotesk,sans-serif',
+                cursor:'pointer',fontFamily:'Inter,sans-serif',
               }}>{s}</button>
             ))}
           </div>
@@ -307,7 +307,7 @@ export default function FullChart() {
               background: live ? (isCrypto?'#f59e0b22':'#10f59e22') : '#1f2937',
               border:`1px solid ${live?(isCrypto?'#f59e0b':'#10f59e'):'#374151'}`,
               color: live ? (isCrypto?'#f59e0b':'#10f59e') : '#9ca3af',
-              cursor:'pointer',fontFamily:'Space Grotesk,sans-serif',
+              cursor:'pointer',fontFamily:'Inter,sans-serif',
             }}>
               {live ? `⚡ ${cfg.refresh}s` : '⏸'}
             </button>
@@ -315,11 +315,11 @@ export default function FullChart() {
 
           {isCrypto
             ? (BINANCE_URLS[symbol] &&
-              <button onClick={()=>window.open(BINANCE_URLS[symbol],'_blank')} style={{padding:'5px 12px',borderRadius:6,fontSize:11,fontWeight:700,background:'#f59e0b22',border:'1px solid #f59e0b66',color:'#f59e0b',cursor:'pointer',fontFamily:'Space Grotesk,sans-serif',flexShrink:0}}>
+              <button onClick={()=>window.open(BINANCE_URLS[symbol],'_blank')} style={{padding:'5px 12px',borderRadius:6,fontSize:11,fontWeight:700,background:'#f59e0b22',border:'1px solid #f59e0b66',color:'#f59e0b',cursor:'pointer',fontFamily:'Inter,sans-serif',flexShrink:0}}>
                 🔗 Binance ↗
               </button>)
             : (KITE_URLS[symbol] &&
-              <button onClick={()=>window.open(KITE_URLS[symbol],'_blank')} style={{padding:'5px 12px',borderRadius:6,fontSize:11,fontWeight:700,background:'#ff922b22',border:'1px solid #ff922b66',color:'#ff922b',cursor:'pointer',fontFamily:'Space Grotesk,sans-serif',flexShrink:0}}>
+              <button onClick={()=>window.open(KITE_URLS[symbol],'_blank')} style={{padding:'5px 12px',borderRadius:6,fontSize:11,fontWeight:700,background:'#ff922b22',border:'1px solid #ff922b66',color:'#ff922b',cursor:'pointer',fontFamily:'Inter,sans-serif',flexShrink:0}}>
                 🔗 Kite ↗
               </button>)
           }
@@ -334,7 +334,7 @@ export default function FullChart() {
               background: intv===i.v ? (isCrypto?'#f59e0b':'#3b9eff') : 'transparent',
               border:`1px solid ${intv===i.v?(isCrypto?'#f59e0b':'#3b9eff'):'transparent'}`,
               color: intv===i.v ? (isCrypto?'#000':'#fff') : '#9ca3af',
-              cursor:'pointer',fontFamily:'Space Grotesk,sans-serif',transition:'all 0.1s',
+              cursor:'pointer',fontFamily:'Inter,sans-serif',transition:'all 0.1s',
             }}>{i.l}</button>
           ))}
         </div>

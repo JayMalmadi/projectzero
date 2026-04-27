@@ -914,7 +914,7 @@ function CryptoSignalCard({symbol, strategy, stratName, t}) {
   const [loading,  setLoading] = useState(false)
   const [modal,    setModal]   = useState(false)
   const [aiNote,   setAiNote]  = useState('')
-  const [aiLoading,setAiLoad]  = useState(false)
+  const [aiLoading,setAiLoading] = useState(false)
 
   useEffect(() => { load() }, [symbol, strategy])
 
@@ -953,7 +953,7 @@ function CryptoSignalCard({symbol, strategy, stratName, t}) {
   }
 
   async function fetchAI(d) {
-    setAiLoad(true); setAiNote('')
+    setAiLoading(true); setAiNote('')
     try {
       const r = await fetch('/api/ai-analysis', {
         method: 'POST', headers: {'Content-Type':'application/json'},
@@ -969,7 +969,7 @@ function CryptoSignalCard({symbol, strategy, stratName, t}) {
       const j = await r.json()
       if (j.analysis) setAiNote(j.analysis)
     } catch {}
-    setAiLoad(false)
+    setAiLoading(false)
   }
 
   const sc    = data?.signal==='BUY' ? t.green : data?.signal==='SELL' ? t.red : t.amber
@@ -1803,7 +1803,7 @@ function TickerBar({mkt, t, setTab, isConn}) {
       {syms.map(sym => {
         const d = mkt[sym]
         const up = (d?.pct||0) >= 0
-        const pctStr = d ? (up ? '+' : '') + fmt(d.pct, 2) + '%' : ''
+        const pctStr = d && d.pct!=null ? (up ? '+' : '') + fmt(d.pct, 2) + '%' : ''
         return (
           <div key={sym} onClick={() => setTab('charts')} style={{display:'flex',gap:8,alignItems:'center',flexShrink:0,cursor:'pointer',padding:'4px 10px',borderRadius:8,transition:'background 0.15s'}}
             onMouseEnter={e=>e.currentTarget.style.background=t.surface}
@@ -1845,7 +1845,7 @@ export default function Dashboard() {
   async function fetchMkt(){
     try{
       if(at){const r=await fetch('/api/kite-pro?action=quote&instruments=NSE:NIFTY+50,NSE:NIFTY+BANK,BSE:SENSEX',{headers:{'x-kite-access-token':at}});const d=await r.json();if(d.data){const m={},km={'NIFTY 50':'NIFTY','NIFTY BANK':'BANKNIFTY','SENSEX':'SENSEX'};Object.entries(d.data).forEach(([k,v])=>{const s=km[k.split(':')[1]]||k.split(':')[1];m[s]={price:v.last_price,change:v.net_change,pct:v.change}});setMkt(m);return}}
-      const r=await fetch('/api/market?symbols=NIFTY,BANKNIFTY,SENSEX,BTC');const d=await r.json();if(d.data)setMkt(d.data)
+      const r=await fetch('/api/market?symbols=NIFTY,BANKNIFTY,SENSEX');const d=await r.json();if(d.data)setMkt(d.data)
     }catch{}
     // Fetch Binance crypto prices (public, no auth needed)
     try {
@@ -1912,14 +1912,14 @@ export default function Dashboard() {
                 <div style={{display:'flex',alignItems:'center',gap:6,cursor:'pointer'}} onClick={()=>setTab('signals')}>
                   <span style={{fontSize:11,color:t.muted}}>NIFTY</span>
                   <span style={{fontFamily:'JetBrains Mono,monospace',fontWeight:600,fontSize:13,color:t.text}}>₹{mkt.NIFTY?.price?.toLocaleString('en-IN',{maximumFractionDigits:0})}</span>
-                  <span style={{fontSize:11,fontWeight:600,color:(mkt.NIFTY?.pct||0)>=0?t.green:t.red}}>{(mkt.NIFTY?.pct||0)>=0?'+':''}{mkt.NIFTY?.pct?.toFixed(2)}%</span>
+                  <span style={{fontSize:11,fontWeight:600,color:(mkt.NIFTY?.pct||0)>=0?t.green:t.red}}>{(mkt.NIFTY?.pct||0)>=0?'+':''}{mkt.NIFTY?.pct!=null?mkt.NIFTY.pct.toFixed(2):'--'}%</span>
                 </div>
               )}
               {mkt.BTC && (
                 <div style={{display:'flex',alignItems:'center',gap:6,cursor:'pointer'}} onClick={()=>setTab('crypto')}>
                   <span style={{fontSize:11,color:t.muted}}>BTC</span>
                   <span style={{fontFamily:'JetBrains Mono,monospace',fontWeight:600,fontSize:13,color:t.text}}>${mkt.BTC?.price?.toLocaleString('en-US',{maximumFractionDigits:0})}</span>
-                  <span style={{fontSize:11,fontWeight:600,color:(mkt.BTC?.pct||0)>=0?t.green:t.red}}>{(mkt.BTC?.pct||0)>=0?'+':''}{mkt.BTC?.pct?.toFixed(2)}%</span>
+                  <span style={{fontSize:11,fontWeight:600,color:(mkt.BTC?.pct||0)>=0?t.green:t.red}}>{(mkt.BTC?.pct||0)>=0?'+':''}{mkt.BTC?.pct!=null?mkt.BTC.pct.toFixed(2):'--'}%</span>
                 </div>
               )}
             </div>

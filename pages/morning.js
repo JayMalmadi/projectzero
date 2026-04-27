@@ -7,10 +7,10 @@ import Head from 'next/head'
 import { useRouter } from 'next/router'
 
 const DARK = {
-  bg:'#060a10',card:'#0d1117',surface:'#161b22',border:'#21262d',
-  text:'#f0f6fc',text2:'#8b949e',muted:'#484f58',
-  green:'#3fb950',red:'#f85149',blue:'#58a6ff',amber:'#e3b341',
-  purple:'#bc8cff',teal:'#56d364',
+  bg:'#080c14',card:'#0e1420',surface:'#161b22',border:'#1c2535',
+  text:'#f0f4fc',text2:'#8b95a8',muted:'#4a5568',
+  green:'#00d17a',red:'#ff4060',blue:'#4da6ff',amber:'#ffaa00',
+  purple:'#9f7eff',teal:'#00d17a',
 }
 
 export default function MorningPage() {
@@ -42,13 +42,13 @@ export default function MorningPage() {
       <Head>
         <title>Morning Intelligence — Projectzero</title>
         <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
-        <style>{`*{margin:0;padding:0;box-sizing:border-box}body{background:${t.bg};font-family:'Space Grotesk',sans-serif;color:${t.text};min-height:100vh}@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+        <style>{`*{margin:0;padding:0;box-sizing:border-box}body{background:${t.bg};font-family:'Inter',sans-serif;color:${t.text};min-height:100vh}@keyframes spin{to{transform:rotate(360deg)}}`}</style>
       </Head>
 
       {/* Header */}
       <div style={{background:t.card,borderBottom:`1px solid ${t.border}`,padding:'14px 24px',display:'flex',justifyContent:'space-between',alignItems:'center',position:'sticky',top:0,zIndex:100}}>
         <div style={{display:'flex',alignItems:'center',gap:16}}>
-          <button onClick={()=>router.push('/dashboard')} style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,color:t.muted,cursor:'pointer',padding:'6px 14px',fontSize:12,fontFamily:'Space Grotesk,sans-serif'}}>← Dashboard</button>
+          <button onClick={()=>router.push('/dashboard')} style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,color:t.muted,cursor:'pointer',padding:'6px 14px',fontSize:12,fontFamily:'Inter,sans-serif'}}>← Dashboard</button>
           <div>
             <span style={{fontWeight:900,fontSize:18,color:t.text}}>☀️ Morning Intelligence</span>
             {data && <span style={{color:t.muted,fontSize:12,marginLeft:10}}>{data.day} · {data.date}</span>}
@@ -56,7 +56,7 @@ export default function MorningPage() {
         </div>
         <div style={{display:'flex',alignItems:'center',gap:10}}>
           {data && <span style={{background:sentColor+'22',color:sentColor,border:`1px solid ${sentColor}44`,borderRadius:20,padding:'4px 14px',fontSize:12,fontWeight:700}}>Global: {data.globalSentiment}</span>}
-          <button onClick={load} disabled={loading} style={{background:t.blue+'22',border:`1px solid ${t.blue}44`,borderRadius:8,color:t.blue,cursor:'pointer',padding:'6px 14px',fontSize:12,fontFamily:'Space Grotesk,sans-serif',fontWeight:600}}>
+          <button onClick={load} disabled={loading} style={{background:t.blue+'22',border:`1px solid ${t.blue}44`,borderRadius:8,color:t.blue,cursor:'pointer',padding:'6px 14px',fontSize:12,fontFamily:'Inter,sans-serif',fontWeight:600}}>
             {loading?'Loading...':'↻ Refresh'}
           </button>
         </div>
@@ -99,7 +99,7 @@ export default function MorningPage() {
             <div style={{display:'flex',gap:4,marginBottom:20,background:t.surface,padding:4,borderRadius:12,border:`1px solid ${t.border}`,width:'fit-content'}}>
               {[{id:'india',l:'🇮🇳 Indian Markets'},{id:'crypto',l:'🪙 Crypto'},{id:'global',l:'🌍 Global Data'}].map(s=>(
                 <button key={s.id} onClick={()=>setSection(s.id)}
-                  style={{padding:'8px 20px',borderRadius:9,border:'none',background:section===s.id?t.card:'transparent',color:section===s.id?t.text:t.muted,fontWeight:section===s.id?700:500,cursor:'pointer',fontSize:13,fontFamily:'Space Grotesk,sans-serif',transition:'all 0.15s'}}>
+                  style={{padding:'8px 20px',borderRadius:9,border:'none',background:section===s.id?t.card:'transparent',color:section===s.id?t.text:t.muted,fontWeight:section===s.id?700:500,cursor:'pointer',fontSize:13,fontFamily:'Inter,sans-serif',transition:'all 0.15s'}}>
                   {s.l}
                 </button>
               ))}
