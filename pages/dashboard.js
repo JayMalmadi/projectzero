@@ -442,6 +442,19 @@ function SignalCard({strat,at,onTrade,t}) {
   const [aiNote,   setAiNote]   = useState('')
   const [aiLoading,setAiLoading]= useState(false)
   const [mtf,      setMtf]      = useState(null)
+  const [deepDive, setDeepDive] = useState(null)
+  const [deepLoading, setDeepLoading] = useState(false)
+
+  async function fetchDeepDive() {
+    if(deepLoading) return
+    setDeepLoading(true); setDeepDive({news:[]})
+    try{
+      const r=await fetch(`/api/asset-deep-dive?symbol=${sym}&market=india`)
+      const d=await r.json()
+      if(d.status==='success') setDeepDive(d)
+    }catch{}
+    setDeepLoading(false)
+  }
 
   async function load(){
     setLoading(true);setData(null);setMtf(null)
@@ -901,7 +914,20 @@ function CryptoSignalCard({symbol, strategy, stratName, t}) {
 
   useEffect(() => { load() }, [symbol, strategy])
 
-  const [mtf, setMtf] = useState(null)
+  const [mtf,          setMtf]          = useState(null)
+  const [cryptoDeep,   setCryptoDeep]   = useState(null)
+  const [cryptoDeepLoad,setCryptoDeepLoad] = useState(false)
+
+  async function fetchCryptoDeep() {
+    if(cryptoDeepLoad) return
+    setCryptoDeepLoad(true); setCryptoDeep({news:[]})
+    try{
+      const r=await fetch(`/api/asset-deep-dive?symbol=${symbol}&market=crypto`)
+      const d=await r.json()
+      if(d.status==='success') setCryptoDeep(d)
+    }catch{}
+    setCryptoDeepLoad(false)
+  }
 
   async function load() {
     setLoading(true); setData(null); setAiNote(''); setMtf(null)
@@ -1116,6 +1142,31 @@ function CryptoSignalCard({symbol, strategy, stratName, t}) {
               {data.signal==='HOLD'?'Hold — No Signal':`⚡ ${data.signal} on Binance`}
             </button>
           </div>
+
+          {/* Crypto Deep Dive Panel */}
+          {(cryptoDeep||cryptoDeepLoad)&&(
+            <div style={{background:'#120d1f',borderRadius:12,padding:'14px 16px',border:`1px solid ${t.purple}44`}}>
+              <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:10}}>
+                <span>🔬</span>
+                <span style={{color:t.purple,fontSize:11,fontWeight:700,letterSpacing:'0.08em'}}>DEEP DIVE — {symbol}</span>
+                {cryptoDeepLoad&&<div style={{width:10,height:10,border:`2px solid ${t.purple}44`,borderTopColor:t.purple,borderRadius:'50%',animation:'spin 0.8s linear infinite',marginLeft:'auto'}}/>}
+              </div>
+              {cryptoDeepLoad
+                ?<p style={{color:t.muted,fontSize:12,fontStyle:'italic'}}>Fetching {symbol} data, news, global context...</p>
+                :<>
+                  <p style={{color:t.text2,fontSize:12,lineHeight:1.8,whiteSpace:'pre-wrap'}}>{cryptoDeep?.analysis}</p>
+                  {cryptoDeep?.news?.length>0&&(
+                    <div style={{marginTop:10,borderTop:`1px solid ${t.border}`,paddingTop:8}}>
+                      <p style={{color:t.muted,fontSize:10,fontWeight:700,marginBottom:6}}>RECENT NEWS</p>
+                      {cryptoDeep.news.slice(0,4).map((n,i)=>(
+                        <p key={i} style={{color:t.muted,fontSize:11,marginBottom:4}}>• [{n.timeAgo}] {n.title?.slice(0,90)}</p>
+                      ))}
+                    </div>
+                  )}
+                </>
+              }
+            </div>
+          )}
         </>}
       </div>
     </>
@@ -1815,6 +1866,7 @@ export default function Dashboard() {
           <div style={{display:'flex',alignItems:'center',gap:10}}>
             <span style={{color:t.muted,fontSize:11,fontFamily:'JetBrains Mono,monospace'}}>{time}</span>
             <button onClick={()=>router.push('/ai')} style={{display:'flex',alignItems:'center',gap:6,padding:'5px 14px',background:t.purple+'22',border:`1px solid ${t.purple}44`,borderRadius:20,cursor:'pointer',fontSize:13,color:t.purple,fontFamily:'Space Grotesk,sans-serif',fontWeight:700}}>🤖 AI</button>
+          <button onClick={()=>router.push('/morning')} style={{display:'flex',alignItems:'center',gap:6,padding:'5px 14px',background:t.amber+'22',border:`1px solid ${t.amber}44`,borderRadius:20,cursor:'pointer',fontSize:13,color:t.amber,fontFamily:'Space Grotesk,sans-serif',fontWeight:700}}>☀️ Morning</button>
             <button onClick={toggleDark} style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:20,padding:'5px 14px',cursor:'pointer',fontSize:13,color:t.text,fontFamily:'Space Grotesk,sans-serif',fontWeight:500}}>{dark?'☀️ Light':'🌙 Dark'}</button>
             {isConn
               ? <div style={{display:'flex',alignItems:'center',gap:8}}>

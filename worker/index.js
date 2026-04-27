@@ -214,33 +214,42 @@ ${alert.note ? `Note: ${alert.note}` : ''}
 // ── Morning briefing ───────────────────────────────────────────
 async function sendMorningBriefing() {
   try {
-    const now  = getNow()
-    const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
-    const day  = days[now.getDay()]
+    const now = getNow()
+    const day = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][now.getDay()]
+    console.log('[Briefing] Fetching morning intelligence...')
 
-    const [regime, aiResp] = await Promise.all([
-      fetchJSON(`${CONFIG.DASHBOARD_URL}/api/market-regime`).catch(() => null),
-      postJSON(`${CONFIG.DASHBOARD_URL}/api/ai-analysis`, {
-        type: 'morning_briefing',
-        data: { date: now.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}), dayOfWeek: day,
-          dayInsight: now.getDay()===2?'Tuesday — best day (+0.97% BankNifty avg)':now.getDay()===3?'Wednesday — second best':now.getDay()===1?'Monday — weak day':'Standard day',
-          niftyPrice:'—', niftyChange:'—', bankNiftyPrice:'—', bankNiftyChange:'—' }
-      }).catch(() => null),
-    ])
+    // Use the full morning intelligence API
+    const intel = await fetchJSON(`${CONFIG.DASHBOARD_URL}/api/morning-intelligence`).catch(() => null)
 
-    let msg = `☀️ <b>GOOD MORNING JAY!</b>\n${day} · ${now.toLocaleDateString('en-IN',{day:'2-digit',month:'short'})}\n━━━━━━━━━━━━━━━━\n`
+    let msg = `☀️ <b>GOOD MORNING JAY! — ${day}</b>\n`
+    msg += `${now.toLocaleDateString('en-IN',{day:'2-digit',month:'long'})}\n`
+    msg += `━━━━━━━━━━━━━━━━\n`
 
-    if (regime?.regime) {
-      msg += `\n${regime.regimeEmoji} Market Regime: <b>${regime.regime}</b>\n${regime.description?.slice(0,100)}\n`
-      msg += `\nBest strategies today: ${regime.bestStrategies?.slice(0,2).join(', ')}\n`
-      if (regime.fearGreed) msg += `Fear & Greed: ${regime.fearGreed.value}/100 (${regime.fearGreed.label})\n`
+    if (intel?.globalSentiment) {
+      const sentEmoji = intel.globalSentiment==='BULLISH'?'🟢':intel.globalSentiment==='BEARISH'?'🔴':'🟡'
+      msg += `\n${sentEmoji} Global Sentiment: <b>${intel.globalSentiment}</b>\n`
     }
 
-    if (aiResp?.analysis) msg += `\n${aiResp.analysis.slice(0,400)}\n`
+    if (intel?.keySignals?.length > 0) {
+      msg += `\n<b>Key Signals:</b>\n`
+      intel.keySignals.slice(0,3).forEach(s => {
+        msg += `${s.impact==='bullish'?'🟢':s.impact==='bearish'?'🔴':'🟡'} ${s.factor}: ${s.note}\n`
+      })
+    }
 
-    msg += `\n<a href="${CONFIG.DASHBOARD_URL}/dashboard">Open Dashboard →</a>`
+    if (intel?.indiaBrief) {
+      msg += `\n<b>🇮🇳 Indian Markets:</b>\n${intel.indiaBrief.slice(0,500)}\n`
+    }
+
+    if (intel?.cryptoBrief) {
+      msg += `\n<b>🪙 Crypto:</b>\n${intel.cryptoBrief.slice(0,250)}\n`
+    }
+
+    msg += `\n<a href="${CONFIG.DASHBOARD_URL}/morning">📊 Full Morning Report →</a>`
+    msg += `\n<a href="${CONFIG.DASHBOARD_URL}/dashboard">⚡ Dashboard →</a>`
+
     await sendTelegram(msg)
-    console.log('[Briefing] Morning briefing sent')
+    console.log('[Briefing] Full morning intelligence sent')
   } catch(e) {
     console.error('[Briefing] Error:', e.message)
   }
