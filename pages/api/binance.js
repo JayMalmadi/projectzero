@@ -4,7 +4,7 @@
 
 import crypto from 'crypto'
 
-const BASE = 'https://api.binance.com'
+const BASE = 'https://api.binance.us'
 const SYMBOLS = {
   BTC:  'BTCUSDT',
   ETH:  'ETHUSDT',

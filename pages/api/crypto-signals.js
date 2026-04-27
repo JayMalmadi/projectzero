@@ -14,7 +14,7 @@ export default async function handler(req, res) {
     const binanceSym = SYMBOLS[symbol] || `${symbol}USDT`
 
     // Fetch 100 candles for analysis (15m timeframe)
-    const r = await fetch(`https://api.binance.com/api/v3/klines?symbol=${binanceSym}&interval=15m&limit=100`)
+    const r = await fetch(`https://api.binance.us/api/v3/klines?symbol=${binanceSym}&interval=15m&limit=100`)
     const klines = await r.json()
 
     if (!Array.isArray(klines) || klines.length < 20) {
