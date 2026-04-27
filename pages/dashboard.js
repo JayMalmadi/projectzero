@@ -21,10 +21,14 @@ const KITE_SEARCH = {
 }
 
 const PZ_STRATEGIES = [
-  {id:'pz-orb',      name:'PZ-ORB Filter',    emoji:'◎', desc:'76% success. Gap+volume filter removes false signals.', symbols:['NIFTY','BANKNIFTY'], type:'Intraday'},
-  {id:'pz-tuesday',  name:'Tuesday Momentum', emoji:'📅', desc:'Data: Tue avg +0.97% BankNifty. Enter on Tue/Wed.', symbols:['NIFTY','BANKNIFTY'], type:'Intraday'},
-  {id:'pz-gap-fade', name:'Gap & Fade',        emoji:'〰', desc:'24 gap-ups in 3 months. Fade gaps >0.35%.', symbols:['NIFTY','BANKNIFTY'], type:'Intraday'},
-  {id:'pz-swing',    name:'Weak Stock Swing',  emoji:'📊', desc:'IT sector -24 to -31%. Short bounces to EMA.', symbols:['TCS','INFY','ICICIBANK'], type:'Swing'},
+  {id:'pz-orb',     name:'PZ-ORB Filter',    emoji:'◎',  desc:'76% success. Gap+volume filter. Best on Tue/Wed.',   symbols:['NIFTY','BANKNIFTY'],           type:'Intraday'},
+  {id:'pz-tuesday', name:'Tuesday Momentum', emoji:'📅', desc:'Tue avg +0.97% BankNifty. Only fires Tue/Wed.',      symbols:['NIFTY','BANKNIFTY'],           type:'Intraday'},
+  {id:'pz-gap-fade',name:'Gap and Fade',      emoji:'〰', desc:'24 gap events in 3 months. Fades gaps >0.35%.',      symbols:['NIFTY','BANKNIFTY'],           type:'Intraday'},
+  {id:'pz-swing',   name:'Weak Stock Swing', emoji:'📊', desc:'IT sector weak. Short bounces to EMA21.',            symbols:['TCS','INFY','ICICIBANK'],      type:'Swing'},
+  {id:'supertrend', name:'Supertrend',        emoji:'🔺', desc:'ATR-based trend filter. Rides momentum both ways.',  symbols:['NIFTY','BANKNIFTY','RELIANCE'],type:'Intraday'},
+  {id:'vwap',       name:'VWAP Reversion',   emoji:'〽', desc:'Trade with or against VWAP. Best intraday anchor.',  symbols:['NIFTY','BANKNIFTY','HDFCBANK'],type:'Intraday'},
+  {id:'bollinger',  name:'Bollinger Bands',   emoji:'🎯', desc:'Squeeze breakouts and mean reversion near bands.',   symbols:['NIFTY','BANKNIFTY','SBIN'],    type:'Intraday'},
+  {id:'macd',       name:'MACD Crossover',    emoji:'📈', desc:'Classic MACD signal with EMA confirmation filter.',  symbols:['NIFTY','BANKNIFTY','TCS'],     type:'Intraday'},
 ]
 
 const DARK = {
@@ -224,8 +228,8 @@ function SignalCard({strat,at,onTrade,t}) {
         {loading&&<div style={{textAlign:'center',padding:20}}><div style={{width:30,height:30,border:`3px solid ${t.border}`,borderTopColor:t.accentC,borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'0 auto 8px'}} /><p style={{color:t.muted,fontSize:12}}>Fetching live data...</p></div>}
 
         {data&&!loading&&<>
-          <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8}}>
-            {[{l:'PRICE',v:`₹${fmt(data.price)}`,c:t.text},{l:'STOP LOSS',v:data.stopLoss?`₹${fmt(data.stopLoss)}`:'—',c:t.red},{l:'TARGET',v:data.target?`₹${fmt(data.target)}`:'—',c:t.green},{l:'CONFIDENCE',v:`${data.confidence}%`,c:data.confidence>70?t.green:data.confidence>50?t.amber:t.red}].map(x=>(
+          <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:8}}>
+            {[{l:'PRICE',v:`₹${fmt(data.price)}`,c:t.text},{l:'STOP LOSS',v:data.stopLoss?`₹${fmt(data.stopLoss)}`:'—',c:t.red},{l:'TARGET',v:data.target?`₹${fmt(data.target)}`:'—',c:t.green},{l:'R:R',v:data.rr?`1:${data.rr}`:'—',c:data.rr>=2?t.green:data.rr>=1.5?t.amber:t.muted},{l:'CONFIDENCE',v:`${data.confidence}%`,c:data.confidence>70?t.green:data.confidence>50?t.amber:t.red}].map(x=>(
               <div key={x.l} style={{background:t.surface,borderRadius:10,padding:'10px 12px',border:`1px solid ${t.border}`}}>
                 <p style={{color:t.muted,fontSize:10,fontWeight:700,letterSpacing:'0.07em',marginBottom:4}}>{x.l}</p>
                 <p style={{color:x.c,fontSize:13,fontWeight:800,fontFamily:'monospace'}}>{x.v}</p>
@@ -301,7 +305,7 @@ function History({refresh,t}) {
   const closed=trades.filter(x=>x.status==='CLOSED'),openT=trades.filter(x=>x.status==='OPEN'),totalPnL=closed.reduce((a,x)=>a+(x.pnl||0),0),wr=closed.length>0?`${(closed.filter(x=>(x.pnl||0)>0).length/closed.length*100).toFixed(0)}%`:'—'
   return (
     <div style={{display:'flex',flexDirection:'column',gap:16}}>
-      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12}}>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:12}}>
         <SCard label="TOTAL" value={trades.length} icon="📋" t={t}/>
         <SCard label="OPEN" value={openT.length} color={t.amber} icon="🔓" t={t}/>
         <SCard label="WIN RATE" value={wr} color={parseInt(wr)>50?t.green:t.red} icon="🎯" t={t}/>
