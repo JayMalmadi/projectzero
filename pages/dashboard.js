@@ -407,7 +407,7 @@ export default function Dashboard() {
   const [dark,setDark]=useState(true),[at,setAt]=useState(''),[kiteUser,setKU]=useState(null),[mkt,setMkt]=useState({}),[tab,setTab]=useState('signals'),[time,setTime]=useState(''),[tr,setTr]=useState(0),[loginUrl,setLoginUrl]=useState('')
   const [briefing,    setBriefing]    = useState('')
   const [briefingTime,setBriefingTime]= useState(null)
-  const [chatMsgs,    setChatMsgs]    = useState([{role:'assistant',content:'Hi Jay! I'm your AI trading partner. Ask me anything about your trades, strategies, or the market.'}])
+  const [chatMsgs,    setChatMsgs]    = useState([{role:'assistant',content:'Hi Jay! I am your AI trading partner. Ask me anything about your trades, strategies, or the market.'}])
   const [chatInput,   setChatInput]   = useState('')
   const [chatLoading, setChatLoading] = useState(false)
   const t = dark ? DARK : LIGHT
