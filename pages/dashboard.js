@@ -440,7 +440,7 @@ function ExecModal({data, strat, sym, at, onClose, onDone, t}) {
   )
 }
 
-function SignalCard({strat,at,onTrade,t,aiMode='full'}) {
+function SignalCard({strat,at,onTrade,t,aiMode='smart'}) {
   const [sym,setSym]=useState(strat.symbols[0]),[data,setData]=useState(null),[loading,setLoading]=useState(false),[modal,setModal]=useState(false),[chart,setChart]=useState(false)
   useEffect(()=>{
     load()
@@ -476,10 +476,7 @@ function SignalCard({strat,at,onTrade,t,aiMode='full'}) {
       const r=await fetch(`/api/pz-strategies?symbol=${sym}&strategy=${strat.id}`)
       const d=await r.json()
       setData(d)
-      if(d.signal!=='HOLD') {
-          fetchMTF()
-          if(aiMode==='full') setTimeout(()=>fetchAI(d), 800)  // Full mode: auto AI
-        }
+      if(d.signal!=='HOLD'){fetchAI(d);fetchMTF()}
       else setAiNote('')
     }catch{}
     setLoading(false)
@@ -494,8 +491,6 @@ function SignalCard({strat,at,onTrade,t,aiMode='full'}) {
   }
 
   async function fetchAI(d) {
-    if(aiMode==='off'){setAiNote('');return}
-    if(aiMode==='smart'&&(d.confidence||0)<70){setAiNote('');return}  // Smart: only high confidence
     setAiLoading(true); setAiNote('')
     try {
       const r = await fetch('/api/ai-analysis',{
@@ -568,10 +563,9 @@ function SignalCard({strat,at,onTrade,t,aiMode='full'}) {
           <div style={{background:t.surface,borderRadius:10,padding:'10px 14px',border:`1px solid ${t.border}`}}>
             <p style={{color:t.text2,fontSize:12,lineHeight:1.7}}>{data.reason}</p>
           </div>
-          {/* AI Analysis — on demand button + display */}
-          {aiMode!=='off' && data && data.signal !== 'HOLD' && !aiNote && !aiLoading && (
+          {aiMode!=='off'&&data&&data.signal!=='HOLD'&&!aiNote&&!aiLoading&&(
             <button onClick={()=>fetchAI(data)}
-              style={{padding:'7px 14px',background:t.purple+'11',border:`1px solid ${t.purple}33`,borderRadius:8,color:t.purple,cursor:'pointer',fontSize:11,fontWeight:600,fontFamily:'Inter,sans-serif',textAlign:'left'}}>
+              style={{padding:'7px 14px',background:t.purple+'11',border:`1px solid ${t.purple}33`,borderRadius:8,color:t.purple,cursor:'pointer',fontSize:11,fontWeight:600,fontFamily:'Inter,sans-serif',width:'100%',textAlign:'center'}}>
               🤖 Ask Claude AI
             </button>
           )}
@@ -704,24 +698,13 @@ function History({refresh,t}) {
   const [trades,setTrades]=useState([]),[loading,setLoading]=useState(false)
   useEffect(()=>{load()},[refresh])
   async function load(){setLoading(true);try{const r=await fetch('/api/trades?limit=50');const d=await r.json();setTrades(d.trades||[])}catch{}setLoading(false)}
-  async function close(id,entry,dir,sym,strat){
+  async function close(id,entry,dir){
     const ep=prompt(`Close Trade\nDirection: ${dir}\nEntry Price: ₹${entry}\n\nEnter exit price:`)
     if(!ep||isNaN(parseFloat(ep)))return
     const r=await fetch('/api/trades',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,exit_price:parseFloat(ep)})})
     const d=await r.json()
     const pnl=d.pnl||d.trade?.pnl
-    if(pnl!==undefined){
-      alert(`Trade Closed!\nP&L: ₹${Number(pnl).toFixed(2)}\n${pnl>0?'🟢 Profit!':'🔴 Loss'}`)
-      // Auto-trigger post-trade AI analysis (saves to DB, runs once per trade)
-      fetch('/api/ai-analysis',{
-        method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({type:'post_trade',data:{
-          tradeId:id, symbol:sym||'Unknown', direction:dir,
-          entryPrice:entry, exitPrice:parseFloat(ep),
-          pnl:Number(pnl), strategy:strat||'Unknown',
-        }})
-      }).catch(()=>{}) // fire and forget
-    }
+    if(pnl!==undefined){alert(`Trade Closed!\nP&L: ₹${Number(pnl).toFixed(2)}\n${pnl>0?'🟢 Profit!':'🔴 Loss'}`)}
     load()
   }
   const closed=trades.filter(x=>x.status==='CLOSED'),openT=trades.filter(x=>x.status==='OPEN'),totalPnL=closed.reduce((a,x)=>a+(x.pnl||0),0),wr=closed.length>0?`${(closed.filter(x=>(x.pnl||0)>0).length/closed.length*100).toFixed(0)}%`:'—'
@@ -735,7 +718,7 @@ function History({refresh,t}) {
       </div>
       {loading&&<div style={{textAlign:'center',padding:30}}><div style={{width:32,height:32,border:`3px solid ${t.border}`,borderTopColor:t.blue,borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'0 auto'}} /></div>}
       {!loading&&trades.length===0&&<div style={{textAlign:'center',padding:50,background:t.surface,borderRadius:16,border:`1px solid ${t.border}`}}><p style={{fontSize:40,marginBottom:10}}>📋</p><p style={{color:t.text,fontWeight:700}}>No trades yet</p><p style={{color:t.muted,fontSize:13,marginTop:4}}>Execute a signal to start</p></div>}
-      {!loading&&trades.length>0&&<div style={{overflowX:'auto',borderRadius:16,border:`1px solid ${t.border}`}}><table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead><tr style={{background:t.surface}}>{['Date','Symbol','Strategy','Dir','Qty','Entry','Exit','P&L','Status',''].map(h=><th key={h} style={{padding:'12px 16px',textAlign:'left',color:t.muted,fontWeight:700,borderBottom:`1px solid ${t.border}`,whiteSpace:'nowrap'}}>{h}</th>)}</tr></thead><tbody>{trades.map((x,i)=>{const pc=clr(x.pnl||0,t),date=new Date(x.created_at).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',hour12:true});return <tr key={x.id} style={{borderBottom:`1px solid ${t.border}22`,background:i%2?t.surface+'44':'transparent'}}><td style={{padding:'12px 16px',color:t.muted,whiteSpace:'nowrap'}}>{date}</td><td style={{padding:'12px 16px',fontWeight:800,color:t.text}}>{x.symbol}</td><td style={{padding:'12px 16px',color:t.muted,maxWidth:120,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{x.strategy}</td><td style={{padding:'12px 16px'}}><Badge color={x.direction==='BUY'?t.green:t.red}>{x.direction}</Badge></td><td style={{padding:'12px 16px',fontFamily:'monospace',color:t.text2}}>{x.quantity}</td><td style={{padding:'12px 16px',fontFamily:'monospace',color:t.text}}>₹{fmt(x.entry_price)}</td><td style={{padding:'12px 16px',fontFamily:'monospace',color:t.text2}}>{x.exit_price?`₹${fmt(x.exit_price)}`:'—'}</td><td style={{padding:'12px 16px',color:pc,fontWeight:800,fontFamily:'monospace'}}>{x.pnl!=null?`${x.pnl>=0?'+':''}₹${fmt(x.pnl)}`:'—'}</td><td style={{padding:'12px 16px'}}><Badge color={x.status==='OPEN'?t.amber:x.status==='CLOSED'?t.green:t.red}>{x.status}</Badge></td><td style={{padding:'12px 16px'}}>{x.status==='OPEN'&&<button onClick={()=>close(x.id,x.entry_price,x.direction,x.symbol,x.strategy)} style={{padding:'5px 12px',background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,cursor:'pointer',fontSize:11,fontFamily:'Inter,sans-serif',fontWeight:600}}>Close</button>}</td></tr>})}</tbody></table></div>}
+      {!loading&&trades.length>0&&<div style={{overflowX:'auto',borderRadius:16,border:`1px solid ${t.border}`}}><table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead><tr style={{background:t.surface}}>{['Date','Symbol','Strategy','Dir','Qty','Entry','Exit','P&L','Status',''].map(h=><th key={h} style={{padding:'12px 16px',textAlign:'left',color:t.muted,fontWeight:700,borderBottom:`1px solid ${t.border}`,whiteSpace:'nowrap'}}>{h}</th>)}</tr></thead><tbody>{trades.map((x,i)=>{const pc=clr(x.pnl||0,t),date=new Date(x.created_at).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',hour12:true});return <tr key={x.id} style={{borderBottom:`1px solid ${t.border}22`,background:i%2?t.surface+'44':'transparent'}}><td style={{padding:'12px 16px',color:t.muted,whiteSpace:'nowrap'}}>{date}</td><td style={{padding:'12px 16px',fontWeight:800,color:t.text}}>{x.symbol}</td><td style={{padding:'12px 16px',color:t.muted,maxWidth:120,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{x.strategy}</td><td style={{padding:'12px 16px'}}><Badge color={x.direction==='BUY'?t.green:t.red}>{x.direction}</Badge></td><td style={{padding:'12px 16px',fontFamily:'monospace',color:t.text2}}>{x.quantity}</td><td style={{padding:'12px 16px',fontFamily:'monospace',color:t.text}}>₹{fmt(x.entry_price)}</td><td style={{padding:'12px 16px',fontFamily:'monospace',color:t.text2}}>{x.exit_price?`₹${fmt(x.exit_price)}`:'—'}</td><td style={{padding:'12px 16px',color:pc,fontWeight:800,fontFamily:'monospace'}}>{x.pnl!=null?`${x.pnl>=0?'+':''}₹${fmt(x.pnl)}`:'—'}</td><td style={{padding:'12px 16px'}}><Badge color={x.status==='OPEN'?t.amber:x.status==='CLOSED'?t.green:t.red}>{x.status}</Badge></td><td style={{padding:'12px 16px'}}>{x.status==='OPEN'&&<button onClick={()=>close(x.id,x.entry_price,x.direction)} style={{padding:'5px 12px',background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,cursor:'pointer',fontSize:11,fontFamily:'Inter,sans-serif',fontWeight:600}}>Close</button>}</td></tr>})}</tbody></table></div>}
     </div>
   )
 }
@@ -985,7 +968,7 @@ function CryptoExecModal({data, sym, stratName, onClose, onDone, t}) {
 }
 
 // ── Crypto Signal Card ─────────────────────────────────────────
-function CryptoSignalCard({symbol, strategy, stratName, t, aiMode='full'}) {
+function CryptoSignalCard({symbol, strategy, stratName, t, aiMode='smart'}) {
   const [data,     setData]    = useState(null)
   const [loading,  setLoading] = useState(false)
   const [modal,    setModal]   = useState(false)
@@ -1025,10 +1008,10 @@ function CryptoSignalCard({symbol, strategy, stratName, t, aiMode='full'}) {
       const d = await r.json()
       if (d && d.signal) {
         setData(d)
-        // AI auto-fires only in Full mode
+        // Only fetch AI and MTF for active signals, with delay
         if (d.signal !== 'HOLD' && d.confidence >= 50) {
-          setTimeout(() => fetchMTF(), 1000)
-          if(aiMode==='full') setTimeout(() => fetchAI(d), 2000)
+          setTimeout(() => fetchAI(d), 1000)
+          setTimeout(() => fetchMTF(), 2000)
         }
       }
     } catch(e) {
@@ -1046,8 +1029,6 @@ function CryptoSignalCard({symbol, strategy, stratName, t, aiMode='full'}) {
   }
 
   async function fetchAI(d) {
-    if(aiMode==='off'){setAiNote('');return}
-    if(aiMode==='smart'&&(d.confidence||0)<70){setAiNote('');return}  // Smart: only high confidence
     setAiLoading(true); setAiNote('')
     try {
       const r = await fetch('/api/ai-analysis', {
@@ -1895,6 +1876,10 @@ function OptionsTab({t}) {
 // ── Market Status Banner ───────────────────────────────────────
 // ── Day-Based Strategy Hint ────────────────────────────────────
 function DayStrategyHint({t}) {
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
+  if (!mounted) return null
+
   const now = new Date(new Date().toLocaleString('en-US',{timeZone:'Asia/Kolkata'}))
   const day = now.getDay()
   const dow = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][day]
@@ -1968,7 +1953,7 @@ function DayStrategyHint({t}) {
 
 function MarketStatusBanner({t}) {
   const [mounted, setMounted] = useState(false)
-  const [time, setTime]       = useState(null)
+  const [time,    setTime]    = useState(null)
 
   useEffect(() => {
     setMounted(true)
@@ -1977,10 +1962,7 @@ function MarketStatusBanner({t}) {
     return () => clearInterval(iv)
   }, [])
 
-  // Don't render on server — avoids hydration mismatch
-  if (!mounted || !time) return (
-    <div style={{height:44,background:'transparent',marginBottom:16}}/>
-  )
+  if (!mounted || !time) return <div style={{height:44,marginBottom:16}}/>
 
   const ist = new Date(time.toLocaleString('en-US', {timeZone:'Asia/Kolkata'}))
   const h   = ist.getHours()
@@ -2371,158 +2353,6 @@ function BinancePortfolio({t}) {
 }
 
 
-// ── Reports Tab — Historical Daily Reports ─────────────────────
-function ReportsTab({t}) {
-  const [reports, setReports] = useState([])
-  const [selected, setSelected] = useState(null)
-  const [detail, setDetail] = useState(null)
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => { loadReports() }, [])
-
-  async function loadReports() {
-    setLoading(true)
-    try {
-      const r = await fetch('/api/daily-reports?limit=30')
-      const d = await r.json()
-      setReports(d.reports || [])
-      if (d.reports?.length > 0 && !selected) {
-        selectReport(d.reports[0].report_date)
-      }
-    } catch {}
-    setLoading(false)
-  }
-
-  async function selectReport(date) {
-    setSelected(date)
-    setDetail(null)
-    try {
-      const r = await fetch(`/api/daily-reports?date=${date}`)
-      const d = await r.json()
-      setDetail(d.report)
-    } catch {}
-  }
-
-  const fmtDate = (d) => new Date(d).toLocaleDateString('en-IN', {
-    weekday:'short', day:'2-digit', month:'short', year:'numeric', timeZone:'UTC'
-  })
-
-  return (
-    <div>
-      <div style={{marginBottom:20}}>
-        <h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Daily Reports</h2>
-        <p style={{color:t.muted,fontSize:13,marginTop:5}}>
-          Morning briefs and daily summaries — saved automatically, viewable anytime
-        </p>
-      </div>
-
-      {loading ? (
-        <div style={{textAlign:'center',padding:40}}>
-          <div style={{width:28,height:28,border:`3px solid ${t.border}`,borderTopColor:'#ff6600',borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'0 auto'}}/>
-        </div>
-      ) : reports.length === 0 ? (
-        <div style={{background:t.card,borderRadius:16,padding:40,border:`1px solid ${t.border}`,textAlign:'center'}}>
-          <p style={{fontSize:36,marginBottom:12}}>📅</p>
-          <p style={{color:t.text,fontWeight:700,fontSize:16,marginBottom:8}}>No reports yet</p>
-          <p style={{color:t.muted,fontSize:13}}>
-            Daily reports save automatically every morning at 9 AM and after market close.
-            Reports are cached — AI runs once per day, viewable forever.
-          </p>
-        </div>
-      ) : (
-        <div style={{display:'grid',gridTemplateColumns:'240px 1fr',gap:16,alignItems:'start'}}>
-
-          {/* Date list */}
-          <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,overflow:'hidden'}}>
-            <div style={{padding:'10px 14px',borderBottom:`1px solid ${t.border}`,fontSize:11,fontWeight:700,color:t.muted,letterSpacing:'0.06em'}}>REPORT HISTORY</div>
-            {reports.map(r => (
-              <div key={r.report_date}
-                onClick={() => selectReport(r.report_date)}
-                style={{
-                  padding:'12px 14px',
-                  borderBottom:`1px solid ${t.border}`,
-                  cursor:'pointer',
-                  background:selected===r.report_date?'#ff660014':'transparent',
-                  borderLeft:selected===r.report_date?'3px solid #ff6600':'3px solid transparent',
-                  transition:'all 0.15s',
-                }}>
-                <p style={{fontWeight:600,fontSize:13,color:selected===r.report_date?'#ff6600':t.text,marginBottom:3}}>
-                  {fmtDate(r.report_date)}
-                </p>
-                <div style={{display:'flex',gap:8}}>
-                  {r.morning_brief && <span style={{fontSize:10,color:t.green}}>☀️ brief</span>}
-                  {r.daily_summary && <span style={{fontSize:10,color:t.blue}}>📊 summary</span>}
-                  {r.pnl_today !== 0 && (
-                    <span style={{fontSize:10,color:r.pnl_today>0?t.green:t.red,fontWeight:700}}>
-                      {r.pnl_today>0?'+':''}₹{Math.abs(r.pnl_today).toFixed(0)}
-                    </span>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Report detail */}
-          <div style={{display:'flex',flexDirection:'column',gap:14}}>
-            {!detail ? (
-              <div style={{background:t.card,borderRadius:14,padding:30,border:`1px solid ${t.border}`,textAlign:'center'}}>
-                <div style={{width:24,height:24,border:`3px solid ${t.border}`,borderTopColor:'#ff6600',borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'0 auto'}}/>
-              </div>
-            ) : (
-              <>
-                {/* Stats bar */}
-                <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10}}>
-                  {[
-                    {l:'TRADES', v:detail.trades_today||0, c:t.text},
-                    {l:'P&L', v:`${(detail.pnl_today||0)>=0?'+':''}₹${Math.abs(detail.pnl_today||0).toFixed(2)}`, c:(detail.pnl_today||0)>=0?t.green:t.red},
-                    {l:'DATE', v:fmtDate(detail.report_date), c:t.blue},
-                  ].map(x=>(
-                    <div key={x.l} style={{background:t.card,borderRadius:12,padding:'14px',border:`1px solid ${t.border}`,textAlign:'center'}}>
-                      <p style={{color:t.muted,fontSize:10,fontWeight:700,letterSpacing:'0.08em',marginBottom:4}}>{x.l}</p>
-                      <p style={{color:x.c,fontSize:15,fontWeight:800,fontFamily:'JetBrains Mono,monospace'}}>{x.v}</p>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Morning brief */}
-                {detail.morning_brief && (
-                  <div style={{background:t.card,borderRadius:14,padding:20,border:`1px solid ${t.border}`}}>
-                    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}>
-                      <span style={{fontSize:18}}>☀️</span>
-                      <p style={{fontWeight:700,color:t.text,fontSize:15}}>Morning Intelligence Brief</p>
-                      <span style={{background:'#ff660018',color:'#ff6600',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20,border:'1px solid #ff660033',marginLeft:'auto'}}>CACHED</span>
-                    </div>
-                    <p style={{color:t.text2,fontSize:13,lineHeight:1.8,whiteSpace:'pre-wrap'}}>{detail.morning_brief}</p>
-                  </div>
-                )}
-
-                {/* Daily summary */}
-                {detail.daily_summary && (
-                  <div style={{background:t.card,borderRadius:14,padding:20,border:`1px solid ${t.border}`}}>
-                    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}>
-                      <span style={{fontSize:18}}>📊</span>
-                      <p style={{fontWeight:700,color:t.text,fontSize:15}}>End of Day Summary</p>
-                      <span style={{background:t.blue+'18',color:t.blue,fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20,border:`1px solid ${t.blue}33`,marginLeft:'auto'}}>CACHED</span>
-                    </div>
-                    <p style={{color:t.text2,fontSize:13,lineHeight:1.8,whiteSpace:'pre-wrap'}}>{detail.daily_summary}</p>
-                  </div>
-                )}
-
-                {!detail.morning_brief && !detail.daily_summary && (
-                  <div style={{background:t.card,borderRadius:14,padding:24,border:`1px solid ${t.border}`,textAlign:'center'}}>
-                    <p style={{color:t.muted,fontSize:13}}>No AI reports saved for this date yet.</p>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-
 function TickerBar({mkt, t, setTab, isConn}) {
   const syms = ['NIFTY','BANKNIFTY','SENSEX','BTC','ETH','SOL']
   return (
@@ -2552,6 +2382,8 @@ function TickerBar({mkt, t, setTab, isConn}) {
 export default function Dashboard() {
   const router=useRouter()
   const [dark,setDark]=useState(true),[at,setAt]=useState(''),[kiteUser,setKU]=useState(null),[mkt,setMkt]=useState({}),[tab,setTab]=useState('signals'),[time,setTime]=useState(''),[tr,setTr]=useState(0),[loginUrl,setLoginUrl]=useState('')
+  const [aiMode,setAiMode]=useState('smart')
+  useEffect(()=>{const s=localStorage.getItem('pz_ai_mode');if(s)setAiMode(s)},[]) // load persisted AI mode
   const t = dark ? DARK : LIGHT
 
   useEffect(()=>{
@@ -2597,17 +2429,6 @@ export default function Dashboard() {
 
   function disc(){['kite_access_token','kite_user','kite_connected_date'].forEach(k=>localStorage.removeItem(k));setAt('');setKU(null)}
 
-  // AI Mode — persisted in localStorage
-  useEffect(() => {
-    const saved = typeof window !== 'undefined' ? localStorage.getItem('pz_ai_mode') : null
-    if (saved) setAiMode(saved)
-  }, [])
-  useEffect(() => {
-    if (typeof window !== 'undefined') localStorage.setItem('pz_ai_mode', aiMode)
-  }, [aiMode])
-  const [aiMode, setAiMode] = useState('smart')  // off | smart | full
-
-
   // Keyboard shortcuts: 1-8 = tabs, R = refresh, D = dark mode
   useEffect(()=>{
     const handler = (e) => {
@@ -2621,7 +2442,7 @@ export default function Dashboard() {
     return () => window.removeEventListener('keydown', handler)
   }, [])
 
-  const tabs=[{id:'signals',l:'📡 Signals'},{id:'crypto',l:'🪙 Crypto'},{id:'positions',l:'💼 Portfolio'},{id:'trades',l:'📋 History'},{id:'charts',l:'📈 Charts'},{id:'alerts',l:'🔔 Alerts'},{id:'performance',l:'🏆 Performance'},{id:'options',l:'⛓ Options'},{id:'watchlist',l:'👁 Watchlist'},{id:'reports',l:'📅 Reports'}]
+  const tabs=[{id:'signals',l:'📡 Signals'},{id:'crypto',l:'🪙 Crypto'},{id:'positions',l:'💼 Portfolio'},{id:'trades',l:'📋 History'},{id:'charts',l:'📈 Charts'},{id:'alerts',l:'🔔 Alerts'},{id:'performance',l:'🏆 Performance'},{id:'options',l:'⛓ Options'},{id:'watchlist',l:'👁 Watchlist'}]
   const isConn=!!at
 
   return (
@@ -2711,24 +2532,11 @@ export default function Dashboard() {
                 style={{padding:'5px 12px',borderRadius:20,border:`1px solid ${t.purple}44`,background:t.purple+'14',color:t.purple,cursor:'pointer',fontSize:12,fontWeight:600,fontFamily:'Inter,sans-serif'}}>
                 🤖 AI
               </button>
-
-              {/* AI Mode Selector */}
-              <div style={{display:'flex',alignItems:'center',gap:2,background:t.surface,border:`1px solid ${t.border}`,borderRadius:20,padding:'2px 3px'}}>
-                {[
-                  {mode:'off',   label:'AI Off',    color:t.muted},
-                  {mode:'smart', label:'Smart',      color:t.amber},
-                  {mode:'full',  label:'Full AI',    color:t.purple},
-                ].map(opt=>(
-                  <button key={opt.mode} onClick={()=>setAiMode(opt.mode)}
-                    style={{
-                      padding:'3px 10px',borderRadius:16,border:'none',
-                      background:aiMode===opt.mode?opt.color+'22':'transparent',
-                      color:aiMode===opt.mode?opt.color:t.muted,
-                      fontWeight:aiMode===opt.mode?700:500,
-                      cursor:'pointer',fontSize:11,fontFamily:'Inter,sans-serif',
-                      transition:'all 0.15s',
-                    }}>
-                    {opt.label}
+              <div style={{display:'flex',background:t.surface,border:`1px solid ${t.border}`,borderRadius:20,padding:'2px 3px',gap:1}}>
+                {[['off','AI Off',t.muted],['smart','Smart',t.amber],['full','Full AI',t.purple]].map(([m,l,c])=>(
+                  <button key={m} onClick={()=>{setAiMode(m);localStorage.setItem('pz_ai_mode',m)}}
+                    style={{padding:'3px 10px',borderRadius:16,border:'none',background:aiMode===m?c+'22':'transparent',color:aiMode===m?c:t.muted,fontWeight:aiMode===m?700:500,cursor:'pointer',fontSize:11,fontFamily:'Inter,sans-serif'}}>
+                    {l}
                   </button>
                 ))}
               </div>
@@ -2766,12 +2574,11 @@ export default function Dashboard() {
             {!isConn&&tab!=='charts'&&<div style={{background:dark?t.blue+'0d':t.blue+'0a',border:`1px solid ${t.blue}33`,borderRadius:16,padding:18,marginBottom:24,display:'flex',alignItems:'center',justifyContent:'space-between',gap:16}}><div><p style={{color:t.blue,fontWeight:700,fontSize:14}}>🔐 Login with Zerodha for live data & 1-click execution</p><p style={{color:t.muted,fontSize:12,marginTop:3}}>Live prices · Real positions · Auto stop loss · SL + Target in one click</p></div><button onClick={()=>loginUrl&&window.location.assign(loginUrl)} style={{padding:'10px 22px',background:`linear-gradient(135deg,${t.green},${t.teal})`,border:'none',borderRadius:12,color:'#fff',fontWeight:700,cursor:'pointer',fontSize:13,fontFamily:'Inter,sans-serif',flexShrink:0,boxShadow:`0 4px 20px ${t.green}33`}}>Connect Now →</button></div>}
 
             {tab==='signals'&&<div><MarketStatusBanner t={t}/><DayStrategyHint t={t}/><div style={{marginBottom:18,display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}><div><h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Live Signals</h2><p style={{color:t.muted,fontSize:13,marginTop:5}}>8 PZ strategies · ORB, Momentum, Supertrend, VWAP, Bollinger, MACD</p></div></div><MarketRegimeBanner t={t}/><NewsBar t={t} market='india'/><div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(340px,1fr))',gap:20,marginTop:20}}>{PZ_STRATEGIES.map(s=><SignalCard key={s.id} strat={s} at={at} onTrade={()=>setTr(r=>r+1)} t={t} aiMode={aiMode}/>)}</div></div>}
-            {tab==='crypto'&&<CryptoTab t={t} aiMode={aiMode}/>}
+            {tab==='crypto'&&<CryptoTab t={t} aiMode={aiMode} />}
             {tab==='alerts'&&<AlertsTab t={t}/>}
             {tab==='performance'&&<PerformanceTab t={t}/>}
             {tab==='options'&&<OptionsTab t={t}/>}
             {tab==='watchlist'&&<WatchlistTab t={t} at={at}/>}
-            {tab==='reports'&&<ReportsTab t={t}/>}
             {tab==='positions'&&<div>
               <div style={{marginBottom:22,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                 <div>
