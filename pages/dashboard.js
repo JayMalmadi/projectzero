@@ -61,15 +61,15 @@ function SCard({label,value,color,sub,icon,t}) {
 
 function PZChart({symbol, t, h=420, accessToken}) {
   const INTERVALS = [
-    {v:'minute',   l:'1m',  days:1,   refresh:5},
-    {v:'3minute',  l:'3m',  days:2,   refresh:10},
-    {v:'5minute',  l:'5m',  days:3,   refresh:10},
-    {v:'10minute', l:'10m', days:5,   refresh:15},
-    {v:'15minute', l:'15m', days:5,   refresh:20},
-    {v:'30minute', l:'30m', days:10,  refresh:30},
-    {v:'60minute', l:'1h',  days:30,  refresh:60},
-    {v:'day',      l:'1D',  days:365, refresh:300},
-    {v:'week',     l:'1W',  days:730, refresh:600},
+    {v:'minute',   l:'1m',  days:1,   refresh:2},
+    {v:'3minute',  l:'3m',  days:2,   refresh:3},
+    {v:'5minute',  l:'5m',  days:3,   refresh:3},
+    {v:'10minute', l:'10m', days:5,   refresh:5},
+    {v:'15minute', l:'15m', days:5,   refresh:5},
+    {v:'30minute', l:'30m', days:10,  refresh:10},
+    {v:'60minute', l:'1h',  days:30,  refresh:30},
+    {v:'day',      l:'1D',  days:365, refresh:60},
+    {v:'week',     l:'1W',  days:730, refresh:300},
   ]
   const [candles, setCandles] = React.useState([])
   const [loading, setLoading] = React.useState(false)
