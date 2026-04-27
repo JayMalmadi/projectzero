@@ -176,7 +176,7 @@ function PZChart({symbol, t, h=420, accessToken}) {
             {live?`⚡ Auto (${cfg.refresh}s)`:'⏸ Paused'}
           </button>
           <button onClick={()=>loadData()} style={{padding:'3px 8px',borderRadius:6,fontSize:13,background:'none',border:`1px solid ${t.border}`,color:t.muted,cursor:'pointer'}}>↻</button>
-          {KITE_SEARCH[symbol]&&<button onClick={()=>window.open(`/chart?symbol=${symbol}`,'_blank','width=1400,height=800,menubar=no,toolbar=no')} style={{padding:'3px 10px',borderRadius:6,fontSize:11,background:'none',border:`1px solid ${t.border}`,color:t.blue,cursor:'pointer',fontFamily:'Space Grotesk,sans-serif',fontWeight:600}}>Kite ↗</button>}
+          {KITE_SEARCH[symbol]&&<button onClick={()=>window.open(`/chart?symbol=${symbol}&market=crypto`,'_blank','width=1440,height=860')} style={{padding:'3px 10px',borderRadius:6,fontSize:11,background:'none',border:`1px solid ${t.border}`,color:t.blue,cursor:'pointer',fontFamily:'Space Grotesk,sans-serif',fontWeight:600}}>Kite ↗</button>}
         </div>
       </div>
       {/* Row 2: interval selector */}
@@ -370,7 +370,7 @@ function CryptoSignalCard({symbol, strategy, stratName, t}) {
           <p style={{color:t.text2,fontSize:11,lineHeight:1.7}}>{data.reason}</p>
         </div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-          <button onClick={()=>window.open(`/chart?symbol=${symbol}&market=crypto`,'_blank','width=1400,height=800')} style={{padding:'10px',background:t.surface,border:`1.5px solid ${t.border}`,borderRadius:10,color:t.blue,cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:'Space Grotesk,sans-serif'}}>
+          <button onClick={()=>window.open(`/chart?symbol=${symbol}&market=crypto`,'_blank','width=1440,height=860')} style={{padding:'10px',background:t.surface,border:`1.5px solid ${t.border}`,borderRadius:10,color:t.blue,cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:'Space Grotesk,sans-serif'}}>
             📈 Chart
           </button>
           <button disabled={data.signal==='HOLD'} style={{padding:'10px',border:'none',borderRadius:10,fontWeight:800,fontSize:12,cursor:data.signal==='HOLD'?'not-allowed':'pointer',background:data.signal==='HOLD'?t.surface:data.signal==='BUY'?`linear-gradient(135deg,${t.green},${t.teal})`:`linear-gradient(135deg,${t.red},#ff6688)`,color:data.signal==='HOLD'?t.muted:'#fff',fontFamily:'Space Grotesk,sans-serif',opacity:data.signal==='HOLD'?0.5:1}}>
@@ -421,8 +421,8 @@ function CryptoTab({t}) {
           const d = prices[sym]
           const up = (d?.pct||0) >= 0
           return (
-            <div key={sym} style={{background:t.card,borderRadius:14,padding:'14px 16px',border:`1px solid ${t.border}`}}>
-              <p style={{color:t.muted,fontSize:11,fontWeight:700,marginBottom:6}}>{sym}/USDT</p>
+            <div key={sym} onClick={()=>window.open(`/chart?symbol=${sym}&market=crypto`,'_blank','width=1440,height=860')} style={{background:t.card,borderRadius:14,padding:'14px 16px',border:`1px solid ${t.border}`,cursor:'pointer',transition:'all 0.15s'}}>
+              <p style={{color:t.muted,fontSize:11,fontWeight:700,marginBottom:6}}>{sym}/USDT <span style={{color:t.amber,fontSize:9}}>↗</span></p>
               <p style={{color:t.text,fontSize:15,fontWeight:800,fontFamily:'monospace'}}>{d?`$${Number(d.price).toLocaleString('en-US',{maximumFractionDigits:2})}`:'...'}</p>
               {d && <p style={{color:up?t.green:t.red,fontSize:11,fontWeight:700,marginTop:4}}>{up?'+':''}{d.pct?.toFixed(2)}%</p>}
             </div>
