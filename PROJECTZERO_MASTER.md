@@ -79,3 +79,62 @@ Phase 7: AI strategy selector
 - Only necessary spend: Kite Connect Rs 500/month
 - Future server: Railway (not AWS - too complex)
 - Everything controlled via GitHub, nothing manual for Jay
+
+---
+
+## AI Integration Plan (Claude as Trading Partner)
+
+### Where Claude AI is integrated inside Projectzero:
+
+1. Morning Market Briefing (auto-runs before 9:15 AM)
+   - Market regime detection (trending/sideways/volatile)
+   - Best strategy recommendation for today
+   - Key levels, risk assessment, day outlook
+
+2. Signal Explanation (fires when signal detected)
+   - Why the signal fired (plain English)
+   - Which conditions were met
+   - Confidence reasoning
+   - Suggested position size for Jay's capital
+
+3. Post-Trade Analysis (after every trade closes)
+   - What worked, what to note
+   - Strategy performance tracking
+   - Pattern recognition across trades
+
+4. AI Chat Interface (always available in dashboard)
+   - Ask anything about your trades, strategies, market
+   - Gets context from YOUR portfolio and trade history
+   - Not generic — knows Jay's capital, risk profile, history
+
+5. Daily Summary Report (auto at 3:35 PM)
+   - Full day recap, P&L, observations
+   - Tomorrow's outlook and strategy recommendation
+   - Sent to Telegram + shown in dashboard
+
+### Technical: Uses Anthropic claude-sonnet-4-6 via API
+- Cost: ~Rs 12/month for 10 analyses per day
+- Each analysis gets context: current prices, Jay's trades,
+  strategy performance, market data
+- Response appears instantly in dashboard
+
+### Mobile (Telegram + PWA):
+- Telegram Bot: instant signal notifications with Execute button
+- PWA: Projectzero as home screen app on phone
+- Push notifications for signals, trade closes, daily report
+- Full dashboard accessible on mobile
+
+### Server (Railway - Rs 800/month) enables:
+- 24/7 signal monitoring (not just when browser is open)
+- WebSocket real-time ticks from Kite
+- Auto Zerodha login daily (TOTP automation)
+- Telegram bot running continuously
+- AI morning briefing auto-sent before market opens
+- Auto-execution when confidence > threshold (optional)
+
+### Full Monthly Cost When Completely Built:
+- Kite Connect: Rs 500/month (already paying)
+- Railway server: Rs 800/month
+- Anthropic API: Rs 12/month
+- Everything else: Free
+- TOTAL: Rs 1,312/month for complete professional system
