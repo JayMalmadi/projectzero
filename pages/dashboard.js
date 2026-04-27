@@ -315,8 +315,138 @@ function History({refresh,t}) {
 }
 
 
+// ── Crypto Signal Card ─────────────────────────────────────────
+function CryptoSignalCard({symbol, strategy, stratName, t}) {
+  const [data,    setData]    = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [modal,   setModal]   = useState(false)
+
+  useEffect(() => { load() }, [symbol, strategy])
+
+  async function load() {
+    setLoading(true); setData(null)
+    try {
+      const r = await fetch(`/api/crypto-signals?symbol=${symbol}&strategy=${strategy}`)
+      setData(await r.json())
+    } catch {}
+    setLoading(false)
+  }
+
+  const sc = data?.signal==='BUY' ? t.green : data?.signal==='SELL' ? t.red : t.amber
+
+  return (
+    <div style={{background:t.card,borderRadius:20,padding:20,border:`1px solid ${t.border}`,display:'flex',flexDirection:'column',gap:12}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+        <div>
+          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+            <span style={{fontSize:20}}>{symbol==='BTC'?'₿':symbol==='ETH'?'Ξ':symbol==='SOL'?'◎':'🪙'}</span>
+            <span style={{fontWeight:800,fontSize:15,color:t.text}}>{symbol}/USDT</span>
+            <span style={{background:t.blue+'22',color:t.blue,border:`1px solid ${t.blue}44`,borderRadius:20,padding:'2px 8px',fontSize:10,fontWeight:700}}>Binance</span>
+          </div>
+          <p style={{color:t.muted,fontSize:11}}>{stratName}</p>
+        </div>
+        {data && !loading && (
+          <div style={{background:sc+'22',border:`2px solid ${sc}55`,borderRadius:12,padding:'6px 14px',color:sc,fontWeight:900,fontSize:14}}>{data.signal}</div>
+        )}
+      </div>
+
+      {loading && <div style={{textAlign:'center',padding:16}}><div style={{width:28,height:28,border:`3px solid ${t.border}`,borderTopColor:t.blue,borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'0 auto'}} /></div>}
+
+      {data && !loading && <>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8}}>
+          {[
+            {l:'PRICE',     v:`$${Number(data.price).toLocaleString('en-US',{maximumFractionDigits:2})}`, c:t.text},
+            {l:'STOP LOSS', v:data.stopLoss?`$${data.stopLoss}`:'—', c:t.red},
+            {l:'TARGET',    v:data.target?`$${data.target}`:'—',    c:t.green},
+            {l:'RSI',       v:data.indicators?.rsi||'—', c:data.indicators?.rsi>70?t.red:data.indicators?.rsi<30?t.green:t.amber},
+          ].map(x=>(
+            <div key={x.l} style={{background:t.surface,borderRadius:10,padding:'9px 11px',border:`1px solid ${t.border}`}}>
+              <p style={{color:t.muted,fontSize:9,fontWeight:700,letterSpacing:'0.07em',marginBottom:3}}>{x.l}</p>
+              <p style={{color:x.c,fontSize:12,fontWeight:800,fontFamily:'monospace'}}>{x.v}</p>
+            </div>
+          ))}
+        </div>
+        <div style={{background:t.surface,borderRadius:10,padding:'9px 12px',border:`1px solid ${t.border}`}}>
+          <p style={{color:t.text2,fontSize:11,lineHeight:1.7}}>{data.reason}</p>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+          <button onClick={()=>window.open(`/chart?symbol=${symbol}&market=crypto`,'_blank','width=1400,height=800')} style={{padding:'10px',background:t.surface,border:`1.5px solid ${t.border}`,borderRadius:10,color:t.blue,cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:'Space Grotesk,sans-serif'}}>
+            📈 Chart
+          </button>
+          <button disabled={data.signal==='HOLD'} style={{padding:'10px',border:'none',borderRadius:10,fontWeight:800,fontSize:12,cursor:data.signal==='HOLD'?'not-allowed':'pointer',background:data.signal==='HOLD'?t.surface:data.signal==='BUY'?`linear-gradient(135deg,${t.green},${t.teal})`:`linear-gradient(135deg,${t.red},#ff6688)`,color:data.signal==='HOLD'?t.muted:'#fff',fontFamily:'Space Grotesk,sans-serif',opacity:data.signal==='HOLD'?0.5:1}}>
+            {data.signal==='HOLD'?'Hold':`⚡ ${data.signal} on Binance`}
+          </button>
+        </div>
+      </>}
+    </div>
+  )
+}
+
+// ── Crypto Tab ─────────────────────────────────────────────────
+function CryptoTab({t}) {
+  const CRYPTO_STRATEGIES = [
+    {symbol:'BTC', strategy:'momentum',    name:'BTC Momentum (EMA Crossover)'},
+    {symbol:'ETH', strategy:'momentum',    name:'ETH Momentum (EMA Crossover)'},
+    {symbol:'SOL', strategy:'breakout',    name:'SOL Breakout (Range Break)'},
+    {symbol:'BNB', strategy:'rsi-reversal',name:'BNB RSI Reversal'},
+    {symbol:'BTC', strategy:'breakout',    name:'BTC Breakout (Range Break)'},
+    {symbol:'ETH', strategy:'rsi-reversal',name:'ETH RSI Reversal'},
+  ]
+  const [prices, setPrices] = useState({})
+
+  useEffect(() => {
+    fetchPrices()
+    const t = setInterval(fetchPrices, 5000)
+    return () => clearInterval(t)
+  }, [])
+
+  async function fetchPrices() {
+    try {
+      const r = await fetch('/api/binance?action=prices')
+      const d = await r.json()
+      if (d.prices) setPrices(d.prices)
+    } catch {}
+  }
+
+  return (
+    <div>
+      <div style={{marginBottom:20}}>
+        <h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Crypto Markets</h2>
+        <p style={{color:t.muted,fontSize:13,marginTop:5}}>Live Binance data · 3 strategies · BTC / ETH / SOL / BNB</p>
+      </div>
+
+      {/* Live crypto prices */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(140px,1fr))',gap:10,marginBottom:24}}>
+        {['BTC','ETH','SOL','BNB','XRP','DOGE'].map(sym => {
+          const d = prices[sym]
+          const up = (d?.pct||0) >= 0
+          return (
+            <div key={sym} style={{background:t.card,borderRadius:14,padding:'14px 16px',border:`1px solid ${t.border}`}}>
+              <p style={{color:t.muted,fontSize:11,fontWeight:700,marginBottom:6}}>{sym}/USDT</p>
+              <p style={{color:t.text,fontSize:15,fontWeight:800,fontFamily:'monospace'}}>{d?`$${Number(d.price).toLocaleString('en-US',{maximumFractionDigits:2})}`:'...'}</p>
+              {d && <p style={{color:up?t.green:t.red,fontSize:11,fontWeight:700,marginTop:4}}>{up?'+':''}{d.pct?.toFixed(2)}%</p>}
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Crypto signal cards */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(340px,1fr))',gap:18}}>
+        {CRYPTO_STRATEGIES.map(s => (
+          <CryptoSignalCard key={`${s.symbol}-${s.strategy}`} symbol={s.symbol} strategy={s.strategy} stratName={s.name} t={t} />
+        ))}
+      </div>
+
+      <div style={{marginTop:20,background:t.surface,borderRadius:12,padding:'12px 16px',border:`1px solid ${t.border}`}}>
+        <p style={{color:t.muted,fontSize:12}}>⚠️ Crypto execution requires your Binance API key. Connect it in Settings once your KYC is approved. Prices update every 5 seconds from Binance directly.</p>
+      </div>
+    </div>
+  )
+}
+
+
 function TickerBar({mkt, t, setTab, isConn}) {
-  const syms = ['NIFTY','BANKNIFTY','SENSEX','BTC']
+  const syms = ['NIFTY','BANKNIFTY','SENSEX','BTC','ETH','SOL']
   return (
     <div style={{background:t.tickBg,borderBottom:`1px solid ${t.border}`,padding:'9px 28px',display:'flex',gap:28,overflowX:'auto',alignItems:'center'}}>
       {syms.map(sym => {
@@ -364,11 +494,19 @@ export default function Dashboard() {
       if(at){const r=await fetch('/api/kite-pro?action=quote&instruments=NSE:NIFTY+50,NSE:NIFTY+BANK,BSE:SENSEX',{headers:{'x-kite-access-token':at}});const d=await r.json();if(d.data){const m={},km={'NIFTY 50':'NIFTY','NIFTY BANK':'BANKNIFTY','SENSEX':'SENSEX'};Object.entries(d.data).forEach(([k,v])=>{const s=km[k.split(':')[1]]||k.split(':')[1];m[s]={price:v.last_price,change:v.net_change,pct:v.change}});setMkt(m);return}}
       const r=await fetch('/api/market?symbols=NIFTY,BANKNIFTY,SENSEX,BTC');const d=await r.json();if(d.data)setMkt(d.data)
     }catch{}
+    // Fetch Binance crypto prices (public, no auth needed)
+    try {
+      const cr = await fetch('/api/binance?action=prices')
+      const cd = await cr.json()
+      if (cd.prices) {
+        setMkt(prev => ({...prev, ...cd.prices}))
+      }
+    } catch {}
   }
 
   function disc(){['kite_access_token','kite_user','kite_connected_date'].forEach(k=>localStorage.removeItem(k));setAt('');setKU(null)}
 
-  const tabs=[{id:'signals',l:'📡 Signals'},{id:'positions',l:'💼 Portfolio'},{id:'trades',l:'📋 History'},{id:'charts',l:'📈 Charts'}]
+  const tabs=[{id:'signals',l:'📡 Signals'},{id:'crypto',l:'🪙 Crypto'},{id:'positions',l:'💼 Portfolio'},{id:'trades',l:'📋 History'},{id:'charts',l:'📈 Charts'}]
   const isConn=!!at
 
   return (
@@ -416,6 +554,7 @@ export default function Dashboard() {
             {!isConn&&tab!=='charts'&&<div style={{background:dark?t.blue+'0d':t.blue+'0a',border:`1px solid ${t.blue}33`,borderRadius:16,padding:18,marginBottom:24,display:'flex',alignItems:'center',justifyContent:'space-between',gap:16}}><div><p style={{color:t.blue,fontWeight:700,fontSize:14}}>🔐 Login with Zerodha for live data & 1-click execution</p><p style={{color:t.muted,fontSize:12,marginTop:3}}>Live prices · Real positions · Auto stop loss · SL + Target in one click</p></div><button onClick={()=>loginUrl&&window.location.assign(loginUrl)} style={{padding:'10px 22px',background:`linear-gradient(135deg,${t.green},${t.teal})`,border:'none',borderRadius:12,color:'#fff',fontWeight:700,cursor:'pointer',fontSize:13,fontFamily:'Space Grotesk,sans-serif',flexShrink:0,boxShadow:`0 4px 20px ${t.green}33`}}>Connect Now →</button></div>}
 
             {tab==='signals'&&<div><div style={{marginBottom:22}}><h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Live Signals</h2><p style={{color:t.muted,fontSize:13,marginTop:5}}>4 custom PZ strategies built from 3-month NSE data · 76% ORB · Tue/Wed best days</p></div><div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(370px,1fr))',gap:20}}>{PZ_STRATEGIES.map(s=><SignalCard key={s.id} strat={s} at={at} onTrade={()=>setTr(r=>r+1)} t={t}/>)}</div></div>}
+            {tab==='crypto'&&<CryptoTab t={t} />}
             {tab==='positions'&&<div><div style={{marginBottom:22}}><h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Portfolio</h2><p style={{color:t.muted,fontSize:13,marginTop:5}}>Live from Zerodha · Positions · Margins · Today's orders</p></div><Positions at={at} t={t}/></div>}
             {tab==='trades'&&<div><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:22}}><div><h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Trade History</h2><p style={{color:t.muted,fontSize:13,marginTop:5}}>All trades · Entry/Exit · P&L</p></div><button onClick={()=>setTr(r=>r+1)} style={{padding:'8px 16px',background:t.surface,border:`1px solid ${t.border}`,borderRadius:10,color:t.text,cursor:'pointer',fontSize:12,fontFamily:'Space Grotesk,sans-serif',fontWeight:600}}>🔄 Refresh</button></div><History refresh={tr} t={t}/></div>}
             {tab==='charts'&&<Charts t={t} at={at}/>}
