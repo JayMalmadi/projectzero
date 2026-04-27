@@ -138,3 +138,22 @@ Phase 7: AI strategy selector
 - Anthropic API: Rs 12/month
 - Everything else: Free
 - TOTAL: Rs 1,312/month for complete professional system
+
+---
+
+## Railway Server (24/7 Automation)
+- Project: graceful-integrity (Hobby plan)
+- Token: stored in Claude memory
+- Status: LIVE and running
+- Worker: worker/index.js runs 24/7
+- Checks signals every 30 seconds
+- Indian market signals: 9:15 AM - 3:30 PM IST (weekdays)
+- Crypto signals: 24/7
+
+## Telegram Alerts
+- Bot: @pzalerts_fhp_bot
+- Chat ID: 8559065013
+- Token: stored in Vercel + Railway env vars
+- Morning briefing: 9:00 AM IST (weekdays)
+- Daily summary: 3:35 PM IST (weekdays)
+- Signal alerts: whenever confidence >= 65%
