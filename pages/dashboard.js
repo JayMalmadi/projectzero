@@ -1043,7 +1043,7 @@ function CryptoSignalCard({symbol, strategy, stratName, t}) {
         padding:20,
         border:`1px solid ${t.border}`,
         display:'flex',flexDirection:'column',gap:12,
-        boxShadow:dark?'0 2px 12px rgba(0,0,0,0.3)':'0 2px 12px rgba(0,0,0,0.06)',
+        boxShadow:'0 2px 12px rgba(0,0,0,0.15)',
         transition:'box-shadow 0.2s,border-color 0.2s',
       }}>
 
