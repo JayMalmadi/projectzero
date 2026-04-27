@@ -440,7 +440,7 @@ function ExecModal({data, strat, sym, at, onClose, onDone, t}) {
   )
 }
 
-function SignalCard({strat,at,onTrade,t}) {
+function SignalCard({strat,at,onTrade,t,aiOn=true}) {
   const [sym,setSym]=useState(strat.symbols[0]),[data,setData]=useState(null),[loading,setLoading]=useState(false),[modal,setModal]=useState(false),[chart,setChart]=useState(false)
   useEffect(()=>{
     load()
@@ -476,7 +476,7 @@ function SignalCard({strat,at,onTrade,t}) {
       const r=await fetch(`/api/pz-strategies?symbol=${sym}&strategy=${strat.id}`)
       const d=await r.json()
       setData(d)
-      if(d.signal!=='HOLD'){fetchAI(d);fetchMTF()}
+      if(d.signal!=='HOLD') fetchMTF()  // AI is on-demand only
       else setAiNote('')
     }catch{}
     setLoading(false)
@@ -491,6 +491,7 @@ function SignalCard({strat,at,onTrade,t}) {
   }
 
   async function fetchAI(d) {
+    if(!aiOn){setAiNote('');return}
     setAiLoading(true); setAiNote('')
     try {
       const r = await fetch('/api/ai-analysis',{
@@ -563,6 +564,13 @@ function SignalCard({strat,at,onTrade,t}) {
           <div style={{background:t.surface,borderRadius:10,padding:'10px 14px',border:`1px solid ${t.border}`}}>
             <p style={{color:t.text2,fontSize:12,lineHeight:1.7}}>{data.reason}</p>
           </div>
+          {/* AI Analysis — on demand button + display */}
+          {aiOn && data && data.signal !== 'HOLD' && !aiNote && !aiLoading && (
+            <button onClick={()=>fetchAI(data)}
+              style={{padding:'7px 14px',background:t.purple+'11',border:`1px solid ${t.purple}33`,borderRadius:8,color:t.purple,cursor:'pointer',fontSize:11,fontWeight:600,fontFamily:'Inter,sans-serif',textAlign:'left'}}>
+              🤖 Get Claude AI Analysis
+            </button>
+          )}
           {(aiNote||aiLoading)&&(
             <div style={{background:t.purple+'0d',borderRadius:10,padding:'10px 14px',border:`1px solid ${t.purple}33`}}>
               <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:6}}>
@@ -962,7 +970,7 @@ function CryptoExecModal({data, sym, stratName, onClose, onDone, t}) {
 }
 
 // ── Crypto Signal Card ─────────────────────────────────────────
-function CryptoSignalCard({symbol, strategy, stratName, t}) {
+function CryptoSignalCard({symbol, strategy, stratName, t, aiOn=true}) {
   const [data,     setData]    = useState(null)
   const [loading,  setLoading] = useState(false)
   const [modal,    setModal]   = useState(false)
@@ -1002,10 +1010,9 @@ function CryptoSignalCard({symbol, strategy, stratName, t}) {
       const d = await r.json()
       if (d && d.signal) {
         setData(d)
-        // Only fetch AI and MTF for active signals, with delay
+        // AI is ON-DEMAND only — MTF still auto (no cost)
         if (d.signal !== 'HOLD' && d.confidence >= 50) {
-          setTimeout(() => fetchAI(d), 1000)
-          setTimeout(() => fetchMTF(), 2000)
+          setTimeout(() => fetchMTF(), 1000)
         }
       }
     } catch(e) {
@@ -1023,6 +1030,7 @@ function CryptoSignalCard({symbol, strategy, stratName, t}) {
   }
 
   async function fetchAI(d) {
+    if(!aiOn){setAiNote('');return}
     setAiLoading(true); setAiNote('')
     try {
       const r = await fetch('/api/ai-analysis', {
@@ -1342,6 +1350,7 @@ function CryptoTab({t, at}) {
             strategy={s.strategy}
             stratName={s.name}
             t={t}
+            aiOn={aiOn}
           />
         ))}
       </div>
@@ -2411,6 +2420,14 @@ export default function Dashboard() {
 
   function disc(){['kite_access_token','kite_user','kite_connected_date'].forEach(k=>localStorage.removeItem(k));setAt('');setKU(null)}
 
+  // AI Toggle — persisted in localStorage
+  const [aiOn, setAiOn] = useState(() => localStorage.getItem('pz_ai_enabled') !== 'false')
+  function toggleAI() {
+    const next = !aiOn
+    setAiOn(next)
+    localStorage.setItem('pz_ai_enabled', String(next))
+  }
+
   // Keyboard shortcuts: 1-8 = tabs, R = refresh, D = dark mode
   useEffect(()=>{
     const handler = (e) => {
@@ -2515,6 +2532,13 @@ export default function Dashboard() {
                 🤖 AI
               </button>
 
+              {/* AI Toggle */}
+              <button onClick={toggleAI} title={aiOn?'AI ON — click to disable':'AI OFF — click to enable'}
+                style={{padding:'5px 12px',borderRadius:20,border:`1px solid ${aiOn?t.green+'44':t.red+'44'}`,background:aiOn?t.green+'14':t.red+'14',color:aiOn?t.green:t.red,cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'Inter,sans-serif',display:'flex',alignItems:'center',gap:4}}>
+                <div style={{width:7,height:7,borderRadius:'50%',background:aiOn?t.green:t.red,boxShadow:aiOn?`0 0 6px ${t.green}`:'none'}}/>
+                {aiOn?'AI ON':'AI OFF'}
+              </button>
+
               {/* Dark mode toggle */}
               <button onClick={toggleDark}
                 style={{width:36,height:36,borderRadius:10,border:`1px solid ${t.border}`,background:t.surface,cursor:'pointer',fontSize:16,display:'flex',alignItems:'center',justifyContent:'center'}}>
@@ -2547,7 +2571,7 @@ export default function Dashboard() {
           <div style={{background:t.card,border:`1px solid ${t.border}`,borderRadius:'0 16px 16px 16px',padding:28}}>
             {!isConn&&tab!=='charts'&&<div style={{background:dark?t.blue+'0d':t.blue+'0a',border:`1px solid ${t.blue}33`,borderRadius:16,padding:18,marginBottom:24,display:'flex',alignItems:'center',justifyContent:'space-between',gap:16}}><div><p style={{color:t.blue,fontWeight:700,fontSize:14}}>🔐 Login with Zerodha for live data & 1-click execution</p><p style={{color:t.muted,fontSize:12,marginTop:3}}>Live prices · Real positions · Auto stop loss · SL + Target in one click</p></div><button onClick={()=>loginUrl&&window.location.assign(loginUrl)} style={{padding:'10px 22px',background:`linear-gradient(135deg,${t.green},${t.teal})`,border:'none',borderRadius:12,color:'#fff',fontWeight:700,cursor:'pointer',fontSize:13,fontFamily:'Inter,sans-serif',flexShrink:0,boxShadow:`0 4px 20px ${t.green}33`}}>Connect Now →</button></div>}
 
-            {tab==='signals'&&<div><MarketStatusBanner t={t}/><DayStrategyHint t={t}/><div style={{marginBottom:18,display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}><div><h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Live Signals</h2><p style={{color:t.muted,fontSize:13,marginTop:5}}>8 PZ strategies · ORB, Momentum, Supertrend, VWAP, Bollinger, MACD</p></div></div><MarketRegimeBanner t={t}/><NewsBar t={t} market='india'/><div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(340px,1fr))',gap:20,marginTop:20}}>{PZ_STRATEGIES.map(s=><SignalCard key={s.id} strat={s} at={at} onTrade={()=>setTr(r=>r+1)} t={t}/>)}</div></div>}
+            {tab==='signals'&&<div><MarketStatusBanner t={t}/><DayStrategyHint t={t}/><div style={{marginBottom:18,display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}><div><h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Live Signals</h2><p style={{color:t.muted,fontSize:13,marginTop:5}}>8 PZ strategies · ORB, Momentum, Supertrend, VWAP, Bollinger, MACD</p></div></div><MarketRegimeBanner t={t}/><NewsBar t={t} market='india'/><div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(340px,1fr))',gap:20,marginTop:20}}>{PZ_STRATEGIES.map(s=><SignalCard key={s.id} strat={s} at={at} onTrade={()=>setTr(r=>r+1)} t={t} aiOn={aiOn}/>)}</div></div>}
             {tab==='crypto'&&<CryptoTab t={t} />}
             {tab==='alerts'&&<AlertsTab t={t}/>}
             {tab==='performance'&&<PerformanceTab t={t}/>}
