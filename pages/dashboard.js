@@ -27,18 +27,58 @@ function StatBox({ label, value, color='#e2e8f0' }) {
 }
 
 function TVChart({ symbol }) {
-  const tvMap = {NIFTY:'NSE:NIFTY50',BANKNIFTY:'NSE:BANKNIFTY',TCS:'NSE:TCS',INFY:'NSE:INFY',ICICIBANK:'NSE:ICICIBANK'}
+  const tvMap = {
+    NIFTY:    'NSE:NIFTY50',
+    BANKNIFTY:'NSE:BANKNIFTY',
+    SENSEX:   'BSE:SENSEX',
+    TCS:      'NSE:TCS',
+    INFY:     'NSE:INFY',
+    ICICIBANK:'NSE:ICICIBANK',
+    HDFCBANK: 'NSE:HDFCBANK',
+    RELIANCE: 'NSE:RELIANCE',
+  }
   const tvSym = tvMap[symbol] || `NSE:${symbol}`
-  const id = `tv_${symbol}_${Math.random().toString(36).slice(2,7)}`
+  const id = `tv_${symbol}`
   useEffect(() => {
+    const container = document.getElementById(id)
+    if (!container) return
+    container.innerHTML = ''
+    const wrapper = document.createElement('div')
+    wrapper.className = 'tradingview-widget-container'
+    wrapper.style.height = '100%'
+    wrapper.style.width = '100%'
+    const widget = document.createElement('div')
+    widget.className = 'tradingview-widget-container__widget'
+    widget.style.height = '100%'
+    widget.style.width = '100%'
+    wrapper.appendChild(widget)
+    container.appendChild(wrapper)
     const s = document.createElement('script')
+    s.type = 'text/javascript'
     s.src = 'https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js'
     s.async = true
-    s.innerHTML = JSON.stringify({autosize:true,symbol:tvSym,interval:'15',timezone:'Asia/Kolkata',theme:'dark',style:'1',locale:'en',hide_top_toolbar:false,studies:['RSI@tv-basicstudies','Volume@tv-basicstudies'],container_id:id})
-    const el = document.getElementById(id)
-    if (el) { el.innerHTML = ''; el.appendChild(s) }
+    s.innerHTML = JSON.stringify({
+      autosize: true,
+      symbol: tvSym,
+      interval: '15',
+      timezone: 'Asia/Kolkata',
+      theme: 'dark',
+      style: '1',
+      locale: 'en',
+      hide_top_toolbar: false,
+      hide_legend: false,
+      save_image: false,
+      calendar: false,
+      hide_volume: false,
+      support_host: 'https://www.tradingview.com',
+    })
+    wrapper.appendChild(s)
   }, [symbol])
-  return <div id={id} style={{height:380,borderRadius:12,overflow:'hidden',border:'1px solid #1e2d4a'}} />
+  return (
+    <div style={{height:400,borderRadius:12,overflow:'hidden',border:'1px solid #1e2d4a',background:'#0f1628'}}>
+      <div id={id} style={{height:'100%',width:'100%'}} />
+    </div>
+  )
 }
 
 function SignalCard({ strat, enctoken, onTradeExecuted }) {
@@ -211,6 +251,85 @@ function TradeHistory({ refresh }) {
   )
 }
 
+
+function IFrame({ src }) {
+  return (
+    <iframe
+      src={src}
+      style={{width:'100%',height:400,border:'none',borderRadius:12}}
+      allowTransparency={true}
+      allowFullScreen={true}
+      scrolling="no"
+    />
+  )
+}
+
+function ChartTab() {
+  const [selected, setSelected] = useState('NIFTY')
+  const tvMap = {
+    NIFTY:    'NSE:NIFTY50',
+    BANKNIFTY:'NSE:BANKNIFTY',
+    TCS:      'NSE:TCS',
+    INFY:     'NSE:INFY',
+    ICICIBANK:'NSE:ICICIBANK',
+    RELIANCE: 'NSE:RELIANCE',
+    HDFCBANK: 'NSE:HDFCBANK',
+  }
+  const kiteMap = {
+    NIFTY:    'https://kite.zerodha.com/chart/web/ciq/INDICES/NIFTY+50/INDICES',
+    BANKNIFTY:'https://kite.zerodha.com/chart/web/ciq/INDICES/NIFTY+BANK/INDICES',
+    TCS:      'https://kite.zerodha.com/chart/web/ciq/NSE/TCS/EQ',
+    INFY:     'https://kite.zerodha.com/chart/web/ciq/NSE/INFY/EQ',
+    ICICIBANK:'https://kite.zerodha.com/chart/web/ciq/NSE/ICICIBANK/EQ',
+    RELIANCE: 'https://kite.zerodha.com/chart/web/ciq/NSE/RELIANCE/EQ',
+    HDFCBANK: 'https://kite.zerodha.com/chart/web/ciq/NSE/HDFCBANK/EQ',
+  }
+  const tvSym = tvMap[selected] || `NSE:${selected}`
+  const tvUrl = `https://www.tradingview.com/widgetembed/?frameElementId=tv_chart&symbol=${encodeURIComponent(tvSym)}&interval=15&hidesidetoolbar=0&hidetoptoolbar=0&theme=dark&style=1&timezone=Asia%2FKolkata&studies=RSI%40tv-basicstudies%2CVolume%40tv-basicstudies&locale=en&utm_source=projectzero`
+
+  return (
+    <div>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20}}>
+        <div>
+          <h2 style={{fontSize:18,fontWeight:700}}>Live Charts</h2>
+          <p style={{color:'#64748b',fontSize:13,marginTop:4}}>TradingView 15-min charts + one-click Kite open</p>
+        </div>
+        <button onClick={()=>window.open(kiteMap[selected],'_blank')} style={{padding:'8px 16px',background:'linear-gradient(135deg,#00d4ff,#0066ff)',border:'none',borderRadius:8,color:'#fff',fontWeight:600,cursor:'pointer',fontSize:13,fontFamily:'Space Grotesk,sans-serif'}}>
+          \ud83d\udd17 Open {selected} in Kite \u2197
+        </button>
+      </div>
+
+      <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>
+        {Object.keys(tvMap).map(sym => (
+          <button key={sym} onClick={()=>setSelected(sym)} style={{
+            padding:'6px 14px',borderRadius:8,fontSize:13,fontWeight:600,
+            background:selected===sym?'linear-gradient(135deg,#00d4ff22,#0066ff22)':'#0a0e1a',
+            border:`1px solid ${selected===sym?'#00d4ff':'#1e2d4a'}`,
+            color:selected===sym?'#00d4ff':'#64748b',cursor:'pointer',
+            fontFamily:'Space Grotesk,sans-serif'
+          }}>{sym}</button>
+        ))}
+      </div>
+
+      <div style={{borderRadius:12,overflow:'hidden',border:'1px solid #1e2d4a'}}>
+        <TVChart symbol={selected} key={selected} />
+      </div>
+
+      <div style={{marginTop:16,display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:8}}>
+        {Object.keys(tvMap).filter(s=>s!==selected).map(sym=>(
+          <button key={sym} onClick={()=>setSelected(sym)} style={{
+            padding:'12px',background:'#0a0e1a',border:'1px solid #1e2d4a',
+            borderRadius:10,cursor:'pointer',textAlign:'left',fontFamily:'Space Grotesk,sans-serif'
+          }}>
+            <p style={{color:'#64748b',fontSize:11,marginBottom:4}}>{sym}</p>
+            <p style={{color:'#e2e8f0',fontSize:13,fontWeight:600}}>Click to view chart</p>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default function Dashboard() {
   const router  = useRouter()
   const [marketData, setMarketData]         = useState({})
@@ -361,31 +480,7 @@ export default function Dashboard() {
               </div>
             </div>}
 
-            {activeTab==='charts' && <div>
-              <h2 style={{fontSize:18,fontWeight:700,marginBottom:20}}>Live Charts \u2014 TradingView + Kite</h2>
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:20,marginBottom:20}}>
-                {['NIFTY','BANKNIFTY'].map(sym=>(
-                  <div key={sym}>
-                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
-                      <p style={{fontWeight:700,color:'#e2e8f0'}}>{sym}</p>
-                      <button onClick={()=>window.open(`https://kite.zerodha.com/chart/web/ciq/NSE/${sym}/EQ`,'_blank')} style={{padding:'4px 12px',background:'#1e2d4a',border:'1px solid #2d4a6a',borderRadius:6,color:'#00d4ff',cursor:'pointer',fontSize:11,fontFamily:'Space Grotesk,sans-serif'}}>\ud83d\udd17 Open in Kite</button>
-                    </div>
-                    <TVChart symbol={sym} />
-                  </div>
-                ))}
-              </div>
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:20}}>
-                {['TCS','INFY','ICICIBANK'].map(sym=>(
-                  <div key={sym}>
-                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
-                      <p style={{fontWeight:700,color:'#e2e8f0'}}>{sym}</p>
-                      <button onClick={()=>window.open(`https://kite.zerodha.com/chart/web/ciq/NSE/${sym}/EQ`,'_blank')} style={{padding:'4px 10px',background:'#1e2d4a',border:'1px solid #2d4a6a',borderRadius:6,color:'#00d4ff',cursor:'pointer',fontSize:11,fontFamily:'Space Grotesk,sans-serif'}}>Kite \u2197</button>
-                    </div>
-                    <TVChart symbol={sym} />
-                  </div>
-                ))}
-              </div>
-            </div>}
+            {activeTab==='charts' && <ChartTab />}
 
           </div>
         </main>
