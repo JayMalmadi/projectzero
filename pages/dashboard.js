@@ -592,7 +592,7 @@ function CryptoExecModal({data, sym, stratName, onClose, onDone, t}) {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
         body: JSON.stringify({
-          symbol,
+          symbol: sym,
           side:              data.signal,
           quantity:          qty,
           order_type:        'MARKET',
@@ -606,7 +606,7 @@ function CryptoExecModal({data, sym, stratName, onClose, onDone, t}) {
           method: 'POST',
           headers: {'Content-Type':'application/json'},
           body: JSON.stringify({
-            symbol, direction: data.signal, quantity: qty,
+            symbol: sym, direction: data.signal, quantity: qty,
             entry_price: data.price, stop_loss: data.stopLoss,
             target: data.target, strategy: stratName,
             order_id: d.results?.main_order_id,
