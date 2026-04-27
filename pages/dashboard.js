@@ -340,6 +340,59 @@ function ExecModal({data, strat, sym, at, onClose, onDone, t}) {
           </div>
         </div>
 
+        {/* Budget Breakdown */}
+        {(() => {
+          const entryAmt   = data.price * qty
+          const slAmt      = data.stopLoss ? data.stopLoss * qty : null
+          const tgtAmt     = data.target  ? data.target  * qty : null
+          const maxLoss    = slAmt && data.signal==='BUY'  ? entryAmt - slAmt
+                           : slAmt && data.signal==='SELL' ? slAmt - entryAmt : null
+          const maxProfit  = tgtAmt && data.signal==='BUY'  ? tgtAmt - entryAmt
+                           : tgtAmt && data.signal==='SELL' ? entryAmt - tgtAmt : null
+          // Zerodha brokerage: Rs 20 per order (intraday flat fee x3 orders)
+          const brokerage  = prod==='MIS' ? 60 : 40  // 3 orders x Rs20
+          const netProfit  = maxProfit ? maxProfit - brokerage : null
+          const netLoss    = maxLoss   ? maxLoss   + brokerage : null
+          const fmtRs = (n) => n ? `₹${Math.abs(n).toLocaleString('en-IN',{maximumFractionDigits:0})}` : '—'
+          return (
+            <div style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:12,padding:14,marginBottom:14}}>
+              <p style={{color:t.muted,fontSize:10,fontWeight:700,letterSpacing:'0.1em',marginBottom:10}}>💰 TRADE BUDGET BREAKDOWN</p>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:8}}>
+                <div style={{background:t.blue+'0d',borderRadius:8,padding:'8px 12px',border:`1px solid ${t.blue}22`}}>
+                  <p style={{color:t.muted,fontSize:10,fontWeight:600,marginBottom:3}}>CAPITAL REQUIRED</p>
+                  <p style={{color:t.blue,fontSize:15,fontWeight:800,fontFamily:'monospace'}}>{fmtRs(entryAmt)}</p>
+                  <p style={{color:t.muted,fontSize:10,marginTop:2}}>{qty} × ₹{data.price?.toLocaleString('en-IN',{maximumFractionDigits:0})}</p>
+                </div>
+                <div style={{background:t.amber+'0d',borderRadius:8,padding:'8px 12px',border:`1px solid ${t.amber}22`}}>
+                  <p style={{color:t.muted,fontSize:10,fontWeight:600,marginBottom:3}}>BROKERAGE (EST.)</p>
+                  <p style={{color:t.amber,fontSize:15,fontWeight:800,fontFamily:'monospace'}}>₹{brokerage}</p>
+                  <p style={{color:t.muted,fontSize:10,marginTop:2}}>₹20 × {prod==='MIS'?3:2} orders</p>
+                </div>
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                <div style={{background:t.green+'0d',borderRadius:8,padding:'8px 12px',border:`1px solid ${t.green}22`}}>
+                  <p style={{color:t.muted,fontSize:10,fontWeight:600,marginBottom:3}}>MAX PROFIT (NET)</p>
+                  <p style={{color:t.green,fontSize:15,fontWeight:800,fontFamily:'monospace'}}>+{fmtRs(netProfit)}</p>
+                  <p style={{color:t.muted,fontSize:10,marginTop:2}}>after brokerage</p>
+                </div>
+                <div style={{background:t.red+'0d',borderRadius:8,padding:'8px 12px',border:`1px solid ${t.red}22`}}>
+                  <p style={{color:t.muted,fontSize:10,fontWeight:600,marginBottom:3}}>MAX LOSS (NET)</p>
+                  <p style={{color:t.red,fontSize:15,fontWeight:800,fontFamily:'monospace'}}>-{fmtRs(netLoss)}</p>
+                  <p style={{color:t.muted,fontSize:10,marginTop:2}}>incl. brokerage</p>
+                </div>
+              </div>
+              {netProfit && netLoss && (
+                <div style={{marginTop:8,padding:'6px 10px',background:t.card,borderRadius:8,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                  <span style={{color:t.muted,fontSize:10,fontWeight:600}}>RETURN IF TARGET HIT</span>
+                  <span style={{color:netProfit>0?t.green:t.red,fontWeight:700,fontSize:12}}>
+                    {((netProfit/entryAmt)*100).toFixed(2)}%
+                  </span>
+                </div>
+              )}
+            </div>
+          )
+        })()}
+
         {/* What happens note */}
         <div style={{background:t.blue+'0d',border:`1px solid ${t.blue}22`,borderRadius:10,padding:'10px 14px',marginBottom:14,fontSize:11,color:t.muted,lineHeight:1.8}}>
           ⚡ <span style={{color:t.blue,fontWeight:600}}>What happens:</span> Main {data.signal} order on NSE
@@ -694,6 +747,58 @@ function CryptoExecModal({data, sym, stratName, onClose, onDone, t}) {
             </label>
           </div>
         </div>
+
+        {/* Budget Breakdown */}
+        {(() => {
+          const entryAmt  = data.price * qty
+          const slAmt     = data.stopLoss ? data.stopLoss * qty : null
+          const tgtAmt    = data.target   ? data.target   * qty : null
+          const maxLoss   = slAmt && data.signal==='BUY'  ? entryAmt - slAmt
+                          : slAmt && data.signal==='SELL' ? slAmt - entryAmt : null
+          const maxProfit = tgtAmt && data.signal==='BUY'  ? tgtAmt - entryAmt
+                          : tgtAmt && data.signal==='SELL' ? entryAmt - tgtAmt : null
+          const fee       = entryAmt * 0.001  // Binance 0.1% taker fee x2
+          const netProfit = maxProfit ? maxProfit - fee  : null
+          const netLoss   = maxLoss   ? maxLoss   + fee  : null
+          const fmtD = (n) => n ? `$${Math.abs(n).toFixed(2)}` : '—'
+          return (
+            <div style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:12,padding:14,marginBottom:14}}>
+              <p style={{color:t.muted,fontSize:10,fontWeight:700,letterSpacing:'0.1em',marginBottom:10}}>💰 TRADE BUDGET BREAKDOWN</p>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:8}}>
+                <div style={{background:t.blue+'0d',borderRadius:8,padding:'8px 12px',border:`1px solid ${t.blue}22`}}>
+                  <p style={{color:t.muted,fontSize:10,fontWeight:600,marginBottom:3}}>CAPITAL REQUIRED</p>
+                  <p style={{color:t.blue,fontSize:15,fontWeight:800,fontFamily:'monospace'}}>{fmtD(entryAmt)}</p>
+                  <p style={{color:t.muted,fontSize:10,marginTop:2}}>{qty} {sym} × ${data.price?.toLocaleString('en-US',{maximumFractionDigits:2})}</p>
+                </div>
+                <div style={{background:t.amber+'0d',borderRadius:8,padding:'8px 12px',border:`1px solid ${t.amber}22`}}>
+                  <p style={{color:t.muted,fontSize:10,fontWeight:600,marginBottom:3}}>TRADING FEE (EST.)</p>
+                  <p style={{color:t.amber,fontSize:15,fontWeight:800,fontFamily:'monospace'}}>{fmtD(fee)}</p>
+                  <p style={{color:t.muted,fontSize:10,marginTop:2}}>0.1% × 2 orders</p>
+                </div>
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                <div style={{background:t.green+'0d',borderRadius:8,padding:'8px 12px',border:`1px solid ${t.green}22`}}>
+                  <p style={{color:t.muted,fontSize:10,fontWeight:600,marginBottom:3}}>MAX PROFIT (NET)</p>
+                  <p style={{color:t.green,fontSize:15,fontWeight:800,fontFamily:'monospace'}}>+{fmtD(netProfit)}</p>
+                  <p style={{color:t.muted,fontSize:10,marginTop:2}}>after fees</p>
+                </div>
+                <div style={{background:t.red+'0d',borderRadius:8,padding:'8px 12px',border:`1px solid ${t.red}22`}}>
+                  <p style={{color:t.muted,fontSize:10,fontWeight:600,marginBottom:3}}>MAX LOSS (NET)</p>
+                  <p style={{color:t.red,fontSize:15,fontWeight:800,fontFamily:'monospace'}}>-{fmtD(netLoss)}</p>
+                  <p style={{color:t.muted,fontSize:10,marginTop:2}}>incl. fees</p>
+                </div>
+              </div>
+              {netProfit && netLoss && (
+                <div style={{marginTop:8,padding:'6px 10px',background:t.card,borderRadius:8,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                  <span style={{color:t.muted,fontSize:10,fontWeight:600}}>RETURN IF TARGET HIT</span>
+                  <span style={{color:netProfit>0?t.green:t.red,fontWeight:700,fontSize:12}}>
+                    {((netProfit/entryAmt)*100).toFixed(3)}%
+                  </span>
+                </div>
+              )}
+            </div>
+          )
+        })()}
 
         {/* Info */}
         <div style={{background:t.amber+'0d',border:`1px solid ${t.amber}22`,borderRadius:10,padding:'10px 14px',marginBottom:14,fontSize:11,color:t.muted,lineHeight:1.8}}>
