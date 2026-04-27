@@ -1282,7 +1282,7 @@ function CryptoSignalCard({symbol, strategy, stratName, t, aiMode='full'}) {
 
 
 // ── Crypto Tab ─────────────────────────────────────────────────
-function CryptoTab({t, at}) {
+function CryptoTab({t, at, aiMode='smart'}) {
   const CRYPTO_STRATEGIES = [
     {symbol:'BTC', strategy:'momentum',     name:'BTC EMA Momentum'},
     {symbol:'ETH', strategy:'macd-cross',   name:'ETH MACD Cross'},
@@ -2766,7 +2766,7 @@ export default function Dashboard() {
             {!isConn&&tab!=='charts'&&<div style={{background:dark?t.blue+'0d':t.blue+'0a',border:`1px solid ${t.blue}33`,borderRadius:16,padding:18,marginBottom:24,display:'flex',alignItems:'center',justifyContent:'space-between',gap:16}}><div><p style={{color:t.blue,fontWeight:700,fontSize:14}}>🔐 Login with Zerodha for live data & 1-click execution</p><p style={{color:t.muted,fontSize:12,marginTop:3}}>Live prices · Real positions · Auto stop loss · SL + Target in one click</p></div><button onClick={()=>loginUrl&&window.location.assign(loginUrl)} style={{padding:'10px 22px',background:`linear-gradient(135deg,${t.green},${t.teal})`,border:'none',borderRadius:12,color:'#fff',fontWeight:700,cursor:'pointer',fontSize:13,fontFamily:'Inter,sans-serif',flexShrink:0,boxShadow:`0 4px 20px ${t.green}33`}}>Connect Now →</button></div>}
 
             {tab==='signals'&&<div><MarketStatusBanner t={t}/><DayStrategyHint t={t}/><div style={{marginBottom:18,display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}><div><h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Live Signals</h2><p style={{color:t.muted,fontSize:13,marginTop:5}}>8 PZ strategies · ORB, Momentum, Supertrend, VWAP, Bollinger, MACD</p></div></div><MarketRegimeBanner t={t}/><NewsBar t={t} market='india'/><div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(340px,1fr))',gap:20,marginTop:20}}>{PZ_STRATEGIES.map(s=><SignalCard key={s.id} strat={s} at={at} onTrade={()=>setTr(r=>r+1)} t={t} aiMode={aiMode}/>)}</div></div>}
-            {tab==='crypto'&&<CryptoTab t={t} />}
+            {tab==='crypto'&&<CryptoTab t={t} aiMode={aiMode}/>}
             {tab==='alerts'&&<AlertsTab t={t}/>}
             {tab==='performance'&&<PerformanceTab t={t}/>}
             {tab==='options'&&<OptionsTab t={t}/>}
