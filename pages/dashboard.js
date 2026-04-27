@@ -547,263 +547,470 @@ function History({refresh,t}) {
 
 
 // ── Crypto Signal Card ─────────────────────────────────────────
-function CryptoSignalCard({symbol, strategy, stratName, t}) {
-  const [data,    setData]    = useState(null)
-  const [loading, setLoading] = useState(false)
-  const [modal,   setModal]   = useState(false)
 
-  useEffect(() => { load() }, [symbol, strategy])
 
-  async function load() {
-    setLoading(true); setData(null)
+// ── Mini sparkline chart (reusable) ───────────────────────────
+function AreaChartMini({data, color}) {
+  const gradId = 'mini' + (color||'').replace(/[^a-zA-Z0-9]/g,'')
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <AreaChart data={data}>
+        <defs>
+          <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%"  stopColor={color} stopOpacity={0.3}/>
+            <stop offset="95%" stopColor={color} stopOpacity={0}/>
+          </linearGradient>
+        </defs>
+        <XAxis dataKey="date" hide/>
+        <YAxis domain={['auto','auto']} hide/>
+        <Tooltip contentStyle={{background:'#111827',border:'1px solid #1f2937',borderRadius:8,fontSize:11,color:'#f9fafb'}}/>
+        <Area type="monotone" dataKey="close" stroke={color} fill={`url(#${gradId})`} dot={false} strokeWidth={2}/>
+      </AreaChart>
+    </ResponsiveContainer>
+  )
+}
+
+// ── Crypto Execute Modal (Binance) ─────────────────────────────
+function CryptoExecModal({data, sym, stratName, onClose, onDone, t}) {
+  const fmtD  = (n) => n ? `$${Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}` : '—'
+  const [qty,     setQty]    = useState(0.001)
+  const QTY_STEP = sym==='BTC'?0.001:sym==='ETH'?0.01:sym==='BNB'?0.01:sym==='XRP'?1:sym==='DOGE'?10:0.1
+  const [placing, setPlacing]= useState(false)
+  const [result,  setResult] = useState(null)
+  const [sl,      setSl]     = useState(true)
+  const [tgt,     setTgt]    = useState(true)
+
+  const sc     = data.signal==='BUY' ? t.green : t.red
+  const risk   = data.stopLoss ? Math.abs(data.price - data.stopLoss)*qty : null
+  const reward = data.target   ? Math.abs(data.target - data.price)*qty   : null
+  const rr     = risk && reward ? (reward/risk).toFixed(1) : null
+
+  async function place() {
+    setPlacing(true)
     try {
-      const r = await fetch(`/api/crypto-signals?symbol=${symbol}&strategy=${strategy}`)
-      setData(await r.json())
-    } catch {}
-    setLoading(false)
+      const r = await fetch('/api/binance?action=place_order', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+          symbol,
+          side:              data.signal,
+          quantity:          qty,
+          order_type:        'MARKET',
+          stop_loss_price:   sl  && data.stopLoss ? data.stopLoss : null,
+          take_profit_price: tgt && data.target   ? data.target   : null,
+        })
+      })
+      const d = await r.json()
+      if (d.status === 'success') {
+        await fetch('/api/trades', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({
+            symbol, direction: data.signal, quantity: qty,
+            entry_price: data.price, stop_loss: data.stopLoss,
+            target: data.target, strategy: stratName,
+            order_id: d.results?.main_order_id,
+            notes: `Crypto/Binance SL:${d.results?.sl_order_id||'—'} TP:${d.results?.tp_order_id||'—'}`
+          })
+        })
+        setResult({ok:true, msg:d.message, det:d.results})
+        onDone && onDone()
+      } else {
+        setResult({ok:false, msg: d.error || 'Order failed — check Binance API permissions'})
+      }
+    } catch(e) { setResult({ok:false, msg:e.message}) }
+    setPlacing(false)
   }
 
-  const sc = data?.signal==='BUY' ? t.green : data?.signal==='SELL' ? t.red : t.amber
-
   return (
-    <div style={{background:t.card,borderRadius:20,padding:20,border:`1px solid ${t.border}`,display:'flex',flexDirection:'column',gap:12}}>
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
-        <div>
-          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
-            <span style={{fontSize:20}}>{symbol==='BTC'?'₿':symbol==='ETH'?'Ξ':symbol==='SOL'?'◎':'🪙'}</span>
-            <span style={{fontWeight:800,fontSize:15,color:t.text}}>{symbol}/USDT</span>
-            <span style={{background:t.blue+'22',color:t.blue,border:`1px solid ${t.blue}44`,borderRadius:20,padding:'2px 8px',fontSize:10,fontWeight:700}}>Binance</span>
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.88)',backdropFilter:'blur(8px)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:500,padding:16}}>
+      <div style={{background:t.card,border:`1px solid ${t.border}`,borderRadius:24,padding:28,width:480,maxWidth:'100%',maxHeight:'90vh',overflowY:'auto',boxShadow:`0 0 60px ${sc}22`}}>
+
+        {/* Header */}
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20}}>
+          <div style={{display:'flex',alignItems:'center',gap:12}}>
+            <div style={{background:sc+'22',border:`2px solid ${sc}`,borderRadius:12,padding:'8px 18px',color:sc,fontWeight:900,fontSize:20}}>{data.signal}</div>
+            <div>
+              <p style={{fontWeight:800,fontSize:17,color:t.text}}>{sym}/USDT</p>
+              <p style={{color:t.muted,fontSize:12}}>{stratName} · Binance</p>
+            </div>
           </div>
-          <p style={{color:t.muted,fontSize:11}}>{stratName}</p>
+          <button onClick={onClose} style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:10,color:t.muted,cursor:'pointer',fontSize:20,width:36,height:36,display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>
         </div>
-        {data && !loading && (
-          <div style={{background:sc+'22',border:`2px solid ${sc}55`,borderRadius:12,padding:'6px 14px',color:sc,fontWeight:900,fontSize:14}}>{data.signal}</div>
-        )}
-      </div>
 
-      {loading && <div style={{textAlign:'center',padding:16}}><div style={{width:28,height:28,border:`3px solid ${t.border}`,borderTopColor:t.blue,borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'0 auto'}} /></div>}
-
-      {data && !loading && <>
-        <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8}}>
+        {/* Price boxes */}
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,marginBottom:14}}>
           {[
-            {l:'PRICE',     v:`$${Number(data.price).toLocaleString('en-US',{maximumFractionDigits:2})}`, c:t.text},
-            {l:'STOP LOSS', v:data.stopLoss?`$${data.stopLoss}`:'—', c:t.red},
-            {l:'TARGET',    v:data.target?`$${data.target}`:'—',    c:t.green},
-            {l:'RSI',       v:data.indicators?.rsi||'—', c:data.indicators?.rsi>65?t.red:data.indicators?.rsi<35?t.green:t.amber},
+            {l:'ENTRY',    v:fmtD(data.price),    c:t.blue},
+            {l:'STOP LOSS',v:fmtD(data.stopLoss),  c:t.red,  s:risk?`Risk $${risk.toFixed(2)}`:null},
+            {l:'TARGET',   v:fmtD(data.target),    c:t.green, s:reward?`Gain $${reward.toFixed(2)}`:null},
           ].map(x=>(
-            <div key={x.l} style={{background:t.surface,borderRadius:10,padding:'9px 11px',border:`1px solid ${t.border}`}}>
-              <p style={{color:t.muted,fontSize:9,fontWeight:700,letterSpacing:'0.07em',marginBottom:3}}>{x.l}</p>
-              <p style={{color:x.c,fontSize:12,fontWeight:800,fontFamily:'monospace'}}>{x.v}</p>
+            <div key={x.l} style={{background:t.surface,borderRadius:12,padding:'12px 14px',border:`1px solid ${t.border}`}}>
+              <p style={{color:t.muted,fontSize:10,fontWeight:700,letterSpacing:'0.1em',marginBottom:4}}>{x.l}</p>
+              <p style={{color:x.c,fontSize:13,fontWeight:800,fontFamily:'monospace'}}>{x.v}</p>
+              {x.s&&<p style={{color:t.muted,fontSize:10,marginTop:3}}>{x.s}</p>}
             </div>
           ))}
         </div>
-        {/* R:R + indicators row */}
-        {data.rr && (
-          <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-            <span style={{background:t.blue+'18',color:t.blue,border:`1px solid ${t.blue}33`,borderRadius:6,padding:'2px 8px',fontSize:10,fontWeight:700}}>R:R 1:{data.rr}</span>
-            {data.indicators?.macdHist!==undefined&&<span style={{background:(data.indicators.macdHist>0?t.green:t.red)+'18',color:data.indicators.macdHist>0?t.green:t.red,border:`1px solid ${(data.indicators.macdHist>0?t.green:t.red)}33`,borderRadius:6,padding:'2px 8px',fontSize:10,fontWeight:700}}>MACD {data.indicators.macdHist>0?'▲':'▼'}</span>}
-            {data.indicators?.volRatio&&<span style={{background:t.amber+'18',color:t.amber,border:`1px solid ${t.amber}33`,borderRadius:6,padding:'2px 8px',fontSize:10,fontWeight:700}}>Vol {data.indicators.volRatio}x</span>}
-            <span style={{background:t.muted+'18',color:t.muted,borderRadius:6,padding:'2px 8px',fontSize:10,fontWeight:700}}>ATR ${data.indicators?.atr?.toLocaleString('en-US',{maximumFractionDigits:0})}</span>
+
+        {/* R:R */}
+        {rr && (
+          <div style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:12,padding:'10px 16px',marginBottom:14,display:'flex',justifyContent:'space-around'}}>
+            <div style={{textAlign:'center'}}><p style={{color:t.muted,fontSize:10,fontWeight:600}}>RISK:REWARD</p><p style={{color:t.text,fontWeight:800,fontSize:16}}>1:{rr}</p></div>
+            <div style={{width:1,background:t.border}}/>
+            <div style={{textAlign:'center'}}><p style={{color:t.muted,fontSize:10,fontWeight:600}}>CONFIDENCE</p><p style={{color:data.confidence>70?t.green:data.confidence>50?t.amber:t.red,fontWeight:800,fontSize:16}}>{data.confidence}%</p></div>
+            <div style={{width:1,background:t.border}}/>
+            <div style={{textAlign:'center'}}><p style={{color:t.muted,fontSize:10,fontWeight:600}}>MARKET</p><p style={{color:t.amber,fontWeight:800,fontSize:16}}>🪙 Binance</p></div>
           </div>
         )}
-        <div style={{background:t.surface,borderRadius:10,padding:'9px 12px',border:`1px solid ${t.border}`}}>
-          <p style={{color:t.text2,fontSize:11,lineHeight:1.7}}>{data.reason}</p>
+
+        {/* Qty + SL/TP */}
+        <div style={{background:t.surface,borderRadius:14,padding:16,marginBottom:14}}>
+          <div style={{marginBottom:14}}>
+            <p style={{color:t.muted,fontSize:11,fontWeight:600,marginBottom:8}}>QUANTITY ({sym})</p>
+            <div style={{display:'flex',alignItems:'center',gap:10}}>
+              <button onClick={()=>setQty(q=>Math.max(QTY_STEP, parseFloat((q-QTY_STEP).toFixed(6))))} style={{width:34,height:34,background:t.card,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,cursor:'pointer',fontSize:20}}>−</button>
+              <span style={{color:t.text,fontWeight:800,fontSize:18,minWidth:80,textAlign:'center',fontFamily:'monospace'}}>{qty}</span>
+              <button onClick={()=>setQty(q=>parseFloat((q+QTY_STEP).toFixed(6)))} style={{width:34,height:34,background:t.card,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,cursor:'pointer',fontSize:20}}>+</button>
+              <span style={{color:t.muted,fontSize:11}}>≈ ${(qty*data.price).toFixed(2)} USDT</span>
+            </div>
+          </div>
+          <div style={{display:'flex',gap:20}}>
+            <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer'}}>
+              <input type="checkbox" checked={sl} onChange={e=>setSl(e.target.checked)} style={{width:16,height:16,accentColor:t.red}}/>
+              <span style={{color:t.red,fontSize:12,fontWeight:600}}>Auto Stop Loss @ {fmtD(data.stopLoss)}</span>
+            </label>
+            <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer'}}>
+              <input type="checkbox" checked={tgt} onChange={e=>setTgt(e.target.checked)} style={{width:16,height:16,accentColor:t.green}}/>
+              <span style={{color:t.green,fontSize:12,fontWeight:600}}>Auto Target @ {fmtD(data.target)}</span>
+            </label>
+          </div>
         </div>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-          <button onClick={()=>window.open(`/chart?symbol=${symbol}&market=crypto`,'_blank','width=1440,height=860')} style={{padding:'10px',background:t.surface,border:`1.5px solid ${t.border}`,borderRadius:10,color:t.blue,cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:'Space Grotesk,sans-serif'}}>
-            📈 Chart
-          </button>
-          <button disabled={data.signal==='HOLD'} style={{padding:'10px',border:'none',borderRadius:10,fontWeight:800,fontSize:12,cursor:data.signal==='HOLD'?'not-allowed':'pointer',background:data.signal==='HOLD'?t.surface:data.signal==='BUY'?`linear-gradient(135deg,${t.green},${t.teal})`:`linear-gradient(135deg,${t.red},#ff6688)`,color:data.signal==='HOLD'?t.muted:'#fff',fontFamily:'Space Grotesk,sans-serif',opacity:data.signal==='HOLD'?0.5:1}}>
-            {data.signal==='HOLD'?'Hold':`⚡ ${data.signal} on Binance`}
-          </button>
+
+        {/* Info */}
+        <div style={{background:t.amber+'0d',border:`1px solid ${t.amber}22`,borderRadius:10,padding:'10px 14px',marginBottom:14,fontSize:11,color:t.muted,lineHeight:1.8}}>
+          🪙 <span style={{color:t.amber,fontWeight:600}}>Binance order:</span> Market {data.signal} {qty} {sym}
+          {sl?' → Auto Stop Loss':''}
+          {tgt?' → Auto Take Profit':''}
+          → Saved to Trade History
         </div>
-      </>}
+
+        {/* Result or Button */}
+        {result ? (
+          <div style={{textAlign:'center',padding:16}}>
+            <p style={{fontSize:40,marginBottom:8}}>{result.ok?'✅':'❌'}</p>
+            <p style={{color:result.ok?t.green:t.red,fontWeight:700,fontSize:15,marginBottom:8}}>{result.msg}</p>
+            {result.det && (
+              <div style={{background:t.surface,borderRadius:10,padding:10,textAlign:'left',fontSize:11,marginBottom:12}}>
+                {result.det.main_order_id && <p style={{color:t.muted,marginBottom:4}}>Order: <span style={{color:t.text,fontFamily:'monospace'}}>{result.det.main_order_id}</span></p>}
+                {result.det.sl_order_id   && <p style={{color:t.muted,marginBottom:4}}>SL: <span style={{color:t.red,fontFamily:'monospace'}}>{result.det.sl_order_id}</span></p>}
+                {result.det.tp_order_id   && <p style={{color:t.muted}}>TP: <span style={{color:t.green,fontFamily:'monospace'}}>{result.det.tp_order_id}</span></p>}
+              </div>
+            )}
+            <button onClick={onClose} style={{padding:'8px 28px',background:t.surface,border:`1px solid ${t.border}`,borderRadius:10,color:t.text,cursor:'pointer',fontFamily:'Space Grotesk,sans-serif',fontSize:13}}>Close</button>
+          </div>
+        ) : (
+          <button onClick={place} disabled={placing} style={{
+            width:'100%',padding:17,border:'none',borderRadius:14,
+            background: placing ? t.surface : data.signal==='BUY'
+              ? `linear-gradient(135deg,${t.green},${t.teal})`
+              : `linear-gradient(135deg,${t.red},#ff6688)`,
+            color: placing?t.muted:'#fff',
+            fontWeight:800,fontSize:16,cursor:placing?'not-allowed':'pointer',
+            fontFamily:'Space Grotesk,sans-serif',
+            boxShadow:!placing?`0 4px 24px ${sc}44`:'none',
+            transition:'all 0.2s',
+          }}>
+            {placing?'⏳ Placing on Binance...':`⚡ Place ${data.signal} ${qty} ${sym} + SL + Target`}
+          </button>
+        )}
+      </div>
     </div>
   )
 }
 
+// ── Crypto Signal Card ─────────────────────────────────────────
+function CryptoSignalCard({symbol, strategy, stratName, t}) {
+  const [data,     setData]    = useState(null)
+  const [loading,  setLoading] = useState(false)
+  const [modal,    setModal]   = useState(false)
+  const [aiNote,   setAiNote]  = useState('')
+  const [aiLoading,setAiLoad]  = useState(false)
+
+  useEffect(() => { load() }, [symbol, strategy])
+
+  async function load() {
+    setLoading(true); setData(null); setAiNote('')
+    try {
+      const r = await fetch(`/api/crypto-signals?symbol=${symbol}&strategy=${strategy}`)
+      const d = await r.json()
+      setData(d)
+      if (d.signal !== 'HOLD') fetchAI(d)
+    } catch {}
+    setLoading(false)
+  }
+
+  async function fetchAI(d) {
+    setAiLoad(true); setAiNote('')
+    try {
+      const r = await fetch('/api/ai-analysis', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({type:'signal_analysis', data:{
+          symbol, signal:d.signal, strategy:stratName,
+          price:d.price, stopLoss:d.stopLoss, target:d.target,
+          rsi:d.indicators?.rsi, confidence:d.confidence,
+          reason:d.reason, today:d.today,
+          capital:25000,
+          marketContext:{note:'Crypto market — Binance — 24/7 trading'}
+        }})
+      })
+      const j = await r.json()
+      if (j.analysis) setAiNote(j.analysis)
+    } catch {}
+    setAiLoad(false)
+  }
+
+  const sc    = data?.signal==='BUY' ? t.green : data?.signal==='SELL' ? t.red : t.amber
+  const fmtP  = (n) => n ? `$${Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}` : '—'
+  const emoji = symbol==='BTC'?'₿':symbol==='ETH'?'Ξ':symbol==='SOL'?'◎':symbol==='BNB'?'🔶':symbol==='XRP'?'◈':'🪙'
+
+  return (
+    <>
+      {modal && data && (
+        <CryptoExecModal
+          data={data} sym={symbol} stratName={stratName}
+          onClose={()=>setModal(false)}
+          onDone={()=>setModal(false)}
+          t={t}
+        />
+      )}
+
+      <div style={{background:t.card,borderRadius:20,padding:22,border:`1px solid ${t.border}`,display:'flex',flexDirection:'column',gap:12}}>
+
+        {/* Header */}
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+          <div>
+            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+              <span style={{fontSize:20}}>{emoji}</span>
+              <span style={{fontWeight:800,fontSize:15,color:t.text}}>{symbol}/USDT</span>
+              <span style={{background:t.amber+'22',color:t.amber,border:`1px solid ${t.amber}44`,borderRadius:20,padding:'2px 8px',fontSize:10,fontWeight:700}}>Binance</span>
+            </div>
+            <p style={{color:t.muted,fontSize:11}}>{stratName}</p>
+          </div>
+          <div style={{display:'flex',alignItems:'center',gap:8}}>
+            <button onClick={load} style={{background:'none',border:`1px solid ${t.border}`,borderRadius:6,color:t.muted,cursor:'pointer',fontSize:13,padding:'2px 6px'}}>↻</button>
+            {data && !loading && (
+              <div style={{background:sc+'22',border:`2px solid ${sc}55`,borderRadius:12,padding:'6px 14px',color:sc,fontWeight:900,fontSize:14}}>{data.signal}</div>
+            )}
+          </div>
+        </div>
+
+        {/* Loading */}
+        {loading && (
+          <div style={{textAlign:'center',padding:20}}>
+            <div style={{width:30,height:30,border:`3px solid ${t.border}`,borderTopColor:t.amber,borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'0 auto 8px'}}/>
+            <p style={{color:t.muted,fontSize:12}}>Fetching Binance data...</p>
+          </div>
+        )}
+
+        {data && !loading && <>
+
+          {/* Stats */}
+          <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8}}>
+            {[
+              {l:'PRICE',     v:fmtP(data.price),      c:t.text},
+              {l:'STOP LOSS', v:fmtP(data.stopLoss),   c:t.red},
+              {l:'TARGET',    v:fmtP(data.target),      c:t.green},
+              {l:'RSI',       v:data.indicators?.rsi||'—', c:data.indicators?.rsi>65?t.red:data.indicators?.rsi<35?t.green:t.amber},
+            ].map(x=>(
+              <div key={x.l} style={{background:t.surface,borderRadius:10,padding:'9px 11px',border:`1px solid ${t.border}`}}>
+                <p style={{color:t.muted,fontSize:9,fontWeight:700,letterSpacing:'0.07em',marginBottom:3}}>{x.l}</p>
+                <p style={{color:x.c,fontSize:12,fontWeight:800,fontFamily:'monospace'}}>{x.v}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Indicator badges */}
+          {data.rr && (
+            <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+              <span style={{background:t.blue+'18',color:t.blue,border:`1px solid ${t.blue}33`,borderRadius:6,padding:'2px 8px',fontSize:10,fontWeight:700}}>R:R 1:{data.rr}</span>
+              <span style={{background:t.muted+'18',color:t.muted,borderRadius:6,padding:'2px 8px',fontSize:10,fontWeight:700}}>{data.confidence}% conf</span>
+              {data.indicators?.macdHist!==undefined && (
+                <span style={{background:(data.indicators.macdHist>0?t.green:t.red)+'18',color:data.indicators.macdHist>0?t.green:t.red,border:`1px solid ${(data.indicators.macdHist>0?t.green:t.red)}33`,borderRadius:6,padding:'2px 8px',fontSize:10,fontWeight:700}}>
+                  MACD {data.indicators.macdHist>0?'▲':'▼'}
+                </span>
+              )}
+              {data.indicators?.volRatio && (
+                <span style={{background:t.amber+'18',color:t.amber,border:`1px solid ${t.amber}33`,borderRadius:6,padding:'2px 8px',fontSize:10,fontWeight:700}}>
+                  Vol {data.indicators.volRatio}x
+                </span>
+              )}
+              <span style={{background:t.muted+'18',color:t.muted,borderRadius:6,padding:'2px 8px',fontSize:10,fontWeight:700}}>
+                ATR ${Number(data.indicators?.atr||0).toLocaleString('en-US',{maximumFractionDigits:0})}
+              </span>
+            </div>
+          )}
+
+          {/* Reason */}
+          <div style={{background:t.surface,borderRadius:10,padding:'10px 14px',border:`1px solid ${t.border}`}}>
+            <p style={{color:t.text2,fontSize:12,lineHeight:1.7}}>{data.reason}</p>
+          </div>
+
+          {/* Mini sparkline chart */}
+          {data.chartData && data.chartData.length > 0 && (
+            <div style={{height:65}}>
+              <AreaChartMini data={data.chartData} color={sc} />
+            </div>
+          )}
+
+          {/* AI Analysis */}
+          {(aiNote || aiLoading) && (
+            <div style={{background:t.purple+'0d',borderRadius:10,padding:'10px 14px',border:`1px solid ${t.purple}33`}}>
+              <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:6}}>
+                <span style={{fontSize:12}}>🤖</span>
+                <span style={{color:t.purple,fontSize:10,fontWeight:700,letterSpacing:'0.08em'}}>CLAUDE AI ANALYSIS</span>
+                {aiLoading && <div style={{width:10,height:10,border:`2px solid ${t.purple}44`,borderTopColor:t.purple,borderRadius:'50%',animation:'spin 0.8s linear infinite',marginLeft:'auto'}}/>}
+              </div>
+              {aiLoading
+                ? <p style={{color:t.muted,fontSize:11,fontStyle:'italic'}}>Analysing crypto signal...</p>
+                : <p style={{color:t.text2,fontSize:11,lineHeight:1.8,whiteSpace:'pre-wrap'}}>{aiNote}</p>
+              }
+            </div>
+          )}
+
+          {/* Action buttons */}
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+            <button
+              onClick={()=>window.open(`/chart?symbol=${symbol}&market=crypto`,'_blank','width=1440,height=860')}
+              style={{padding:'11px',background:t.surface,border:`1.5px solid ${t.border}`,borderRadius:10,color:t.amber,cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:'Space Grotesk,sans-serif'}}
+            >
+              📈 Binance Chart
+            </button>
+            <button
+              onClick={()=>data.signal!=='HOLD'&&setModal(true)}
+              disabled={data.signal==='HOLD'}
+              style={{
+                padding:'11px',border:'none',borderRadius:10,fontWeight:800,fontSize:12,
+                cursor:data.signal==='HOLD'?'not-allowed':'pointer',
+                background:data.signal==='HOLD'?t.surface:data.signal==='BUY'
+                  ?`linear-gradient(135deg,${t.green},${t.teal})`
+                  :`linear-gradient(135deg,${t.red},#ff6688)`,
+                color:data.signal==='HOLD'?t.muted:'#fff',
+                fontFamily:'Space Grotesk,sans-serif',
+                opacity:data.signal==='HOLD'?0.5:1,
+                boxShadow:data.signal!=='HOLD'?`0 2px 12px ${sc}44`:'none',
+              }}
+            >
+              {data.signal==='HOLD'?'Hold — No Signal':`⚡ ${data.signal} on Binance`}
+            </button>
+          </div>
+        </>}
+      </div>
+    </>
+  )
+}
+
+
 // ── Crypto Tab ─────────────────────────────────────────────────
-function CryptoTab({t}) {
+function CryptoTab({t, at}) {
   const CRYPTO_STRATEGIES = [
-    {symbol:'BTC', strategy:'momentum',    name:'BTC EMA Momentum',     emoji:'₿'},
-    {symbol:'ETH', strategy:'macd-cross',  name:'ETH MACD Cross',       emoji:'Ξ'},
-    {symbol:'SOL', strategy:'rsi-reversal',name:'SOL RSI Reversal',     emoji:'◎'},
-    {symbol:'BNB', strategy:'bb-breakout', name:'BNB Bollinger Breakout',emoji:'🔶'},
-    {symbol:'ETH', strategy:'momentum',    name:'ETH EMA Momentum',     emoji:'Ξ'},
-    {symbol:'BTC', strategy:'macd-cross',  name:'BTC MACD Cross',       emoji:'₿'},
-    {symbol:'XRP', strategy:'rsi-reversal',name:'XRP RSI Reversal',     emoji:'◈'},
-    {symbol:'SOL', strategy:'bb-breakout', name:'SOL Bollinger Breakout',emoji:'◎'},
+    {symbol:'BTC', strategy:'momentum',     name:'BTC EMA Momentum'},
+    {symbol:'ETH', strategy:'macd-cross',   name:'ETH MACD Cross'},
+    {symbol:'SOL', strategy:'rsi-reversal', name:'SOL RSI Reversal'},
+    {symbol:'BNB', strategy:'bb-breakout',  name:'BNB Bollinger Breakout'},
+    {symbol:'ETH', strategy:'momentum',     name:'ETH EMA Momentum'},
+    {symbol:'BTC', strategy:'macd-cross',   name:'BTC MACD Cross'},
+    {symbol:'XRP', strategy:'rsi-reversal', name:'XRP RSI Reversal'},
+    {symbol:'SOL', strategy:'bb-breakout',  name:'SOL Bollinger Breakout'},
   ]
-  const [prices, setPrices] = useState({})
+
+  const [prices,  setPrices]  = useState({})
+  const [lastUpd, setLastUpd] = useState(null)
 
   useEffect(() => {
     fetchPrices()
-    const t = setInterval(fetchPrices, 5000)
-    return () => clearInterval(t)
+    const ti = setInterval(fetchPrices, 5000)
+    return () => clearInterval(ti)
   }, [])
 
   async function fetchPrices() {
     try {
       const r = await fetch('/api/binance?action=prices')
       const d = await r.json()
-      if (d.prices) setPrices(d.prices)
+      if (d.prices) { setPrices(d.prices); setLastUpd(new Date()) }
     } catch {}
   }
 
+  const SYMS = ['BTC','ETH','SOL','BNB','XRP','DOGE']
+
   return (
     <div>
-      <div style={{marginBottom:20}}>
-        <h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Crypto Markets</h2>
-        <p style={{color:t.muted,fontSize:13,marginTop:5}}>Live Binance data · 3 strategies · BTC / ETH / SOL / BNB</p>
+      {/* Header */}
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:20}}>
+        <div>
+          <h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Crypto Markets</h2>
+          <p style={{color:t.muted,fontSize:13,marginTop:5}}>
+            Live Binance data · 4 strategies · BTC/ETH/SOL/BNB/XRP
+            {lastUpd && <span style={{color:t.muted,fontSize:11}}> · Updated {Math.round((new Date()-lastUpd)/1000)}s ago</span>}
+          </p>
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:8}}>
+          <span style={{width:7,height:7,borderRadius:'50%',background:t.green,display:'inline-block',animation:'pulse 1.5s infinite'}}/>
+          <span style={{color:t.green,fontSize:12,fontWeight:600}}>Binance Live</span>
+        </div>
       </div>
 
-      {/* Live crypto prices */}
+      {/* Live price ticker */}
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(140px,1fr))',gap:10,marginBottom:24}}>
-        {['BTC','ETH','SOL','BNB','XRP','DOGE'].map(sym => {
+        {SYMS.map(sym => {
           const d = prices[sym]
           const up = (d?.pct||0) >= 0
           return (
-            <div key={sym} onClick={()=>window.open(`/chart?symbol=${sym}&market=crypto`,'_blank','width=1440,height=860')} style={{background:t.card,borderRadius:14,padding:'14px 16px',border:`1px solid ${t.border}`,cursor:'pointer',transition:'all 0.15s'}}>
-              <p style={{color:t.muted,fontSize:11,fontWeight:700,marginBottom:6}}>{sym}/USDT <span style={{color:t.amber,fontSize:9}}>↗</span></p>
-              <p style={{color:t.text,fontSize:15,fontWeight:800,fontFamily:'monospace'}}>{d?`$${Number(d.price).toLocaleString('en-US',{maximumFractionDigits:2})}`:'...'}</p>
-              {d && <p style={{color:up?t.green:t.red,fontSize:11,fontWeight:700,marginTop:4}}>{up?'+':''}{d.pct?.toFixed(2)}%</p>}
+            <div
+              key={sym}
+              onClick={()=>window.open(`/chart?symbol=${sym}&market=crypto`,'_blank','width=1440,height=860')}
+              style={{background:t.card,borderRadius:14,padding:'14px 16px',border:`1px solid ${t.border}`,cursor:'pointer',transition:'all 0.15s'}}
+            >
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+                <p style={{color:t.muted,fontSize:11,fontWeight:700}}>{sym}/USDT</p>
+                <span style={{fontSize:10}}>📈</span>
+              </div>
+              <p style={{color:t.text,fontSize:15,fontWeight:800,fontFamily:'monospace'}}>
+                {d ? `$${Number(d.price).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}` : '...'}
+              </p>
+              {d && (
+                <p style={{color:up?t.green:t.red,fontSize:11,fontWeight:700,marginTop:4}}>
+                  {up?'+':''}{d.pct?.toFixed(2)}%
+                </p>
+              )}
             </div>
           )
         })}
       </div>
 
-      {/* Crypto signal cards */}
-      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(340px,1fr))',gap:18}}>
+      {/* Signal cards */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(360px,1fr))',gap:18}}>
         {CRYPTO_STRATEGIES.map(s => (
-          <CryptoSignalCard key={`${s.symbol}-${s.strategy}`} symbol={s.symbol} strategy={s.strategy} stratName={s.name} t={t} />
+          <CryptoSignalCard
+            key={`${s.symbol}-${s.strategy}`}
+            symbol={s.symbol}
+            strategy={s.strategy}
+            stratName={s.name}
+            t={t}
+          />
         ))}
       </div>
 
-      <div style={{marginTop:20,background:t.surface,borderRadius:12,padding:'12px 16px',border:`1px solid ${t.border}`}}>
-        <p style={{color:t.muted,fontSize:12}}>⚠️ Crypto execution requires your Binance API key. Connect it in Settings once your KYC is approved. Prices update every 5 seconds from Binance directly.</p>
+      {/* Info bar */}
+      <div style={{marginTop:20,background:t.surface,borderRadius:12,padding:'12px 16px',border:`1px solid ${t.border}`,display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+        <span style={{fontSize:14}}>🪙</span>
+        <p style={{color:t.muted,fontSize:12}}>
+          Crypto markets run 24/7. Charts open in fullscreen with all 9 timeframes (1m to 1W).
+          Execute button places order on Binance with auto Stop Loss + Take Profit simultaneously.
+          AI analysis fires automatically on every BUY/SELL signal.
+        </p>
       </div>
     </div>
   )
 }
 
-
-function TickerBar({mkt, t, setTab, isConn}) {
-  const syms = ['NIFTY','BANKNIFTY','SENSEX','BTC','ETH','SOL']
-  return (
-    <div style={{background:t.tickBg,borderBottom:`1px solid ${t.border}`,padding:'9px 28px',display:'flex',gap:28,overflowX:'auto',alignItems:'center'}}>
-      {syms.map(sym => {
-        const d = mkt[sym]
-        const up = (d?.pct||0) >= 0
-        const pctStr = d ? (up ? '+' : '') + fmt(d.pct, 2) + '%' : ''
-        return (
-          <div key={sym} onClick={() => setTab('charts')} style={{display:'flex',gap:10,alignItems:'center',flexShrink:0,cursor:'pointer'}}>
-            <span style={{color:t.muted,fontSize:11,fontWeight:700}}>{sym}</span>
-            <span style={{fontFamily:'JetBrains Mono,monospace',fontSize:13,color:t.text,fontWeight:700}}>{d ? fmt(d.price) : '—'}</span>
-            {d && <span style={{fontSize:11,fontWeight:700,color:up?t.green:t.red,background:(up?t.green:t.red)+'18',borderRadius:6,padding:'1px 6px'}}>{pctStr}</span>}
-          </div>
-        )
-      })}
-      <span style={{marginLeft:'auto',fontSize:10,color:t.muted,flexShrink:0,display:'flex',alignItems:'center',gap:4}}>
-        <span style={{width:5,height:5,borderRadius:'50%',background:isConn?t.green:t.amber,display:'inline-block'}} />
-        {isConn ? 'Live · Kite' : 'Delayed · Yahoo'}
-      </span>
-    </div>
-  )
-}
-
-export default function Dashboard() {
-  const router=useRouter()
-  const [dark,setDark]=useState(true),[at,setAt]=useState(''),[kiteUser,setKU]=useState(null),[mkt,setMkt]=useState({}),[tab,setTab]=useState('signals'),[time,setTime]=useState(''),[tr,setTr]=useState(0),[loginUrl,setLoginUrl]=useState('')
-  const t = dark ? DARK : LIGHT
-
-  useEffect(()=>{
-    if(!localStorage.getItem('pz_token')){router.push('/');return}
-    const sd=localStorage.getItem('pz_dark');if(sd!==null)setDark(sd==='true')
-    const a=localStorage.getItem('kite_access_token'),u=localStorage.getItem('kite_user'),d=localStorage.getItem('kite_connected_date')
-    if(a&&d===new Date().toDateString()){setAt(a);if(u)setKU(JSON.parse(u))}
-    else ['kite_access_token','kite_user','kite_connected_date'].forEach(k=>localStorage.removeItem(k))
-    fetch('/api/kite-login').then(r=>r.json()).then(d=>setLoginUrl(d.loginUrl))
-    const tick=()=>setTime(new Date().toLocaleTimeString('en-IN',{hour12:true,timeZone:'Asia/Kolkata'})+' IST')
-    tick();const ti=setInterval(tick,1000);return()=>clearInterval(ti)
-  },[])
-
-  function toggleDark(){const nd=!dark;setDark(nd);localStorage.setItem('pz_dark',String(nd))}
-
-  useEffect(()=>{fetchMkt();const ti=setInterval(fetchMkt,15000);return()=>clearInterval(ti)},[at])
-
-  async function fetchMkt(){
-    try{
-      if(at){const r=await fetch('/api/kite-pro?action=quote&instruments=NSE:NIFTY+50,NSE:NIFTY+BANK,BSE:SENSEX',{headers:{'x-kite-access-token':at}});const d=await r.json();if(d.data){const m={},km={'NIFTY 50':'NIFTY','NIFTY BANK':'BANKNIFTY','SENSEX':'SENSEX'};Object.entries(d.data).forEach(([k,v])=>{const s=km[k.split(':')[1]]||k.split(':')[1];m[s]={price:v.last_price,change:v.net_change,pct:v.change}});setMkt(m);return}}
-      const r=await fetch('/api/market?symbols=NIFTY,BANKNIFTY,SENSEX,BTC');const d=await r.json();if(d.data)setMkt(d.data)
-    }catch{}
-    // Fetch Binance crypto prices (public, no auth needed)
-    try {
-      const cr = await fetch('/api/binance?action=prices')
-      const cd = await cr.json()
-      if (cd.prices) {
-        setMkt(prev => ({...prev, ...cd.prices}))
-      }
-    } catch {}
-  }
-
-  function disc(){['kite_access_token','kite_user','kite_connected_date'].forEach(k=>localStorage.removeItem(k));setAt('');setKU(null)}
-
-  const tabs=[{id:'signals',l:'📡 Signals'},{id:'crypto',l:'🪙 Crypto'},{id:'positions',l:'💼 Portfolio'},{id:'trades',l:'📋 History'},{id:'charts',l:'📈 Charts'}]
-  const isConn=!!at
-
-  return (
-    <>
-      <Head>
-        <title>Projectzero</title>
-        <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
-      </Head>
-      <div style={{minHeight:'100vh',background:t.bg,fontFamily:'Space Grotesk,sans-serif',color:t.text,transition:'background 0.3s'}}>
-        {dark&&<><div style={{position:'fixed',top:-150,left:-150,width:500,height:500,borderRadius:'50%',background:'radial-gradient(circle,rgba(59,158,255,0.06),transparent 70%)',pointerEvents:'none',zIndex:0}}/><div style={{position:'fixed',bottom:-150,right:-150,width:400,height:400,borderRadius:'50%',background:'radial-gradient(circle,rgba(167,139,250,0.06),transparent 70%)',pointerEvents:'none',zIndex:0}}/></>}
-
-        <header style={{background:dark?'rgba(11,14,22,0.9)':'rgba(255,255,255,0.9)',backdropFilter:'blur(16px)',borderBottom:`1px solid ${t.border}`,padding:'0 28px',display:'flex',alignItems:'center',justifyContent:'space-between',height:64,position:'sticky',top:0,zIndex:100}}>
-          <div style={{display:'flex',alignItems:'center',gap:14}}>
-            <div style={{width:38,height:38,borderRadius:12,background:'linear-gradient(135deg,#3b9eff,#a78bfa)',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:900,fontSize:14,color:'#fff',boxShadow:'0 0 24px rgba(59,158,255,0.35)'}}>P0</div>
-            <div><span style={{fontWeight:900,fontSize:17,color:t.text}}>Projectzero</span><span style={{color:t.muted,fontSize:11,marginLeft:8}}>FHP228</span></div>
-            <Badge color={t.purple}>Connect</Badge>
-          </div>
-          <div style={{display:'flex',alignItems:'center',gap:10}}>
-            <span style={{color:t.muted,fontSize:11,fontFamily:'JetBrains Mono,monospace'}}>{time}</span>
-            <button onClick={()=>router.push('/ai')} style={{display:'flex',alignItems:'center',gap:6,padding:'5px 14px',background:t.purple+'22',border:`1px solid ${t.purple}44`,borderRadius:20,cursor:'pointer',fontSize:13,color:t.purple,fontFamily:'Space Grotesk,sans-serif',fontWeight:700}}>🤖 AI</button>
-            <button onClick={toggleDark} style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:20,padding:'5px 14px',cursor:'pointer',fontSize:13,color:t.text,fontFamily:'Space Grotesk,sans-serif',fontWeight:500}}>{dark?'☀️ Light':'🌙 Dark'}</button>
-            {isConn
-              ? <div style={{display:'flex',alignItems:'center',gap:8}}>
-                  <div style={{display:'flex',alignItems:'center',gap:7,background:t.green+'15',border:`1px solid ${t.green}33`,borderRadius:10,padding:'6px 14px'}}>
-                    <span style={{width:7,height:7,borderRadius:'50%',background:t.green,display:'inline-block',animation:'pulse 1.5s infinite'}}/>
-                    <span style={{color:t.green,fontSize:12,fontWeight:700}}>Zerodha Live</span>
-                    {kiteUser&&<span style={{color:t.green+'55',fontSize:11}}>· {kiteUser.user_id}</span>}
-                  </div>
-                  <button onClick={disc} style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,color:t.muted,cursor:'pointer',fontSize:11,padding:'6px 10px',fontFamily:'Space Grotesk,sans-serif'}}>Disconnect</button>
-                </div>
-              : <button onClick={()=>loginUrl&&window.location.assign(loginUrl)} style={{display:'flex',alignItems:'center',gap:7,padding:'9px 18px',background:'linear-gradient(135deg,#ff4466,#ff6688)',border:'none',borderRadius:10,cursor:'pointer',color:'#fff',fontSize:13,fontFamily:'Space Grotesk,sans-serif',fontWeight:700,boxShadow:'0 4px 20px rgba(255,68,102,0.4)'}}>🔐 Login with Zerodha</button>
-            }
-            <button onClick={()=>{localStorage.removeItem('pz_token');router.push('/')}} style={{background:'none',border:'none',color:t.muted,cursor:'pointer',fontSize:12,padding:'4px 8px'}}>Logout</button>
-          </div>
-        </header>
-
-        <TickerBar mkt={mkt} t={t} setTab={setTab} isConn={isConn} />
-
-        <div style={{padding:'18px 28px 0',display:'flex',gap:4}}>
-          {tabs.map(tb=><button key={tb.id} onClick={()=>setTab(tb.id)} style={{padding:'9px 20px',borderRadius:'10px 10px 0 0',fontSize:13,fontWeight:600,background:tab===tb.id?t.card:t.surface+'88',border:`1px solid ${tab===tb.id?t.border:'transparent'}`,borderBottom:tab===tb.id?`1px solid ${t.card}`:'none',color:tab===tb.id?t.text:t.muted,cursor:'pointer',fontFamily:'Space Grotesk,sans-serif',transition:'all 0.15s'}}>{tb.l}</button>)}
-        </div>
-
-        <main style={{padding:'0 28px 60px',maxWidth:1440,margin:'0 auto',position:'relative',zIndex:1}}>
-          <div style={{background:t.card,border:`1px solid ${t.border}`,borderRadius:'0 16px 16px 16px',padding:28}}>
-            {!isConn&&tab!=='charts'&&<div style={{background:dark?t.blue+'0d':t.blue+'0a',border:`1px solid ${t.blue}33`,borderRadius:16,padding:18,marginBottom:24,display:'flex',alignItems:'center',justifyContent:'space-between',gap:16}}><div><p style={{color:t.blue,fontWeight:700,fontSize:14}}>🔐 Login with Zerodha for live data & 1-click execution</p><p style={{color:t.muted,fontSize:12,marginTop:3}}>Live prices · Real positions · Auto stop loss · SL + Target in one click</p></div><button onClick={()=>loginUrl&&window.location.assign(loginUrl)} style={{padding:'10px 22px',background:`linear-gradient(135deg,${t.green},${t.teal})`,border:'none',borderRadius:12,color:'#fff',fontWeight:700,cursor:'pointer',fontSize:13,fontFamily:'Space Grotesk,sans-serif',flexShrink:0,boxShadow:`0 4px 20px ${t.green}33`}}>Connect Now →</button></div>}
-
-            {tab==='signals'&&<div><div style={{marginBottom:22}}><h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Live Signals</h2><p style={{color:t.muted,fontSize:13,marginTop:5}}>4 custom PZ strategies built from 3-month NSE data · 76% ORB · Tue/Wed best days</p></div><div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(370px,1fr))',gap:20}}>{PZ_STRATEGIES.map(s=><SignalCard key={s.id} strat={s} at={at} onTrade={()=>setTr(r=>r+1)} t={t}/>)}</div></div>}
-            {tab==='crypto'&&<CryptoTab t={t} />}
-            {tab==='positions'&&<div><div style={{marginBottom:22}}><h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Portfolio</h2><p style={{color:t.muted,fontSize:13,marginTop:5}}>Live from Zerodha · Positions · Margins · Today's orders</p></div><Positions at={at} t={t}/></div>}
-            {tab==='trades'&&<div><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:22}}><div><h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Trade History</h2><p style={{color:t.muted,fontSize:13,marginTop:5}}>All trades · Entry/Exit · P&L</p></div><button onClick={()=>setTr(r=>r+1)} style={{padding:'8px 16px',background:t.surface,border:`1px solid ${t.border}`,borderRadius:10,color:t.text,cursor:'pointer',fontSize:12,fontFamily:'Space Grotesk,sans-serif',fontWeight:600}}>🔄 Refresh</button></div><History refresh={tr} t={t}/></div>}
-            {tab==='charts'&&<Charts t={t} at={at}/>}
-          </div>
-        </main>
-      </div>
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}}@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(1.3)}}*{box-sizing:border-box;margin:0;padding:0}::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:#374151;border-radius:2px}`}</style>
-    </>
-  )
-}
