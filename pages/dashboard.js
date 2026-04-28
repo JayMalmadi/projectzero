@@ -1689,7 +1689,7 @@ function AlertsTab({t}) {
 }
 
 // ── Performance Tab — Strategy Stats ──────────────────────────
-function PerformanceTab({t}) {
+function PerformanceTab({t, setTab}) {
   const [data,    setData]    = useState(null)
   const [loading, setLoading] = useState(true)
 
@@ -1708,9 +1708,15 @@ function PerformanceTab({t}) {
 
   return (
     <div>
-      <div style={{marginBottom:20}}>
-        <h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Strategy Performance</h2>
-        <p style={{color:t.muted,fontSize:13,marginTop:5}}>Win rates and P&L per strategy — based on your closed trades</p>
+      <div style={{marginBottom:20,display:'flex',justifyContent:'space-between',alignItems:'flex-start',flexWrap:'wrap',gap:12}}>
+        <div>
+          <h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Strategy Performance</h2>
+          <p style={{color:t.muted,fontSize:13,marginTop:5}}>Win rates and P&L per strategy — based on your closed trades</p>
+        </div>
+        <button onClick={()=>setTab('backtest')}
+          style={{padding:'9px 18px',background:'linear-gradient(135deg,#ff6600,#ff9500)',border:'none',borderRadius:10,color:'#fff',fontWeight:700,cursor:'pointer',fontFamily:'Inter,sans-serif',fontSize:13,boxShadow:'0 4px 14px #ff660033',flexShrink:0}}>
+          🔬 Run Backtest →
+        </button>
       </div>
 
       {loading&&<div style={{textAlign:'center',padding:40}}><div style={{width:32,height:32,border:`3px solid ${t.border}`,borderTopColor:t.blue,borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'0 auto 12px'}}/><p style={{color:t.muted}}>Calculating performance...</p></div>}
@@ -2657,6 +2663,178 @@ function SignalLogTab({t}) {
 }
 
 
+// ── Backtest Tab ───────────────────────────────────────────────
+function BacktestTab({t}) {
+  const [sym,     setSym]    = useState('NIFTY')
+  const [strat,   setStrat]  = useState('supertrend')
+  const [market,  setMkt]    = useState('india')
+  const [period,  setPeriod] = useState('1year')
+  const [result,  setResult] = useState(null)
+  const [loading, setLoading]= useState(false)
+  const [error,   setError]  = useState('')
+
+  const INDIA_SYMS   = ['NIFTY','BANKNIFTY','SENSEX','TCS','INFY','RELIANCE','HDFCBANK','ICICIBANK','SBIN']
+  const CRYPTO_SYMS  = ['BTC','ETH','SOL','BNB','XRP','DOGE']
+  const INDIA_STRATS = ['supertrend','vwap','bollinger','macd']
+  const CRYPTO_STRATS= ['momentum','macd-cross','rsi-reversal','bb-breakout']
+  const syms   = market==='crypto'?CRYPTO_SYMS:INDIA_SYMS
+  const strats = market==='crypto'?CRYPTO_STRATS:INDIA_STRATS
+
+  async function run() {
+    setLoading(true); setResult(null); setError('')
+    try {
+      const r = await fetch(`/api/backtest?symbol=${sym}&strategy=${strat}&market=${market}&period=${period}`)
+      const d = await r.json()
+      if (d.status==='success') setResult(d)
+      else setError(d.error || 'Backtest failed')
+    } catch(e) { setError(e.message) }
+    setLoading(false)
+  }
+
+  const statColor = (v, threshold=0) => v > threshold ? t.green : v < threshold ? t.red : t.muted
+
+  return (
+    <div>
+      <div style={{marginBottom:20}}>
+        <h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Strategy Backtest</h2>
+        <p style={{color:t.muted,fontSize:13,marginTop:4}}>Test any strategy against real historical data. See win rate, P&L, and drawdown.</p>
+      </div>
+
+      {/* Config */}
+      <div style={{background:t.card,borderRadius:16,padding:20,border:`1px solid ${t.border}`,marginBottom:20}}>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(160px,1fr))',gap:12,marginBottom:16}}>
+          <div>
+            <p style={{color:t.muted,fontSize:11,fontWeight:700,marginBottom:6,letterSpacing:'0.06em'}}>MARKET</p>
+            <select value={market} onChange={e=>{setMkt(e.target.value);setSym(e.target.value==='crypto'?'BTC':'NIFTY');setStrat(e.target.value==='crypto'?'momentum':'supertrend')}}
+              style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,padding:'8px 10px',width:'100%',fontSize:13,fontFamily:'Inter,sans-serif'}}>
+              <option value="india">🇮🇳 Indian</option>
+              <option value="crypto">🪙 Crypto</option>
+            </select>
+          </div>
+          <div>
+            <p style={{color:t.muted,fontSize:11,fontWeight:700,marginBottom:6,letterSpacing:'0.06em'}}>SYMBOL</p>
+            <select value={sym} onChange={e=>setSym(e.target.value)}
+              style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,padding:'8px 10px',width:'100%',fontSize:13,fontFamily:'Inter,sans-serif'}}>
+              {syms.map(s=><option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div>
+            <p style={{color:t.muted,fontSize:11,fontWeight:700,marginBottom:6,letterSpacing:'0.06em'}}>STRATEGY</p>
+            <select value={strat} onChange={e=>setStrat(e.target.value)}
+              style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,padding:'8px 10px',width:'100%',fontSize:13,fontFamily:'Inter,sans-serif'}}>
+              {strats.map(s=><option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div>
+            <p style={{color:t.muted,fontSize:11,fontWeight:700,marginBottom:6,letterSpacing:'0.06em'}}>PERIOD</p>
+            <select value={period} onChange={e=>setPeriod(e.target.value)}
+              style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,padding:'8px 10px',width:'100%',fontSize:13,fontFamily:'Inter,sans-serif'}}>
+              <option value="3months">3 Months</option>
+              <option value="6months">6 Months</option>
+              <option value="1year">1 Year</option>
+            </select>
+          </div>
+        </div>
+        <button onClick={run} disabled={loading}
+          style={{padding:'11px 32px',background:loading?t.surface:'linear-gradient(135deg,#ff6600,#ff9500)',border:'none',borderRadius:10,color:loading?t.muted:'#fff',fontWeight:700,cursor:loading?'not-allowed':'pointer',fontFamily:'Inter,sans-serif',fontSize:14,boxShadow:loading?'none':'0 4px 16px #ff660033'}}>
+          {loading?'Running backtest...':'▶ Run Backtest'}
+        </button>
+        {error&&<p style={{color:t.red,fontSize:13,marginTop:10,fontWeight:600}}>{error}</p>}
+      </div>
+
+      {/* Results */}
+      {result&&(
+        <>
+          {/* Stats grid */}
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(150px,1fr))',gap:12,marginBottom:20}}>
+            {[
+              {l:'WIN RATE',          v:`${result.stats.winRate}%`,         c:statColor(result.stats.winRate,50)},
+              {l:'TOTAL TRADES',      v:result.stats.totalTrades,            c:t.text},
+              {l:'WINS / LOSSES',     v:`${result.stats.wins} / ${result.stats.losses}`, c:t.text},
+              {l:'AVG WIN',           v:`+${result.stats.avgWin}%`,          c:t.green},
+              {l:'AVG LOSS',          v:`${result.stats.avgLoss}%`,          c:t.red},
+              {l:'PROFIT FACTOR',     v:result.stats.profitFactor||'—',      c:statColor(result.stats.profitFactor,1)},
+              {l:'MAX DRAWDOWN',      v:`-${result.stats.maxDrawdownPct}%`,  c:statColor(-result.stats.maxDrawdownPct,-20)},
+              {l:'TOTAL P&L',         v:`${result.stats.totalPnlPct>0?'+':''}${result.stats.totalPnlPct}%`, c:statColor(result.stats.totalPnlPct)},
+              {l:'EXPECTANCY/TRADE',  v:`${result.stats.expectancy>0?'+':''}${result.stats.expectancy}%`,  c:statColor(result.stats.expectancy)},
+              {l:'FINAL EQUITY',      v:`₹${result.stats.finalEquity}`,      c:statColor(result.stats.finalEquity,100)},
+            ].map(x=>(
+              <div key={x.l} style={{background:t.card,borderRadius:12,padding:'14px',border:`1px solid ${t.border}`,textAlign:'center'}}>
+                <p style={{color:t.muted,fontSize:9,fontWeight:700,letterSpacing:'0.07em',marginBottom:6}}>{x.l}</p>
+                <p style={{color:x.c,fontSize:16,fontWeight:800,fontFamily:'JetBrains Mono,monospace'}}>{x.v}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Verdict */}
+          <div style={{
+            background: result.stats.winRate>=55&&result.stats.expectancy>0
+              ? t.green+'0d' : result.stats.winRate<45
+              ? t.red+'0d' : t.amber+'0d',
+            border:`1px solid ${result.stats.winRate>=55&&result.stats.expectancy>0?t.green:result.stats.winRate<45?t.red:t.amber}44`,
+            borderRadius:14,padding:18,marginBottom:20,
+          }}>
+            <p style={{fontWeight:800,fontSize:15,color:t.text,marginBottom:6}}>
+              {result.stats.winRate>=55&&result.stats.expectancy>0?'✅ STRATEGY PASSES — Positive expectancy. Trade this.'
+               :result.stats.winRate<45?'❌ STRATEGY FAILS — Negative expectancy on this period. Avoid.'
+               :'⚠️ MARGINAL — borderline results. Use with caution.'}
+            </p>
+            <p style={{color:t.text2,fontSize:13}}>
+              {sym} · {strat} · {period} · {result.dataPoints} trading days · Starting ₹100 → ₹{result.stats.finalEquity}
+            </p>
+          </div>
+
+          {/* Best & worst trades */}
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14,marginBottom:20}}>
+            {result.bestTrade&&(
+              <div style={{background:t.green+'0a',borderRadius:12,padding:16,border:`1px solid ${t.green}33`}}>
+                <p style={{color:t.green,fontSize:11,fontWeight:700,marginBottom:8}}>🏆 BEST TRADE</p>
+                <p style={{color:t.text,fontWeight:800,fontSize:16,fontFamily:'JetBrains Mono,monospace'}}>+{result.bestTrade.pnlPct}%</p>
+                <p style={{color:t.muted,fontSize:11,marginTop:4}}>{result.bestTrade.direction} · {result.bestTrade.entryDate} → {result.bestTrade.exitDate}</p>
+              </div>
+            )}
+            {result.worstTrade&&(
+              <div style={{background:t.red+'0a',borderRadius:12,padding:16,border:`1px solid ${t.red}33`}}>
+                <p style={{color:t.red,fontSize:11,fontWeight:700,marginBottom:8}}>⚠️ WORST TRADE</p>
+                <p style={{color:t.text,fontWeight:800,fontSize:16,fontFamily:'JetBrains Mono,monospace'}}>{result.worstTrade.pnlPct}%</p>
+                <p style={{color:t.muted,fontSize:11,marginTop:4}}>{result.worstTrade.direction} · {result.worstTrade.entryDate} → {result.worstTrade.exitDate}</p>
+              </div>
+            )}
+          </div>
+
+          {/* Recent trades */}
+          {result.recentTrades?.length>0&&(
+            <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,overflow:'hidden'}}>
+              <div style={{padding:'10px 16px',borderBottom:`1px solid ${t.border}`,fontSize:11,fontWeight:700,color:t.muted,letterSpacing:'0.06em'}}>RECENT TRADES (last 10)</div>
+              <table style={{width:'100%',borderCollapse:'collapse'}}>
+                <thead><tr style={{background:t.surface}}>
+                  {['ENTRY DATE','EXIT DATE','DIRECTION','ENTRY','EXIT','P&L %','RESULT'].map(h=>(
+                    <th key={h} style={{padding:'8px 12px',textAlign:'left',fontSize:10,fontWeight:700,color:t.muted,letterSpacing:'0.06em',borderBottom:`1px solid ${t.border}`}}>{h}</th>
+                  ))}
+                </tr></thead>
+                <tbody>
+                  {result.recentTrades.map((tr,i)=>(
+                    <tr key={i} style={{borderBottom:`1px solid ${t.border}22`}}>
+                      <td style={{padding:'9px 12px',color:t.muted,fontSize:12}}>{tr.entryDate}</td>
+                      <td style={{padding:'9px 12px',color:t.muted,fontSize:12}}>{tr.exitDate}</td>
+                      <td style={{padding:'9px 12px'}}><span style={{color:tr.direction==='BUY'?t.green:t.red,fontWeight:700,fontSize:11}}>{tr.direction}</span></td>
+                      <td style={{padding:'9px 12px',fontFamily:'JetBrains Mono,monospace',fontSize:12,color:t.text}}>{market==='crypto'?'$':'₹'}{tr.entry?.toLocaleString('en-IN',{maximumFractionDigits:2})}</td>
+                      <td style={{padding:'9px 12px',fontFamily:'JetBrains Mono,monospace',fontSize:12,color:t.text}}>{market==='crypto'?'$':'₹'}{tr.exit?.toLocaleString('en-IN',{maximumFractionDigits:2})}</td>
+                      <td style={{padding:'9px 12px',fontFamily:'JetBrains Mono,monospace',fontWeight:700,fontSize:12,color:tr.pnlPct>=0?t.green:t.red}}>{tr.pnlPct>=0?'+':''}{tr.pnlPct}%</td>
+                      <td style={{padding:'9px 12px'}}><span style={{color:tr.result==='WIN'?t.green:t.red,fontSize:11,fontWeight:700}}>{tr.result==='WIN'?'✅ WIN':'❌ LOSS'}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+
 function TickerBar({mkt, t, setTab, isConn}) {
   const syms = ['NIFTY','BANKNIFTY','SENSEX','BTC','ETH','SOL']
   return (
@@ -2746,7 +2924,7 @@ export default function Dashboard() {
     return () => window.removeEventListener('keydown', handler)
   }, [])
 
-  const tabs=[{id:'signals',l:'📡 Signals'},{id:'crypto',l:'🪙 Crypto'},{id:'positions',l:'💼 Portfolio'},{id:'trades',l:'📋 History'},{id:'charts',l:'📈 Charts'},{id:'alerts',l:'🔔 Alerts'},{id:'performance',l:'🏆 Performance'},{id:'options',l:'⛓ Options'},{id:'watchlist',l:'👁 Watchlist'},{id:'reports',l:'📅 Reports'},{id:'siglog',l:'📊 Signal Log'}]
+  const tabs=[{id:'signals',l:'📡 Signals'},{id:'crypto',l:'🪙 Crypto'},{id:'positions',l:'💼 Portfolio'},{id:'trades',l:'📋 History'},{id:'charts',l:'📈 Charts'},{id:'alerts',l:'🔔 Alerts'},{id:'performance',l:'🏆 Performance'},{id:'options',l:'⛓ Options'},{id:'watchlist',l:'👁 Watchlist'},{id:'reports',l:'📅 Reports'},{id:'siglog',l:'📊 Signal Log'},{id:'backtest',l:'🔬 Backtest'}]
   const isConn=!!at
 
   return (
@@ -2882,11 +3060,12 @@ export default function Dashboard() {
             {tab==='signals'&&<div><MarketStatusBanner t={t}/><DayStrategyHint t={t}/><div style={{marginBottom:18,display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}><div><h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Live Signals</h2><p style={{color:t.muted,fontSize:13,marginTop:5}}>8 PZ strategies · ORB, Momentum, Supertrend, VWAP, Bollinger, MACD</p></div></div><MarketRegimeBanner t={t}/><NewsBar t={t} market='india'/><div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(min(340px,100%),1fr))',gap:20,marginTop:20}}>{PZ_STRATEGIES.map(s=><SignalCard key={s.id} strat={s} at={at} onTrade={()=>setTr(r=>r+1)} t={t} aiMode={aiMode}/>)}</div></div>}
             {tab==='crypto'&&<CryptoTab t={t} aiMode={aiMode} />}
             {tab==='alerts'&&<AlertsTab t={t}/>}
-            {tab==='performance'&&<PerformanceTab t={t}/>}
+            {tab==='performance'&&<PerformanceTab t={t} setTab={setTab}/>}
             {tab==='options'&&<OptionsTab t={t}/>}
             {tab==='watchlist'&&<WatchlistTab t={t} at={at}/>}
             {tab==='reports'&&<ReportsTab t={t}/>}
             {tab==='siglog'&&<SignalLogTab t={t}/>}
+            {tab==='backtest'&&<BacktestTab t={t}/>}
             {tab==='positions'&&<div>
               <div style={{marginBottom:22,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                 <div>
