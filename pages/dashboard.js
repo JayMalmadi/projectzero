@@ -476,9 +476,17 @@ function SignalCard({strat,at,onTrade,t,aiMode='smart'}) {
       const r=await fetch(`/api/pz-strategies?symbol=${sym}&strategy=${strat.id}`)
       const d=await r.json()
       setData(d)
-      if(d.signal!=='HOLD'){fetchAI(d);fetchMTF()}
-      else setAiNote('')
-    }catch{}
+      if(d.signal!=='HOLD'){
+        fetchMTF()
+        if(aiMode==='full') fetchAI(d)
+        // Auto-log signal to history DB
+        fetch('/api/signal-history',{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({symbol:sym,strategy:strat.name,signal:d.signal,
+            confidence:d.confidence,price:d.price,stopLoss:d.stopLoss,
+            target:d.target,rr:d.rr,rsi:d.indicators?.rsi,market:'india',reason:d.reason})
+        }).catch(()=>{})
+      } else setAiNote('')
+    }catch(e){console.warn('Signal:',e.message)}
     setLoading(false)
   }
 
@@ -1014,10 +1022,14 @@ function CryptoSignalCard({symbol, strategy, stratName, t, aiMode='smart'}) {
       const d = await r.json()
       if (d && d.signal) {
         setData(d)
-        // Only fetch AI and MTF for active signals, with delay
         if (d.signal !== 'HOLD' && d.confidence >= 50) {
-          setTimeout(() => fetchAI(d), 1000)
-          setTimeout(() => fetchMTF(), 2000)
+          setTimeout(() => fetchMTF(), 1000)
+          if(aiMode==='full') setTimeout(() => fetchAI(d), 2000)
+          // Log signal to history
+          fetch('/api/signal-history',{method:'POST',headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({symbol,strategy,signal:d.signal,confidence:d.confidence,
+              price:d.price,stopLoss:d.stopLoss,target:d.target,rr:d.rr,market:'crypto'})
+          }).catch(()=>{})
         }
       }
     } catch(e) {
@@ -2488,6 +2500,163 @@ function ReportsTab({t}) {
   )
 }
 
+// ── Signal Log Tab ─────────────────────────────────────────────
+function SignalLogTab({t}) {
+  const [signals, setSignals] = useState([])
+  const [stats,   setStats]   = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [filter,  setFilter]  = useState('all')  // all | india | crypto
+  const [days,    setDays]    = useState(7)
+
+  useEffect(() => { load() }, [filter, days])
+
+  async function load() {
+    setLoading(true)
+    try {
+      const mkt = filter === 'all' ? '' : `&market=${filter}`
+      const r   = await fetch(`/api/signal-history?days=${days}&limit=100${mkt}`)
+      const d   = await r.json()
+      setSignals(d.signals || [])
+      setStats(d.stats || null)
+    } catch {}
+    setLoading(false)
+  }
+
+  const fmtTime = (d) => new Date(d).toLocaleString('en-IN', {
+    day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit', timeZone:'Asia/Kolkata'
+  })
+
+  const byStrategy = signals.reduce((acc, s) => {
+    acc[s.strategy] = acc[s.strategy] || { count:0, buy:0, sell:0, avgConf:0 }
+    acc[s.strategy].count++
+    acc[s.strategy][s.signal==='BUY'?'buy':'sell']++
+    acc[s.strategy].avgConf += s.confidence||0
+    return acc
+  }, {})
+
+  return (
+    <div>
+      <div style={{marginBottom:20}}>
+        <h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Signal Log</h2>
+        <p style={{color:t.muted,fontSize:13,marginTop:4}}>Every BUY/SELL signal that fires — your strategy track record</p>
+      </div>
+
+      {/* Filters */}
+      <div style={{display:'flex',gap:10,marginBottom:20,flexWrap:'wrap',alignItems:'center'}}>
+        <div style={{display:'flex',background:t.surface,border:`1px solid ${t.border}`,borderRadius:20,padding:'2px 3px',gap:1}}>
+          {[['all','All'],['india','🇮🇳 India'],['crypto','🪙 Crypto']].map(([v,l])=>(
+            <button key={v} onClick={()=>setFilter(v)}
+              style={{padding:'4px 14px',borderRadius:16,border:'none',background:filter===v?'#ff660022':'transparent',
+                color:filter===v?'#ff6600':t.muted,fontWeight:filter===v?700:500,cursor:'pointer',fontSize:12,fontFamily:'Inter,sans-serif'}}>
+              {l}
+            </button>
+          ))}
+        </div>
+        <div style={{display:'flex',background:t.surface,border:`1px solid ${t.border}`,borderRadius:20,padding:'2px 3px',gap:1}}>
+          {[[1,'1D'],[7,'7D'],[14,'14D'],[30,'30D']].map(([v,l])=>(
+            <button key={v} onClick={()=>setDays(v)}
+              style={{padding:'4px 12px',borderRadius:16,border:'none',background:days===v?t.blue+'22':'transparent',
+                color:days===v?t.blue:t.muted,fontWeight:days===v?700:500,cursor:'pointer',fontSize:12,fontFamily:'Inter,sans-serif'}}>
+              {l}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Stats row */}
+      {stats && (
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(120px,1fr))',gap:10,marginBottom:20}}>
+          {[
+            {l:'TOTAL SIGNALS', v:stats.total,        c:t.text},
+            {l:'BUY',           v:stats.buy,           c:t.green},
+            {l:'SELL',          v:stats.sell,          c:t.red},
+            {l:'ACTED ON',      v:stats.acted,         c:t.blue},
+            {l:'AVG CONFIDENCE',v:`${stats.avgConfidence}%`, c:t.amber},
+          ].map(x=>(
+            <div key={x.l} style={{background:t.card,borderRadius:12,padding:'12px 14px',border:`1px solid ${t.border}`,textAlign:'center'}}>
+              <p style={{color:t.muted,fontSize:9,fontWeight:700,letterSpacing:'0.07em',marginBottom:4}}>{x.l}</p>
+              <p style={{color:x.c,fontSize:16,fontWeight:800,fontFamily:'JetBrains Mono,monospace'}}>{x.v}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* By strategy breakdown */}
+      {Object.keys(byStrategy).length > 0 && (
+        <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,marginBottom:20,overflow:'hidden'}}>
+          <div style={{padding:'10px 16px',borderBottom:`1px solid ${t.border}`,fontSize:11,fontWeight:700,color:t.muted,letterSpacing:'0.06em'}}>BY STRATEGY</div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))'}}>
+            {Object.entries(byStrategy).map(([strat, data]) => (
+              <div key={strat} style={{padding:'12px 16px',borderRight:`1px solid ${t.border}`,borderBottom:`1px solid ${t.border}`}}>
+                <p style={{color:t.text,fontWeight:700,fontSize:13,marginBottom:4}}>{strat}</p>
+                <div style={{display:'flex',gap:10,alignItems:'center'}}>
+                  <span style={{color:t.green,fontSize:12,fontWeight:600}}>↑{data.buy} BUY</span>
+                  <span style={{color:t.red,fontSize:12,fontWeight:600}}>↓{data.sell} SELL</span>
+                  <span style={{color:t.muted,fontSize:11}}>{(data.avgConf/data.count).toFixed(0)}% avg</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Signal list */}
+      {loading ? (
+        <div style={{textAlign:'center',padding:40}}>
+          <div style={{width:28,height:28,border:`3px solid ${t.border}`,borderTopColor:'#ff6600',borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'0 auto'}}/>
+        </div>
+      ) : signals.length === 0 ? (
+        <div style={{background:t.card,borderRadius:16,padding:40,border:`1px solid ${t.border}`,textAlign:'center'}}>
+          <p style={{fontSize:40,marginBottom:12}}>📊</p>
+          <p style={{color:t.text,fontWeight:700,marginBottom:8}}>No signals logged yet</p>
+          <p style={{color:t.muted,fontSize:13}}>Signals auto-log when they fire. Open the Signals or Crypto tab to start building your track record.</p>
+        </div>
+      ) : (
+        <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,overflow:'hidden'}}>
+          <table style={{width:'100%',borderCollapse:'collapse'}}>
+            <thead>
+              <tr style={{background:t.surface}}>
+                {['TIME','SYMBOL','STRATEGY','SIGNAL','CONFIDENCE','PRICE','R:R','MARKET'].map(h=>(
+                  <th key={h} style={{padding:'10px 14px',textAlign:'left',fontSize:10,fontWeight:700,color:t.muted,letterSpacing:'0.08em',borderBottom:`1px solid ${t.border}`}}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {signals.map((s,i) => (
+                <tr key={s.id} style={{borderBottom:`1px solid ${t.border}22`,background:i%2===0?'transparent':t.surface+'44'}}>
+                  <td style={{padding:'10px 14px',color:t.muted,fontSize:11,whiteSpace:'nowrap'}}>{fmtTime(s.fired_at)}</td>
+                  <td style={{padding:'10px 14px',fontWeight:800,color:t.text,fontFamily:'JetBrains Mono,monospace'}}>{s.symbol}</td>
+                  <td style={{padding:'10px 14px',color:t.text2,fontSize:12,maxWidth:140,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.strategy}</td>
+                  <td style={{padding:'10px 14px'}}>
+                    <span style={{background:s.signal==='BUY'?t.green+'22':t.red+'22',color:s.signal==='BUY'?t.green:t.red,
+                      padding:'3px 10px',borderRadius:20,fontSize:11,fontWeight:700,border:`1px solid ${s.signal==='BUY'?t.green:t.red}44`}}>
+                      {s.signal}
+                    </span>
+                  </td>
+                  <td style={{padding:'10px 14px',fontFamily:'JetBrains Mono,monospace',fontSize:12,
+                    color:s.confidence>=70?t.green:s.confidence>=50?t.amber:t.red,fontWeight:600}}>
+                    {s.confidence}%
+                  </td>
+                  <td style={{padding:'10px 14px',fontFamily:'JetBrains Mono,monospace',color:t.text,fontSize:12}}>
+                    {s.market==='crypto'?'$':'₹'}{s.price?.toLocaleString('en-IN',{maximumFractionDigits:2})}
+                  </td>
+                  <td style={{padding:'10px 14px',fontFamily:'JetBrains Mono,monospace',color:t.text2,fontSize:12}}>
+                    {s.rr?`1:${s.rr}`:'—'}
+                  </td>
+                  <td style={{padding:'10px 14px'}}>
+                    <span style={{fontSize:11,color:t.muted}}>{s.market==='crypto'?'🪙':'🇮🇳'}</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+
 function TickerBar({mkt, t, setTab, isConn}) {
   const syms = ['NIFTY','BANKNIFTY','SENSEX','BTC','ETH','SOL']
   return (
@@ -2577,7 +2746,7 @@ export default function Dashboard() {
     return () => window.removeEventListener('keydown', handler)
   }, [])
 
-  const tabs=[{id:'signals',l:'📡 Signals'},{id:'crypto',l:'🪙 Crypto'},{id:'positions',l:'💼 Portfolio'},{id:'trades',l:'📋 History'},{id:'charts',l:'📈 Charts'},{id:'alerts',l:'🔔 Alerts'},{id:'performance',l:'🏆 Performance'},{id:'options',l:'⛓ Options'},{id:'watchlist',l:'👁 Watchlist'},{id:'reports',l:'📅 Reports'}]
+  const tabs=[{id:'signals',l:'📡 Signals'},{id:'crypto',l:'🪙 Crypto'},{id:'positions',l:'💼 Portfolio'},{id:'trades',l:'📋 History'},{id:'charts',l:'📈 Charts'},{id:'alerts',l:'🔔 Alerts'},{id:'performance',l:'🏆 Performance'},{id:'options',l:'⛓ Options'},{id:'watchlist',l:'👁 Watchlist'},{id:'reports',l:'📅 Reports'},{id:'siglog',l:'📊 Signal Log'}]
   const isConn=!!at
 
   return (
@@ -2715,6 +2884,7 @@ export default function Dashboard() {
             {tab==='options'&&<OptionsTab t={t}/>}
             {tab==='watchlist'&&<WatchlistTab t={t} at={at}/>}
             {tab==='reports'&&<ReportsTab t={t}/>}
+            {tab==='siglog'&&<SignalLogTab t={t}/>}
             {tab==='positions'&&<div>
               <div style={{marginBottom:22,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                 <div>
