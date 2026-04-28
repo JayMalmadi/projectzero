@@ -14,7 +14,7 @@ export default async function handler(req, res) {
       // Binance: get daily candles
       const SYMS = {BTC:'BTCUSDT',ETH:'ETHUSDT',SOL:'SOLUSDT',BNB:'BNBUSDT',XRP:'XRPUSDT',DOGE:'DOGEUSDT'}
       const binSym = SYMS[symbol] || `${symbol}USDT`
-      const r = await fetch(`https://api.binance.us/api/v3/klines?symbol=${binSym}&interval=1d&limit=${Math.min(days,365)}`)
+      const r = await fetch(`https://api.binance.us/api/v3/klines?symbol=${binSym}&interval=${days<=90?'4h':'1d'}&limit=${Math.min(days<=90?days*6:days,1000)}`)
       const data = await r.json()
       if (Array.isArray(data)) {
         candles = data.map(k => ({
@@ -28,16 +28,23 @@ export default async function handler(req, res) {
       }
     } else {
       // Yahoo Finance: historical NSE data
+      // Use 1h candles for better trade count (daily gives too few trades)
       const yahooMap = {
         NIFTY:'%5ENSEI', BANKNIFTY:'%5ENSEBANK', SENSEX:'%5EBSESN',
         TCS:'TCS.NS', INFY:'INFY.NS', RELIANCE:'RELIANCE.NS',
         HDFCBANK:'HDFCBANK.NS', ICICIBANK:'ICICIBANK.NS', SBIN:'SBIN.NS',
       }
       const ticker = yahooMap[symbol] || `${symbol}.NS`
-      const end   = Math.floor(Date.now() / 1000)
-      const start = end - (days * 86400)
+      const end    = Math.floor(Date.now() / 1000)
+
+      // Yahoo limits 1h data to 730 days, 1d data unlimited
+      // Use 1h for ≤180 days, 1d for longer (then multiply candles)
+      const useHourly = days <= 180
+      const interval  = useHourly ? '1h' : '1d'
+      const start     = end - (days * 86400)
+
       const r = await fetch(
-        `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&period1=${start}&period2=${end}`,
+        `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=${interval}&period1=${start}&period2=${end}`,
         { headers: { 'User-Agent': 'Mozilla/5.0' } }
       )
       const data = await r.json()
@@ -46,13 +53,13 @@ export default async function handler(req, res) {
         const timestamps = result.timestamp || []
         const q = result.indicators?.quote?.[0] || {}
         candles = timestamps.map((ts, i) => ({
-          date:   new Date(ts * 1000).toISOString().split('T')[0],
+          date:   new Date(ts * 1000).toLocaleString('en-IN', {timeZone:'Asia/Kolkata'}),
           open:   q.open?.[i],
           high:   q.high?.[i],
           low:    q.low?.[i],
           close:  q.close?.[i],
-          volume: q.volume?.[i],
-        })).filter(c => c.close != null)
+          volume: q.volume?.[i] || 1000000,
+        })).filter(c => c.close != null && c.close > 0)
       }
     }
 
