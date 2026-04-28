@@ -2049,7 +2049,14 @@ function WatchlistTab({t, at}) {
   const [msg,     setMsg]     = useState('')
 
   useEffect(() => { load() }, [])
-  useEffect(() => { if(items.length) fetchPrices() }, [items])
+  useEffect(() => { 
+    if(items.length) {
+      fetchPrices()
+      // Auto-refresh prices every 30 seconds
+      const iv = setInterval(fetchPrices, 30000)
+      return () => clearInterval(iv)
+    }
+  }, [items])
 
   async function load() {
     setLoading(true)

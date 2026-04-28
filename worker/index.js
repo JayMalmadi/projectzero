@@ -306,6 +306,24 @@ ${openToday.length > 0 ? `⚠️ You have ${openToday.length} open position(s)!\
 
     await sendTelegram(msg)
     console.log('[Summary] Daily summary sent, P&L:', totalPnl.toFixed(2))
+
+    // Save summary to daily_reports
+    try {
+      const today = getNow().toISOString().split('T')[0]
+      await fetch(`${CONFIG.DASHBOARD_URL}/api/daily-reports`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          report_date: today,
+          daily_summary: msg.replace(/<[^>]+>/g,'').slice(0, 2000),
+          trades_today: closedToday.length,
+          pnl_today: totalPnl,
+        })
+      }).catch(() => {})
+      console.log('[Summary] Saved to daily_reports')
+    } catch(e) {
+      console.error('[Summary] DB save error:', e.message)
+    }
   } catch(e) {
     console.error('[Summary] Error:', e.message)
   }

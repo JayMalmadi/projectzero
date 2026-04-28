@@ -20,12 +20,21 @@ async function callClaude(prompt, maxTokens = 600) {
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-5-20251001',
+      model: 'claude-haiku-4-5-20251001',
       max_tokens: maxTokens,
       messages: [{ role: 'user', content: prompt }],
     }),
   })
+  if (!r.ok) {
+    const err = await r.text()
+    console.error('Claude API error:', r.status, err.slice(0, 200))
+    return ''
+  }
   const d = await r.json()
+  if (d.error) {
+    console.error('Claude API error:', d.error)
+    return ''
+  }
   return d?.content?.[0]?.text || ''
 }
 
