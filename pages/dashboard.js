@@ -1864,8 +1864,14 @@ function OptionsTab({t}) {
     try {
       const r = await fetch(`/api/options-chain?symbol=${symbol}`)
       const d = await r.json()
-      if (d.status==='success') setData(d)
-      else setError(d.error || 'Failed to load options chain')
+      if (d.status==='success') {
+        setData(d)
+      } else if (d.status==='unavailable' || d.status==='partial') {
+        setError(d.message || 'Options chain unavailable. Try during market hours (9:15 AM - 3:30 PM IST).')
+        if (d.spotPrice) setData({...d, chain: []}) // still show spot price if available
+      } else {
+        setError(d.error || d.message || 'Failed to load options chain')
+      }
     } catch(e) { setError(e.message) }
     setLoading(false)
   }
@@ -2309,17 +2315,21 @@ function BinancePortfolio({t}) {
   async function load() {
     setLoading(true); setError('')
     try {
-      // Fetch account + prices in parallel
-      const [acctR, priceR] = await Promise.all([
-        fetch('/api/binance?action=account'),
-        fetch('/api/binance?action=prices'),
-      ])
-      const acctD  = await acctR.json()
+      // Fetch prices first (always works), account separately (may fail due to IP)
+      const priceR = await fetch('/api/binance?action=prices')
       const priceD = await priceR.json()
-
-      if (acctD.error) throw new Error(acctD.error)
-      setAccount(acctD)
       setPrices(priceD.prices || {})
+
+      // Try account - may fail if IP not whitelisted
+      const acctR = await fetch('/api/binance?action=account')
+      const acctD = await acctR.json()
+
+      if (acctD.error) {
+        // Show helpful message but don't block the whole portfolio
+        setError('Binance account: ' + acctD.error + ' — Add Vercel IPs to Binance API whitelist')
+      } else {
+        setAccount(acctD)
+      }
     } catch(e) {
       setError(e.message)
     }
@@ -2798,7 +2808,12 @@ function BacktestTab({t}) {
           style={{padding:'11px 32px',background:loading?t.surface:'linear-gradient(135deg,#ff6600,#ff9500)',border:'none',borderRadius:10,color:loading?t.muted:'#fff',fontWeight:700,cursor:loading?'not-allowed':'pointer',fontFamily:'Inter,sans-serif',fontSize:14,boxShadow:loading?'none':'0 4px 16px #ff660033'}}>
           {loading?'Running backtest...':'▶ Run Backtest'}
         </button>
-        {error&&<p style={{color:t.red,fontSize:13,marginTop:10,fontWeight:600}}>{error}</p>}
+        {error&&(
+        <div style={{background:t.amber+'0d',border:`1px solid ${t.amber}33`,borderRadius:12,padding:'12px 16px',marginBottom:16}}>
+          <p style={{color:t.amber,fontSize:12,fontWeight:700,marginBottom:4}}>⚠️ Account data unavailable</p>
+          <p style={{color:t.muted,fontSize:12}}>{error.includes('IP')?'Fix: Go to Binance → API Management → add all Vercel IPs to whitelist. Prices still show below.':error}</p>
+        </div>
+      )}
       </div>
 
       {/* Results */}

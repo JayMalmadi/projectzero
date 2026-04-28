@@ -138,12 +138,12 @@ Max 150 words. Be specific with coin names and price levels.`
       fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: { 'Content-Type':'application/json', 'x-api-key':ANTHROPIC_API_KEY, 'anthropic-version':'2023-06-01' },
-        body: JSON.stringify({ model:'claude-sonnet-4-5-20251001', max_tokens:700, messages:[{role:'user',content:indiaPrompt}] })
+        body: JSON.stringify({ model:'claude-haiku-4-5-20251001', max_tokens:700, messages:[{role:'user',content:indiaPrompt}] })
       }),
       fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: { 'Content-Type':'application/json', 'x-api-key':ANTHROPIC_API_KEY, 'anthropic-version':'2023-06-01' },
-        body: JSON.stringify({ model:'claude-sonnet-4-5-20251001', max_tokens:400, messages:[{role:'user',content:cryptoPrompt}] })
+        body: JSON.stringify({ model:'claude-haiku-4-5-20251001', max_tokens:400, messages:[{role:'user',content:cryptoPrompt}] })
       }),
     ])
 
