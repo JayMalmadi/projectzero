@@ -2752,8 +2752,10 @@ export default function Dashboard() {
   return (
     <>
       <Head>
-        <title>Projectzero</title>
-        <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+        <title>Projectzero — Algo Trading</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+        <meta name="theme-color" content="#080c14"/>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
       </Head>
       <div style={{minHeight:'100vh',background:t.bg,fontFamily:'Inter,sans-serif',color:t.text,transition:'background 0.3s'}}>
         {dark&&<><div style={{position:'fixed',top:-150,left:-150,width:500,height:500,borderRadius:'50%',background:'radial-gradient(circle,rgba(59,158,255,0.06),transparent 70%)',pointerEvents:'none',zIndex:0}}/><div style={{position:'fixed',bottom:-150,right:-150,width:400,height:400,borderRadius:'50%',background:'radial-gradient(circle,rgba(167,139,250,0.06),transparent 70%)',pointerEvents:'none',zIndex:0}}/></>}
@@ -2763,7 +2765,7 @@ export default function Dashboard() {
             backdropFilter: 'blur(20px)',
             WebkitBackdropFilter: 'blur(20px)',
             borderBottom: `1px solid ${t.border}`,
-            padding: '0 24px',
+            padding: '0 16px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
@@ -2855,7 +2857,7 @@ export default function Dashboard() {
 
         <TickerBar mkt={mkt} t={t} setTab={setTab} isConn={isConn} />
 
-        <div style={{padding:'0 24px',display:'flex',gap:1,borderBottom:`1px solid ${t.border}`,background:dark?'rgba(8,12,20,0.6)':'rgba(255,255,255,0.8)',backdropFilter:'blur(10px)',position:'sticky',top:60,zIndex:90}}>
+        <div style={{padding:'0 16px',display:'flex',gap:0,borderBottom:`1px solid ${t.border}`,background:dark?'rgba(8,12,20,0.92)':'rgba(255,255,255,0.95)',backdropFilter:'blur(10px)',position:'sticky',top:60,zIndex:90,overflowX:'auto',WebkitOverflowScrolling:'touch',scrollbarWidth:'none'}}>
           {tabs.map(tb=>(
             <button key={tb.id} onClick={()=>setTab(tb.id)} style={{
               padding:'13px 18px',
@@ -2873,11 +2875,11 @@ export default function Dashboard() {
           ))}
         </div>
 
-        <main style={{padding:'0 28px 60px',maxWidth:1440,margin:'0 auto',position:'relative',zIndex:1}}>
+        <main style={{padding:'0 16px 60px',maxWidth:1440,margin:'0 auto',position:'relative',zIndex:1}}>
           <div style={{background:t.card,border:`1px solid ${t.border}`,borderRadius:'0 16px 16px 16px',padding:28}}>
             {!isConn&&tab!=='charts'&&<div style={{background:dark?t.blue+'0d':t.blue+'0a',border:`1px solid ${t.blue}33`,borderRadius:16,padding:18,marginBottom:24,display:'flex',alignItems:'center',justifyContent:'space-between',gap:16}}><div><p style={{color:t.blue,fontWeight:700,fontSize:14}}>🔐 Login with Zerodha for live data & 1-click execution</p><p style={{color:t.muted,fontSize:12,marginTop:3}}>Live prices · Real positions · Auto stop loss · SL + Target in one click</p></div><button onClick={()=>loginUrl&&window.location.assign(loginUrl)} style={{padding:'10px 22px',background:`linear-gradient(135deg,${t.green},${t.teal})`,border:'none',borderRadius:12,color:'#fff',fontWeight:700,cursor:'pointer',fontSize:13,fontFamily:'Inter,sans-serif',flexShrink:0,boxShadow:`0 4px 20px ${t.green}33`}}>Connect Now →</button></div>}
 
-            {tab==='signals'&&<div><MarketStatusBanner t={t}/><DayStrategyHint t={t}/><div style={{marginBottom:18,display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}><div><h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Live Signals</h2><p style={{color:t.muted,fontSize:13,marginTop:5}}>8 PZ strategies · ORB, Momentum, Supertrend, VWAP, Bollinger, MACD</p></div></div><MarketRegimeBanner t={t}/><NewsBar t={t} market='india'/><div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(340px,1fr))',gap:20,marginTop:20}}>{PZ_STRATEGIES.map(s=><SignalCard key={s.id} strat={s} at={at} onTrade={()=>setTr(r=>r+1)} t={t} aiMode={aiMode}/>)}</div></div>}
+            {tab==='signals'&&<div><MarketStatusBanner t={t}/><DayStrategyHint t={t}/><div style={{marginBottom:18,display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}><div><h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Live Signals</h2><p style={{color:t.muted,fontSize:13,marginTop:5}}>8 PZ strategies · ORB, Momentum, Supertrend, VWAP, Bollinger, MACD</p></div></div><MarketRegimeBanner t={t}/><NewsBar t={t} market='india'/><div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(min(340px,100%),1fr))',gap:20,marginTop:20}}>{PZ_STRATEGIES.map(s=><SignalCard key={s.id} strat={s} at={at} onTrade={()=>setTr(r=>r+1)} t={t} aiMode={aiMode}/>)}</div></div>}
             {tab==='crypto'&&<CryptoTab t={t} aiMode={aiMode} />}
             {tab==='alerts'&&<AlertsTab t={t}/>}
             {tab==='performance'&&<PerformanceTab t={t}/>}
@@ -2979,6 +2981,11 @@ export default function Dashboard() {
   input { outline: none }
   input::placeholder { opacity: 0.4 }
   a { text-decoration: none }
+
+  /* Mobile touch targets */
+  @media (max-width: 768px) { button { min-height: 38px } }
+  div::-webkit-scrollbar { height:3px; width:4px }
+  div::-webkit-scrollbar-thumb { background:#ff660033; border-radius:3px }
 `}</style>
     </>
   )

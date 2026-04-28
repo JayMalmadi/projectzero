@@ -41,6 +41,7 @@ export default function MorningPage() {
     <>
       <Head>
         <title>Morning Intelligence — Projectzero</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
         <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
         <style>{`*{margin:0;padding:0;box-sizing:border-box}body{background:${t.bg};font-family:'Inter',sans-serif;color:${t.text};min-height:100vh}@keyframes spin{to{transform:rotate(360deg)}}`}</style>
       </Head>
@@ -107,7 +108,7 @@ export default function MorningPage() {
 
             {/* India brief */}
             {section==='india' && (
-              <div style={{display:'grid',gridTemplateColumns:'2fr 1fr',gap:20,alignItems:'start'}}>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(min(400px,100%),1fr))',gap:20,alignItems:'start'}}>
                 <div style={{background:t.card,borderRadius:20,padding:28,border:`1px solid ${t.border}`}}>
                   <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:20}}>
                     <span style={{fontSize:24}}>🇮🇳</span>
@@ -143,7 +144,7 @@ export default function MorningPage() {
 
             {/* Crypto brief */}
             {section==='crypto' && (
-              <div style={{display:'grid',gridTemplateColumns:'2fr 1fr',gap:20,alignItems:'start'}}>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(min(400px,100%),1fr))',gap:20,alignItems:'start'}}>
                 <div style={{background:t.card,borderRadius:20,padding:28,border:`1px solid ${t.border}`}}>
                   <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:20}}>
                     <span style={{fontSize:24}}>🪙</span>

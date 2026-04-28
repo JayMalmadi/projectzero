@@ -154,6 +154,17 @@ ${data.reason?.slice(0,120)}
       await sendTelegram(msg)
       console.log(`[Signal] ${data.signal} ${s.symbol} (${data.confidence}%)`)
 
+      // Log to signal_history DB
+      try {
+        await postJSON(`${CONFIG.DASHBOARD_URL}/api/signal-history`, {
+          symbol: s.symbol, strategy: s.strategy, signal: data.signal,
+          confidence: data.confidence, price: data.price,
+          stopLoss: data.stopLoss, target: data.target,
+          rr: data.rr, rsi: data.indicators?.rsi,
+          market: s.market, reason: data.reason?.slice(0, 200)
+        })
+      } catch {}
+
     } catch(e) {
       console.error(`[Signal] Error ${s.symbol}/${s.strategy}:`, e.message)
     }
