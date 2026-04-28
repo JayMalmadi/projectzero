@@ -220,6 +220,34 @@ function ExecModal({data, strat, sym, at, onClose, onDone, t}) {
   const rr     = risk && reward ? (reward/risk).toFixed(1) : null
   const fmtP   = (n) => n ? `₹${Number(n).toLocaleString('en-IN',{maximumFractionDigits:2})}` : '—'
 
+  async function paperTrade() {
+    // Save a simulated trade to history without placing a real order
+    setPlacing(true)
+    try {
+      const r = await fetch('/api/trades', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+          symbol: sym, direction: data.signal, quantity: qty,
+          entry_price: data.price, stop_loss: data.stopLoss,
+          target: data.target, strategy: strat.name,
+          notes: '📝 PAPER TRADE (simulated — no real order placed)',
+          status: 'OPEN', market: 'india',
+        })
+      })
+      const d = await r.json()
+      if (d.id || d.trade?.id) {
+        setResult({ok:true, msg:`📝 Paper trade saved! Track it in History tab. Entry: ₹${data.price}`})
+        setTimeout(() => { onDone && onDone() }, 2500)
+      } else {
+        setResult({ok:false, msg:'Could not save paper trade: ' + (d.error||'unknown error')})
+      }
+    } catch(e) {
+      setResult({ok:false, msg:'Error: ' + e.message})
+    }
+    setPlacing(false)
+  }
+
   async function place() {
     if (!at) { setResult({ok:false, msg:'Login with Zerodha first — click the Login button in header'}); return }
     setPlacing(true)
@@ -420,20 +448,25 @@ function ExecModal({data, strat, sym, at, onClose, onDone, t}) {
             <button onClick={onClose} style={{padding:'8px 28px',background:t.surface,border:`1px solid ${t.border}`,borderRadius:10,color:t.text,cursor:'pointer',fontFamily:'Inter,sans-serif',fontSize:13}}>Close</button>
           </div>
         ) : (
-          <button onClick={place} disabled={placing} style={{
-            width:'100%',padding:17,border:'none',borderRadius:14,
-            background: placing ? t.surface : data.signal==='BUY'
-              ? `linear-gradient(135deg,${t.green},${t.teal})`
-              : `linear-gradient(135deg,${t.red},#ff6688)`,
-            color: placing ? t.muted : '#fff',
-            fontWeight:800,fontSize:16,
-            cursor: placing?'not-allowed':'pointer',
-            fontFamily:'Inter,sans-serif',
-            boxShadow: !placing ? `0 4px 24px ${sc}44` : 'none',
-            transition:'all 0.2s',
-          }}>
-            {!at ? '⚠️ Login with Zerodha first' : placing ? '⏳ Placing orders on NSE...' : `⚡ Place ${data.signal} + SL + Target`}
-          </button>
+          <div style={{display:'grid',gridTemplateColumns:'1fr auto',gap:10}}>
+            <button onClick={place} disabled={placing} style={{
+              padding:17,border:'none',borderRadius:14,
+              background: placing ? t.surface : data.signal==='BUY'
+                ? `linear-gradient(135deg,${t.green},${t.teal})`
+                : `linear-gradient(135deg,${t.red},#ff6688)`,
+              color: placing ? t.muted : '#fff',
+              fontWeight:800,fontSize:15,
+              cursor: placing?'not-allowed':'pointer',
+              fontFamily:'Inter,sans-serif',
+              boxShadow: !placing ? `0 4px 24px ${sc}44` : 'none',
+            }}>
+              {!at ? '⚠️ Login first' : placing ? '⏳ Placing...' : `⚡ ${data.signal} + SL + Target`}
+            </button>
+            <button onClick={paperTrade} title="Paper trade — save without real money"
+              style={{padding:'10px 16px',border:`1.5px solid ${t.border}`,borderRadius:14,background:t.surface,color:t.muted,cursor:'pointer',fontWeight:700,fontSize:13,fontFamily:'Inter,sans-serif'}}>
+              📝 Paper
+            </button>
+          </div>
         )}
       </div>
     </div>
@@ -785,6 +818,27 @@ function CryptoExecModal({data, sym, stratName, onClose, onDone, t}) {
   const reward = data.target   ? Math.abs(data.target - data.price)*qty   : null
   const rr     = risk && reward ? (reward/risk).toFixed(1) : null
 
+  async function cryptoPaperTrade() {
+    setPlacing(true)
+    try {
+      const r = await fetch('/api/trades', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          symbol, direction:data.signal, quantity:qty,
+          entry_price:data.price, stop_loss:data.stopLoss, target:data.target,
+          strategy, notes:'📝 PAPER TRADE (simulated — no real Binance order)',
+          market:'crypto', status:'OPEN',
+        })
+      })
+      const d = await r.json()
+      if (d.trade?.id || d.id) {
+        setResult({ok:true, msg:`📝 Paper trade saved! $${data.price} entry. Track in History tab.`})
+        setTimeout(()=>{onDone&&onDone()}, 2500)
+      } else setResult({ok:false, msg:'Could not save: '+(d.error||'unknown')})
+    } catch(e) { setResult({ok:false, msg:e.message}) }
+    setPlacing(false)
+  }
+
   async function place() {
     setPlacing(true)
     try {
@@ -962,19 +1016,24 @@ function CryptoExecModal({data, sym, stratName, onClose, onDone, t}) {
             <button onClick={onClose} style={{padding:'8px 28px',background:t.surface,border:`1px solid ${t.border}`,borderRadius:10,color:t.text,cursor:'pointer',fontFamily:'Inter,sans-serif',fontSize:13}}>Close</button>
           </div>
         ) : (
-          <button onClick={place} disabled={placing} style={{
-            width:'100%',padding:17,border:'none',borderRadius:14,
-            background: placing ? t.surface : data.signal==='BUY'
-              ? `linear-gradient(135deg,${t.green},${t.teal})`
-              : `linear-gradient(135deg,${t.red},#ff6688)`,
-            color: placing?t.muted:'#fff',
-            fontWeight:800,fontSize:16,cursor:placing?'not-allowed':'pointer',
-            fontFamily:'Inter,sans-serif',
-            boxShadow:!placing?`0 4px 24px ${sc}44`:'none',
-            transition:'all 0.2s',
-          }}>
-            {placing?'⏳ Placing on Binance...':`⚡ Place ${data.signal} ${qty} ${sym} + SL + Target`}
-          </button>
+          <div style={{display:'grid',gridTemplateColumns:'1fr auto',gap:10}}>
+            <button onClick={place} disabled={placing} style={{
+              padding:17,border:'none',borderRadius:14,
+              background: placing ? t.surface : data.signal==='BUY'
+                ? `linear-gradient(135deg,${t.green},${t.teal})`
+                : `linear-gradient(135deg,${t.red},#ff6688)`,
+              color: placing?t.muted:'#fff',
+              fontWeight:800,fontSize:14,cursor:placing?'not-allowed':'pointer',
+              fontFamily:'Inter,sans-serif',
+              boxShadow:!placing?`0 4px 24px ${sc}44`:'none',
+            }}>
+              {placing?'⏳ Placing...':`⚡ ${data.signal} ${qty} ${sym}`}
+            </button>
+            <button onClick={cryptoPaperTrade} title="Paper trade"
+              style={{padding:'10px 16px',border:`1.5px solid ${t.border}`,borderRadius:14,background:t.surface,color:t.muted,cursor:'pointer',fontWeight:700,fontSize:13,fontFamily:'Inter,sans-serif'}}>
+              📝
+            </button>
+          </div>
         )}
       </div>
     </div>

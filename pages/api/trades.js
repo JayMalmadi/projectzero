@@ -36,8 +36,10 @@ export default async function handler(req, res) {
       entry_price: parseFloat(entry_price),
       stop_loss:   stop_loss ? parseFloat(stop_loss) : null,
       target:      target    ? parseFloat(target)    : null,
-      strategy, order_id, notes,
-      status: 'OPEN',
+      strategy, order_id,
+      notes:  notes || null,
+      market: req.body.market || 'india',
+      status: req.body.status || 'OPEN',
     }]).select()
 
     if (error) return res.status(500).json({ error: error.message })
