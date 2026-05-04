@@ -22,23 +22,21 @@ function sign(secret, method, timestamp, path, body = '') {
   return crypto.createHmac('sha256', secret).update(msg).digest('hex')
 }
 
-// Authenticated request
-async function deltaRequest(apiKey, apiSecret, method, path, bodyObj = null) {
-  const timestamp = Math.floor(Date.now() / 1000).toString()
-  const bodyStr   = bodyObj ? JSON.stringify(bodyObj) : ''
-  const signature = sign(apiSecret, method, timestamp, path, bodyStr)
+// Authenticated request — routes through Railway (fixed IP) for Delta whitelist
+const RAILWAY_PROXY = process.env.RAILWAY_PROXY_URL || 'https://projectzero-production.up.railway.app'
 
-  const r = await fetch(`${BASE}${path}`, {
-    method,
-    headers: {
-      'Content-Type':     'application/json',
-      'api-key':          apiKey,
-      'timestamp':        timestamp,
-      'signature':        signature,
-      'User-Agent':       'projectzero/1.0',
-    },
-    ...(bodyStr ? { body: bodyStr } : {}),
+async function deltaRequest(apiKey, apiSecret, method, path, bodyObj = null) {
+  // Use Railway proxy so requests come from a fixed whitelisted IP
+  const r = await fetch(`${RAILWAY_PROXY}/delta-proxy`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, method, payload: bodyObj || undefined }),
   })
+  if (!r.ok) {
+    const txt = await r.text()
+    console.error('Railway proxy error:', r.status, txt.slice(0,200))
+    throw new Error(`Railway proxy: ${r.status}`)
+  }
   return r.json()
 }
 
