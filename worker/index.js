@@ -390,6 +390,64 @@ async function tick() {
 // ── Health check server ────────────────────────────────────────
 const server = http.createServer((req, res) => {
   const now = getNow()
+
+  // ── Delta Exchange Proxy ─────────────────────────────────
+  // Vercel calls this endpoint; Railway has fixed IP whitelisted on Delta
+  if (req.url.startsWith('/delta-proxy') && req.method === 'POST') {
+    let body = ''
+    req.on('data', chunk => body += chunk)
+    req.on('end', async () => {
+      try {
+        const { path, method = 'GET', payload } = JSON.parse(body)
+        if (!path || !path.startsWith('/v2/')) {
+          res.writeHead(400, {'Content-Type':'application/json'})
+          res.end(JSON.stringify({ error: 'Invalid path' }))
+          return
+        }
+
+        const crypto   = await import('crypto')
+        const apiKey    = process.env.DELTA_API_KEY
+        const apiSecret = process.env.DELTA_API_SECRET
+        if (!apiKey || !apiSecret) {
+          res.writeHead(401, {'Content-Type':'application/json'})
+          res.end(JSON.stringify({ error: 'Delta keys not configured in Railway env' }))
+          return
+        }
+
+        const timestamp = Math.floor(Date.now() / 1000).toString()
+        const bodyStr   = payload ? JSON.stringify(payload) : ''
+        const msg       = method + timestamp + path + bodyStr
+        const sig       = crypto.default.createHmac('sha256', apiSecret).update(msg).digest('hex')
+
+        const deltaRes = await fetch(`https://api.india.delta.exchange${path}`, {
+          method,
+          headers: {
+            'Content-Type': 'application/json',
+            'api-key':      apiKey,
+            'timestamp':    timestamp,
+            'signature':    sig,
+            'User-Agent':   'projectzero-railway/1.0',
+          },
+          ...(bodyStr ? { body: bodyStr } : {}),
+        })
+        const deltaData = await deltaRes.text()
+        res.writeHead(deltaRes.status, {'Content-Type':'application/json','Access-Control-Allow-Origin':'*'})
+        res.end(deltaData)
+      } catch(e) {
+        res.writeHead(500, {'Content-Type':'application/json'})
+        res.end(JSON.stringify({ error: e.message }))
+      }
+    })
+    return
+  }
+
+  // ── IP check (so we can get Railway's outbound IP) ───────
+  if (req.url === '/myip') {
+    res.writeHead(200, {'Content-Type':'application/json'})
+    res.end(JSON.stringify({ ip: req.headers['x-forwarded-for'] || req.socket.remoteAddress, ok: true }))
+    return
+  }
+
   if (req.url === '/health') {
     res.writeHead(200, {'Content-Type':'application/json'})
     res.end(JSON.stringify({
