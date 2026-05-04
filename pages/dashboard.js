@@ -2884,9 +2884,16 @@ function BacktestTab({t}) {
           {loading?'Running backtest...':'▶ Run Backtest'}
         </button>
         {error&&(
-        <div style={{background:t.amber+'0d',border:`1px solid ${t.amber}33`,borderRadius:12,padding:'12px 16px',marginBottom:16}}>
-          <p style={{color:t.amber,fontSize:12,fontWeight:700,marginBottom:4}}>⚠️ Account data unavailable</p>
-          <p style={{color:t.muted,fontSize:12}}>{error.includes('IP')?'Fix: Go to Binance → API Management → add all Vercel IPs to whitelist. Prices still show below.':error}</p>
+        <div style={{background:t.red+'0a',border:`1px solid ${t.red}33`,borderRadius:12,padding:'14px 16px',marginBottom:16}}>
+          <p style={{color:t.red,fontSize:13,fontWeight:700,marginBottom:6}}>⚠️ Binance Account Error</p>
+          <p style={{color:t.text2,fontSize:12,marginBottom:8}}>{error.includes('IP')||error.includes('invalid')||error.includes('Invalid')
+            ?'Your IPs are whitelisted but Vercel uses rotating IPs. The current server IP is not in your list.'
+            :error}
+          </p>
+          <p style={{color:t.muted,fontSize:11}}>
+            Solution: Delete this API key on Binance and create a NEW one with "Unrestricted" IP access 
+            (Binance will auto-delete it if you enable trading with unrestricted IPs, so use this key for reading balance only, and keep your current key for trading).
+          </p>
         </div>
       )}
       </div>
@@ -3045,8 +3052,25 @@ export default function Dashboard() {
 
   async function fetchMkt(){
     try{
-      if(at){const r=await fetch('/api/kite-pro?action=quote&instruments=NSE:NIFTY+50,NSE:NIFTY+BANK,BSE:SENSEX',{headers:{'x-kite-access-token':at}});const d=await r.json();if(d.data){const m={},km={'NIFTY 50':'NIFTY','NIFTY BANK':'BANKNIFTY','SENSEX':'SENSEX'};Object.entries(d.data).forEach(([k,v])=>{const s=km[k.split(':')[1]]||k.split(':')[1];m[s]={price:v.last_price,change:v.net_change,pct:v.change}});setMkt(m);return}}
-      const r=await fetch('/api/market?symbols=NIFTY,BANKNIFTY,SENSEX');const d=await r.json();if(d.data)setMkt(d.data)
+      // Always fetch crypto prices (Kite doesn't have crypto)
+      const cryptoR = fetch('/api/market?symbols=BTC,ETH,SOL').then(r=>r.json()).catch(()=>({}))
+
+      if(at){
+        const r=await fetch('/api/kite-pro?action=quote&instruments=NSE:NIFTY+50,NSE:NIFTY+BANK,BSE:SENSEX',{headers:{'x-kite-access-token':at}})
+        const d=await r.json()
+        if(d.data){
+          const m={},km={'NIFTY 50':'NIFTY','NIFTY BANK':'BANKNIFTY','SENSEX':'SENSEX'}
+          Object.entries(d.data).forEach(([k,v])=>{const s=km[k.split(':')[1]]||k.split(':')[1];m[s]={price:v.last_price,change:v.net_change,pct:v.change}})
+          // Merge crypto prices
+          const cryptoD=await cryptoR
+          if(cryptoD.data) Object.assign(m, cryptoD.data)
+          setMkt(m);return
+        }
+      }
+      // Fallback: fetch everything from Yahoo
+      const r=await fetch('/api/market?symbols=NIFTY,BANKNIFTY,SENSEX,BTC,ETH,SOL')
+      const d=await r.json()
+      if(d.data)setMkt(d.data)
     }catch{}
     // Fetch Binance crypto prices (public, no auth needed)
     try {
