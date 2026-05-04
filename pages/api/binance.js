@@ -23,8 +23,15 @@ function sign(params, secret) {
 
 export default async function handler(req, res) {
   const { action } = req.query
-  const apiKey    = req.headers['x-binance-api-key'] || process.env.BINANCE_API_KEY
-  const apiSecret = req.headers['x-binance-api-secret'] || process.env.BINANCE_API_SECRET
+  // For account balance: use read-only key (unrestricted IP, safe)
+  // For trading: use trading key (IP-restricted, has permissions)
+  const isReadOnly = ['account','open_orders'].includes(req.query.action)
+  const apiKey    = req.headers['x-binance-api-key']
+    || (isReadOnly ? process.env.BINANCE_READ_KEY : null)
+    || process.env.BINANCE_API_KEY
+  const apiSecret = req.headers['x-binance-api-secret']
+    || (isReadOnly ? process.env.BINANCE_READ_SECRET : null)
+    || process.env.BINANCE_API_SECRET
 
   try {
 
