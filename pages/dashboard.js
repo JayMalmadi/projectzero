@@ -2991,6 +2991,330 @@ function BacktestTab({t}) {
 }
 
 
+// ── Delta Exchange Tab ──────────────────────────────────────────
+const DELTA_STRATEGIES = [
+  {id:'momentum',   name:'EMA Momentum',    emoji:'📈', desc:'EMA trend + MACD + Volume'},
+  {id:'rsi-reversal',name:'RSI Reversal',   emoji:'🔄', desc:'Oversold/overbought mean reversion'},
+  {id:'macd-cross', name:'MACD Cross',      emoji:'⚡', desc:'MACD bullish/bearish crossover'},
+  {id:'bb-squeeze', name:'BB Breakout',     emoji:'💥', desc:'Bollinger Band squeeze breakout'},
+]
+
+const DELTA_SYMBOLS = ['BTC','ETH','SOL','XRP','BNB']
+
+function DeltaSignalCard({symbol, strategy, t, at}) {
+  const [data,    setData]    = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [modal,   setModal]   = useState(false)
+
+  useEffect(() => { load() }, [symbol, strategy.id])
+
+  async function load() {
+    setLoading(true); setData(null)
+    try {
+      const r = await fetch(`/api/delta-signals?symbol=${symbol}&strategy=${strategy.id}`)
+      const d = await r.json()
+      if (d.signal) setData(d)
+    } catch(e) { console.warn('Delta signal:', e.message) }
+    setLoading(false)
+  }
+
+  const sc = data?.signal === 'BUY' ? t.green : data?.signal === 'SELL' ? t.red : t.amber
+
+  if (loading) return (
+    <div style={{background:t.card,borderRadius:16,padding:20,border:`1px solid ${t.border}`,minHeight:200,display:'flex',alignItems:'center',justifyContent:'center'}}>
+      <div style={{width:22,height:22,border:`3px solid ${t.border}`,borderTopColor:'#ff6600',borderRadius:'50%',animation:'spin 0.8s linear infinite'}}/>
+    </div>
+  )
+
+  if (!data) return (
+    <div style={{background:t.card,borderRadius:16,padding:20,border:`1px solid ${t.border}`,minHeight:200,display:'flex',alignItems:'center',justifyContent:'center'}}>
+      <p style={{color:t.muted,fontSize:13}}>Failed to load</p>
+    </div>
+  )
+
+  return (
+    <>
+      {modal && <DeltaExecModal data={data} symbol={symbol} strategy={strategy} t={t}
+        onClose={()=>setModal(false)} onDone={()=>setModal(false)} />}
+
+      <div style={{background:t.card,borderRadius:20,padding:22,border:`1px solid ${t.border}`,display:'flex',flexDirection:'column',gap:14}}>
+        {/* Header */}
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+          <div>
+            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+              <span style={{fontSize:18}}>{strategy.emoji}</span>
+              <span style={{fontWeight:800,fontSize:15,color:t.text}}>{symbol}/USD</span>
+              <span style={{background:'#ff660018',color:'#ff6600',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20,border:'1px solid #ff660033'}}>DELTA FUTURES</span>
+            </div>
+            <p style={{color:t.muted,fontSize:12}}>{strategy.name}</p>
+          </div>
+          <div style={{display:'flex',alignItems:'center',gap:8}}>
+            <button onClick={load} title="Refresh" style={{background:'none',border:`1px solid ${t.border}`,borderRadius:8,color:t.muted,cursor:'pointer',fontSize:12,padding:'4px 8px'}}>↻</button>
+            <span style={{
+              background:data.signal==='HOLD'?t.amber+'22':sc+'22',
+              color:data.signal==='HOLD'?t.amber:sc,
+              border:`1.5px solid ${data.signal==='HOLD'?t.amber:sc}55`,
+              padding:'5px 14px',borderRadius:20,fontSize:13,fontWeight:800
+            }}>{data.signal}</span>
+          </div>
+        </div>
+
+        {/* Price grid */}
+        <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:8}}>
+          {[
+            {l:'MARK PRICE', v:`$${data.price?.toLocaleString('en-US',{maximumFractionDigits:2})}`, c:t.text},
+            {l:'STOP LOSS',  v:data.stopLoss?`$${data.stopLoss?.toFixed(2)}`:'—', c:data.stopLoss?t.red:t.muted},
+            {l:'TARGET',     v:data.target?`$${data.target?.toFixed(2)}`:'—', c:data.target?t.green:t.muted},
+            {l:'R:R',        v:data.rr?`1:${data.rr}`:'—', c:data.rr>=2?t.green:data.rr>=1.5?t.amber:t.muted},
+            {l:'CONFIDENCE', v:`${data.confidence}%`, c:data.confidence>70?t.green:data.confidence>50?t.amber:t.red},
+          ].map(x=>(
+            <div key={x.l} style={{background:t.surface,borderRadius:10,padding:'8px 10px',border:`1px solid ${t.border}`}}>
+              <p style={{color:t.muted,fontSize:9,fontWeight:700,letterSpacing:'0.06em',marginBottom:3}}>{x.l}</p>
+              <p style={{color:x.c,fontFamily:'JetBrains Mono,monospace',fontSize:12,fontWeight:700}}>{x.v}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Indicators row */}
+        <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+          {[
+            `RSI ${data.indicators?.rsi}`,
+            `MACD ${data.indicators?.macd>0?'▲':'▼'}`,
+            `Vol ${data.indicators?.volRatio}x`,
+            `ATR $${data.indicators?.atr?.toFixed(0)}`,
+          ].map(tag=>(
+            <span key={tag} style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,padding:'3px 8px',fontSize:11,color:t.text2,fontWeight:500}}>{tag}</span>
+          ))}
+          {data.fundingWarning && (
+            <span style={{background:t.amber+'15',border:`1px solid ${t.amber}44`,borderRadius:8,padding:'3px 8px',fontSize:10,color:t.amber,fontWeight:600}}>{data.fundingWarning}</span>
+          )}
+        </div>
+
+        {/* Reason */}
+        <p style={{color:t.muted,fontSize:12,lineHeight:1.6,background:t.surface,borderRadius:10,padding:'8px 12px'}}>{data.reason}</p>
+
+        {/* Contract info */}
+        {data.signal !== 'HOLD' && (
+          <div style={{background:sc+'08',border:`1px solid ${sc}22`,borderRadius:10,padding:'10px 14px'}}>
+            <p style={{color:t.muted,fontSize:10,fontWeight:700,marginBottom:4,letterSpacing:'0.06em'}}>SUGGESTED POSITION (≈$25 risk)</p>
+            <p style={{color:t.text,fontSize:13,fontWeight:700}}>
+              {data.contractsFor25USD} contracts × ${(data.price * data.contractValue).toFixed(2)}/contract 
+              = <span style={{color:sc}}>~${(data.contractsFor25USD * data.price * data.contractValue).toFixed(0)} notional</span>
+            </p>
+          </div>
+        )}
+
+        {/* Buttons */}
+        {data.signal !== 'HOLD' && (
+          <button onClick={()=>setModal(true)}
+            style={{padding:'12px',background:`linear-gradient(135deg,${sc},${sc}cc)`,border:'none',borderRadius:12,color:'#fff',fontWeight:800,cursor:'pointer',fontSize:14,fontFamily:'Inter,sans-serif',boxShadow:`0 4px 16px ${sc}44`}}>
+            ⚡ {data.signal} {symbol} on Delta Exchange
+          </button>
+        )}
+      </div>
+    </>
+  )
+}
+
+function DeltaExecModal({data, symbol, strategy, t, onClose, onDone}) {
+  const [contracts, setContracts] = useState(data.contractsFor25USD || 1)
+  const [leverage,  setLeverage]  = useState(10)
+  const [placing,   setPlacing]   = useState(false)
+  const [result,    setResult]    = useState(null)
+  const notional = contracts * data.price * data.contractValue
+  const marginReq = (notional / leverage).toFixed(2)
+  const riskUSD   = data.stopLoss ? Math.abs(data.price - data.stopLoss) * contracts * data.contractValue : 0
+
+  async function place() {
+    setPlacing(true)
+    try {
+      const r = await fetch('/api/delta?action=place_order', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          symbol, side:data.signal, size:contracts, leverage,
+          orderType:'market_order',
+          stopLossPrice:   data.stopLoss   || undefined,
+          takeProfitPrice: data.target     || undefined,
+        })
+      })
+      const d = await r.json()
+      if (d.status === 'success') {
+        setResult({ok:true, msg:`✅ ${d.message}`})
+        // Save to trade history
+        await fetch('/api/trades', {method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({
+            symbol:`${symbol}USD`, direction:data.signal, quantity:contracts,
+            entry_price:data.price, stop_loss:data.stopLoss, target:data.target,
+            strategy:strategy.name, market:'delta',
+            notes:`Delta Exchange futures. ${leverage}x leverage. Notional: $${notional.toFixed(0)}`,
+          })
+        }).catch(()=>{})
+        setTimeout(()=>{onDone&&onDone()}, 2500)
+      } else {
+        setResult({ok:false, msg:`❌ ${d.error || 'Order failed'}`})
+      }
+    } catch(e) { setResult({ok:false, msg:`❌ ${e.message}`}) }
+    setPlacing(false)
+  }
+
+  return (
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
+      <div style={{background:t.card,borderRadius:20,padding:28,width:'100%',maxWidth:480,border:`1px solid ${t.border}`,maxHeight:'90vh',overflowY:'auto'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20}}>
+          <div>
+            <p style={{fontWeight:900,fontSize:18,color:t.text}}>⚡ Delta Exchange Order</p>
+            <p style={{color:t.muted,fontSize:12,marginTop:2}}>{symbol}/USD Perpetual Futures</p>
+          </div>
+          <button onClick={onClose} style={{background:'none',border:'none',color:t.muted,cursor:'pointer',fontSize:20}}>✕</button>
+        </div>
+
+        {/* Signal summary */}
+        <div style={{background:data.signal==='BUY'?t.green+'0a':t.red+'0a',border:`1px solid ${data.signal==='BUY'?t.green:t.red}33`,borderRadius:12,padding:'12px 16px',marginBottom:16}}>
+          <div style={{display:'flex',gap:16,flexWrap:'wrap'}}>
+            {[
+              {l:'SIGNAL',  v:data.signal,            c:data.signal==='BUY'?t.green:t.red},
+              {l:'ENTRY',   v:`$${data.price?.toFixed(2)}`, c:t.text},
+              {l:'SL',      v:`$${data.stopLoss?.toFixed(2)}`, c:t.red},
+              {l:'TARGET',  v:`$${data.target?.toFixed(2)}`, c:t.green},
+              {l:'R:R',     v:`1:${data.rr}`,          c:t.amber},
+            ].map(x=>(
+              <div key={x.l}>
+                <p style={{color:t.muted,fontSize:9,fontWeight:700,marginBottom:2}}>{x.l}</p>
+                <p style={{color:x.c,fontWeight:800,fontSize:14,fontFamily:'JetBrains Mono,monospace'}}>{x.v}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Contracts */}
+        <div style={{marginBottom:16}}>
+          <p style={{color:t.muted,fontSize:11,fontWeight:700,marginBottom:8,letterSpacing:'0.06em'}}>CONTRACTS</p>
+          <div style={{display:'flex',alignItems:'center',gap:10}}>
+            <button onClick={()=>setContracts(c=>Math.max(1,c-1))} style={{width:36,height:36,background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,cursor:'pointer',fontSize:18}}>−</button>
+            <span style={{fontSize:20,fontWeight:800,color:t.text,fontFamily:'JetBrains Mono,monospace',minWidth:40,textAlign:'center'}}>{contracts}</span>
+            <button onClick={()=>setContracts(c=>c+1)} style={{width:36,height:36,background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,cursor:'pointer',fontSize:18}}>+</button>
+            <span style={{color:t.muted,fontSize:12}}>= ${notional.toFixed(2)} notional</span>
+          </div>
+        </div>
+
+        {/* Leverage */}
+        <div style={{marginBottom:16}}>
+          <p style={{color:t.muted,fontSize:11,fontWeight:700,marginBottom:8,letterSpacing:'0.06em'}}>LEVERAGE: {leverage}x</p>
+          <div style={{display:'flex',gap:6}}>
+            {[2,5,10,20,50].map(l=>(
+              <button key={l} onClick={()=>setLeverage(l)}
+                style={{flex:1,padding:'6px 0',background:leverage===l?'#ff660022':t.surface,border:`1px solid ${leverage===l?'#ff6600':t.border}`,borderRadius:8,color:leverage===l?'#ff6600':t.muted,cursor:'pointer',fontWeight:700,fontSize:12,fontFamily:'Inter,sans-serif'}}>
+                {l}x
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Risk summary */}
+        <div style={{background:t.surface,borderRadius:12,padding:'12px 16px',marginBottom:20,display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+          {[
+            {l:'Margin Required', v:`$${marginReq}`, c:t.amber},
+            {l:'Max Risk (USD)',   v:`$${riskUSD.toFixed(2)}`, c:t.red},
+          ].map(x=>(
+            <div key={x.l}>
+              <p style={{color:t.muted,fontSize:10,fontWeight:700,marginBottom:2}}>{x.l}</p>
+              <p style={{color:x.c,fontWeight:800,fontFamily:'JetBrains Mono,monospace'}}>{x.v}</p>
+            </div>
+          ))}
+        </div>
+
+        {result && (
+          <div style={{background:result.ok?t.green+'0d':t.red+'0d',border:`1px solid ${result.ok?t.green:t.red}44`,borderRadius:10,padding:'10px 14px',marginBottom:16}}>
+            <p style={{color:result.ok?t.green:t.red,fontSize:13,fontWeight:600}}>{result.msg}</p>
+          </div>
+        )}
+
+        <div style={{display:'flex',gap:10}}>
+          <button onClick={onClose}
+            style={{flex:1,padding:'12px',background:t.surface,border:`1px solid ${t.border}`,borderRadius:12,color:t.muted,cursor:'pointer',fontWeight:600,fontFamily:'Inter,sans-serif'}}>
+            Cancel
+          </button>
+          <button onClick={place} disabled={placing}
+            style={{flex:2,padding:'12px',background:placing?t.surface:`linear-gradient(135deg,${data.signal==='BUY'?t.green:t.red},${data.signal==='BUY'?t.teal:'#ff6688'})`,border:'none',borderRadius:12,color:placing?t.muted:'#fff',fontWeight:800,cursor:placing?'not-allowed':'pointer',fontSize:15,fontFamily:'Inter,sans-serif'}}>
+            {placing ? '⏳ Placing on Delta...' : `⚡ ${data.signal} ${contracts} × ${symbol} Futures`}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function DeltaTab({t, at}) {
+  const [prices,   setPrices]   = useState({})
+  const [activeSym,setActiveSym]= useState('BTC')
+  const [loading,  setLoading]  = useState(true)
+  const hasDeltaKeys = true // keys added to env
+
+  useEffect(() => { loadPrices() }, [])
+
+  async function loadPrices() {
+    try {
+      const r = await fetch('/api/delta?action=prices')
+      const d = await r.json()
+      if (d.prices) setPrices(d.prices)
+    } catch {}
+    setLoading(false)
+  }
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{marginBottom:20,display:'flex',justifyContent:'space-between',alignItems:'flex-start',flexWrap:'wrap',gap:12}}>
+        <div>
+          <h2 style={{fontSize:22,fontWeight:900,color:t.text}}>⚡ Delta Exchange — Futures</h2>
+          <p style={{color:t.muted,fontSize:13,marginTop:4}}>Perpetual futures · Up to 100x leverage · Settled in USD · Real execution</p>
+        </div>
+        <div style={{display:'flex',gap:8,alignItems:'center'}}>
+          <span style={{background:'#ff660018',color:'#ff6600',fontSize:11,fontWeight:700,padding:'4px 12px',borderRadius:20,border:'1px solid #ff660033'}}>
+            {hasDeltaKeys ? '🔑 API Connected' : '🔑 Setup Required'}
+          </span>
+        </div>
+      </div>
+
+      {/* Price ticker for Delta */}
+      {!loading && Object.keys(prices).length > 0 && (
+        <div style={{display:'flex',gap:10,overflowX:'auto',marginBottom:20,paddingBottom:4}}>
+          {DELTA_SYMBOLS.map(sym => {
+            const p = prices[sym]
+            if (!p) return null
+            const up = (p.pct || 0) >= 0
+            return (
+              <div key={sym} onClick={()=>setActiveSym(sym)}
+                style={{background:activeSym===sym?'#ff660018':t.card,border:`1.5px solid ${activeSym===sym?'#ff6600':t.border}`,borderRadius:12,padding:'10px 16px',cursor:'pointer',minWidth:120,flexShrink:0}}>
+                <p style={{fontWeight:800,fontSize:13,color:t.text,marginBottom:2}}>{sym}/USD</p>
+                <p style={{fontSize:14,fontWeight:700,fontFamily:'JetBrains Mono,monospace',color:t.text}}>${p.price?.toLocaleString('en-US',{maximumFractionDigits:2})}</p>
+                <p style={{fontSize:11,color:up?t.green:t.red,fontWeight:600}}>{up?'+':''}{(p.pct||0).toFixed(2)}%</p>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Setup notice if no keys */}
+      {!hasDeltaKeys && (
+        <div style={{background:t.amber+'0d',border:`1px solid ${t.amber}33`,borderRadius:14,padding:20,marginBottom:20}}>
+          <p style={{color:t.amber,fontWeight:700,marginBottom:6}}>⚠️ Delta Exchange API Keys Required</p>
+          <p style={{color:t.muted,fontSize:13}}>Create your account at delta.exchange, generate API keys, and send them to set up live trading.</p>
+        </div>
+      )}
+
+      {/* Signal cards grid */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(min(380px,100%),1fr))',gap:16}}>
+        {DELTA_STRATEGIES.map(strategy => (
+          <DeltaSignalCard key={`${activeSym}-${strategy.id}`}
+            symbol={activeSym} strategy={strategy} t={t} at={at} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+
 function TickerBar({mkt, t, setTab, isConn}) {
   const syms = ['NIFTY','BANKNIFTY','SENSEX','BTC','ETH','SOL']
   return (
@@ -3097,7 +3421,7 @@ export default function Dashboard() {
     return () => window.removeEventListener('keydown', handler)
   }, [])
 
-  const tabs=[{id:'signals',l:'📡 Signals'},{id:'crypto',l:'🪙 Crypto'},{id:'positions',l:'💼 Portfolio'},{id:'trades',l:'📋 History'},{id:'charts',l:'📈 Charts'},{id:'alerts',l:'🔔 Alerts'},{id:'performance',l:'🏆 Performance'},{id:'options',l:'⛓ Options'},{id:'watchlist',l:'👁 Watchlist'},{id:'reports',l:'📅 Reports'},{id:'siglog',l:'📊 Signal Log'},{id:'backtest',l:'🔬 Backtest'}]
+  const tabs=[{id:'signals',l:'📡 Signals'},{id:'crypto',l:'🪙 Crypto'},{id:'delta',l:'⚡ Delta'},{id:'positions',l:'💼 Portfolio'},{id:'trades',l:'📋 History'},{id:'charts',l:'📈 Charts'},{id:'alerts',l:'🔔 Alerts'},{id:'performance',l:'🏆 Performance'},{id:'options',l:'⛓ Options'},{id:'watchlist',l:'👁 Watchlist'},{id:'reports',l:'📅 Reports'},{id:'siglog',l:'📊 Signal Log'},{id:'backtest',l:'🔬 Backtest'}]
   const isConn=!!at
 
   return (
@@ -3238,6 +3562,7 @@ export default function Dashboard() {
             {tab==='watchlist'&&<WatchlistTab t={t} at={at}/>}
             {tab==='reports'&&<ReportsTab t={t}/>}
             {tab==='siglog'&&<SignalLogTab t={t}/>}
+            {tab==='delta'&&<DeltaTab t={t} at={at}/>}
             {tab==='backtest'&&<BacktestTab t={t}/>}
             {tab==='positions'&&<div>
               <div style={{marginBottom:22,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
