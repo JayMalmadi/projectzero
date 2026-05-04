@@ -54,6 +54,17 @@ export default async function handler(req, res) {
 
   try {
 
+    // ── DEBUG: Check keys loaded (remove in production) ────────
+    if (action === 'debug') {
+      return res.status(200).json({
+        hasKey:    !!apiKey,
+        hasSecret: !!apiSecret,
+        keyPrefix: apiKey ? apiKey.slice(0,6) + '...' : 'MISSING',
+        secretPrefix: apiSecret ? apiSecret.slice(0,6) + '...' : 'MISSING',
+        env_check: process.env.DELTA_API_KEY ? 'key_found' : 'key_missing',
+      })
+    }
+
     // ── PUBLIC: Live prices (no auth) ───────────────────────────
     if (action === 'prices') {
       const r = await fetch(`${BASE}/v2/tickers?contract_types=perpetual_futures`, {

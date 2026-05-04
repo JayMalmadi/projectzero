@@ -148,7 +148,7 @@ export default async function handler(req, res) {
     }
 
     // Round SL and target to tick size
-    const roundTick = (v, tick) => v ? Math.round(v / tick) * tick : null
+    const roundTick = (v, tick) => (v && tick) ? parseFloat((Math.round(v / tick) * tick).toFixed(8)) : null
     const tick = parseFloat(product.tickSize)
     stopLoss = roundTick(stopLoss, tick)
     target   = roundTick(target, tick)
