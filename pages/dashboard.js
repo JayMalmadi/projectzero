@@ -613,7 +613,7 @@ function SignalCard({strat,at,onTrade,t,aiMode='smart'}) {
 
         {data&&!loading&&<>
           <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:8}}>
-            {[{l:'PRICE',v:`₹${fmt(data.price)}`,c:t.text},{l:'STOP LOSS',v:data.stopLoss?`₹${fmt(data.stopLoss)}`:'—',c:t.red},{l:'TARGET',v:data.target?`₹${fmt(data.target)}`:'—',c:t.green},{l:'R:R',v:data.rr?`1:${data.rr}`:'—',c:data.rr>=2?t.green:data.rr>=1.5?t.amber:t.muted},{l:'CONFIDENCE',v:`${data.confidence}%`,c:data.confidence>70?t.green:data.confidence>50?t.amber:t.red}].map(x=>(
+            {[{l:'PRICE',v:`₹${fmt(data.price)}`,c:t.text},{l:'STOP LOSS',v:data.stopLoss?`₹${fmt(data.stopLoss)}`:'—',c:data.stopLoss?t.red:t.muted},{l:'TARGET',v:data.target?`₹${fmt(data.target)}`:'—',c:data.target?t.green:t.muted},{l:'R:R',v:data.rr?`1:${data.rr}`:'—',c:data.rr>=2?t.green:data.rr>=1.5?t.amber:t.muted},{l:'CONFIDENCE',v:`${data.confidence}%`,c:data.confidence>70?t.green:data.confidence>50?t.amber:t.red}].map(x=>(
               <div key={x.l} style={{background:t.surface,borderRadius:10,padding:'10px 12px',border:`1px solid ${t.border}`}}>
                 <p style={{color:t.muted,fontSize:10,fontWeight:700,letterSpacing:'0.07em',marginBottom:4}}>{x.l}</p>
                 <p style={{color:x.c,fontSize:13,fontWeight:800,fontFamily:'monospace'}}>{x.v}</p>
@@ -2401,7 +2401,7 @@ function BinancePortfolio({t}) {
 
       if (acctD.error) {
         // Show helpful message but don't block the whole portfolio
-        setError('Binance account: ' + acctD.error + ' — Add Vercel IPs to Binance API whitelist')
+        setError('Binance account: ' + acctD.error + ' — Fix: Binance API → add IPs 76.76.21.21 through 76.76.21.241')
       } else {
         setAccount(acctD)
       }
@@ -3004,7 +3004,7 @@ function TickerBar({mkt, t, setTab, isConn}) {
       })}
       <span style={{marginLeft:'auto',fontSize:10,color:t.muted,flexShrink:0,display:'flex',alignItems:'center',gap:4}}>
         <span style={{width:5,height:5,borderRadius:'50%',background:isConn?t.green:t.amber,display:'inline-block'}} />
-        {isConn ? 'Live · Kite' : 'Delayed · Yahoo'}
+        {isConn ? 'Live · Kite' : 'Yahoo (connect Zerodha for live)'}
       </span>
     </div>
   )
@@ -3204,7 +3204,7 @@ export default function Dashboard() {
 
         <main style={{padding:'0 16px 60px',maxWidth:1440,margin:'0 auto',position:'relative',zIndex:1}}>
           <div style={{background:t.card,border:`1px solid ${t.border}`,borderRadius:'0 16px 16px 16px',padding:28}}>
-            {!isConn&&tab!=='charts'&&<div style={{background:dark?t.blue+'0d':t.blue+'0a',border:`1px solid ${t.blue}33`,borderRadius:16,padding:18,marginBottom:24,display:'flex',alignItems:'center',justifyContent:'space-between',gap:16}}><div><p style={{color:t.blue,fontWeight:700,fontSize:14}}>🔐 Login with Zerodha for live data & 1-click execution</p><p style={{color:t.muted,fontSize:12,marginTop:3}}>Live prices · Real positions · Auto stop loss · SL + Target in one click</p></div><button onClick={()=>loginUrl&&window.location.assign(loginUrl)} style={{padding:'10px 22px',background:`linear-gradient(135deg,${t.green},${t.teal})`,border:'none',borderRadius:12,color:'#fff',fontWeight:700,cursor:'pointer',fontSize:13,fontFamily:'Inter,sans-serif',flexShrink:0,boxShadow:`0 4px 20px ${t.green}33`}}>Connect Now →</button></div>}
+            {!isConn&&(tab==='signals'||tab==='positions')&&<div style={{background:dark?t.blue+'0d':t.blue+'0a',border:`1px solid ${t.blue}33`,borderRadius:16,padding:18,marginBottom:24,display:'flex',alignItems:'center',justifyContent:'space-between',gap:16}}><div><p style={{color:t.blue,fontWeight:700,fontSize:14}}>🔐 Login with Zerodha for live data & 1-click execution</p><p style={{color:t.muted,fontSize:12,marginTop:3}}>Live prices · Real positions · Auto stop loss · SL + Target in one click</p></div><button onClick={()=>loginUrl&&window.location.assign(loginUrl)} style={{padding:'10px 22px',background:`linear-gradient(135deg,${t.green},${t.teal})`,border:'none',borderRadius:12,color:'#fff',fontWeight:700,cursor:'pointer',fontSize:13,fontFamily:'Inter,sans-serif',flexShrink:0,boxShadow:`0 4px 20px ${t.green}33`}}>Connect Now →</button></div>}
 
             {tab==='signals'&&<div><MarketStatusBanner t={t}/><DayStrategyHint t={t}/><div style={{marginBottom:18,display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}><div><h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Live Signals</h2><p style={{color:t.muted,fontSize:13,marginTop:5}}>8 PZ strategies · ORB, Momentum, Supertrend, VWAP, Bollinger, MACD</p></div></div><MarketRegimeBanner t={t}/><NewsBar t={t} market='india'/><div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(min(340px,100%),1fr))',gap:20,marginTop:20}}>{PZ_STRATEGIES.map(s=><SignalCard key={s.id} strat={s} at={at} onTrade={()=>setTr(r=>r+1)} t={t} aiMode={aiMode}/>)}</div></div>}
             {tab==='crypto'&&<CryptoTab t={t} aiMode={aiMode} />}
