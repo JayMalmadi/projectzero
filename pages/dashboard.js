@@ -493,13 +493,53 @@ function SignalCard({strat,at,onTrade,t,aiMode='smart'}) {
   const [deepLoading, setDeepLoading] = useState(false)
 
   async function fetchDeepDive() {
-    if(deepLoading) return
-    setDeepLoading(true); setDeepDive({news:[]})
+    if(deepLoading || !data) return
+    setDeepLoading(true); setDeepDive(null)
     try{
-      const r=await fetch(`/api/asset-deep-dive?symbol=${sym}&market=india`)
-      const d=await r.json()
-      if(d.status==='success') setDeepDive(d)
-    }catch{}
+      // Fetch global context + news first
+      const [ddR, globalR] = await Promise.all([
+        fetch(`/api/asset-deep-dive?symbol=${sym}&market=india`),
+        fetch('/api/global-pulse').catch(()=>({json:()=>({})})),
+      ])
+      const dd = await ddR.json()
+      const global = await globalR.json().catch(()=>({}))
+
+      // Then run Opus deep analysis with full context
+      const aiR = await fetch('/api/ai-analysis', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          type: 'deep_analysis',
+          data: {
+            symbol: sym, signal: data.signal, strategy: strat.name,
+            price: data.price, stopLoss: data.stopLoss, target: data.target,
+            rr: data.rr, confidence: data.confidence, rsi: data.indicators?.rsi,
+            atr: data.indicators?.atr,
+            globalData: global?.pulse ? {
+              sp500:   global.pulse.us?.sp500,
+              nasdaq:  global.pulse.us?.nasdaq,
+              vix:     global.pulse.us?.vix,
+              crude:   global.pulse.commodities?.crude,
+              gold:    global.pulse.commodities?.gold,
+              usdinr:  global.pulse.currencies?.usdinr,
+              dxy:     global.pulse.currencies?.dxy,
+              nikkei:  global.pulse.asia?.nikkei,
+              hangseng:global.pulse.asia?.hangseng,
+              btc:     global.pulse.crypto?.btc,
+            } : null,
+            marketRegime: global?.globalSentiment || 'unknown',
+            newsItems: dd?.news || [],
+          }
+        })
+      })
+      const aiData = await aiR.json()
+      setDeepDive({
+        analysis: aiData.analysis || '',
+        news: dd?.news || [],
+        priceData: dd?.priceData || {},
+        tier: aiData.tier || 'standard',
+        cached: aiData.cached || false,
+      })
+    }catch(e){ console.warn('Deep dive error:', e.message) }
     setDeepLoading(false)
   }
 
@@ -647,23 +687,28 @@ function SignalCard({strat,at,onTrade,t,aiMode='smart'}) {
           )}
 
           
-          {/* Deep Dive Panel */}
+          {/* Deep Dive Panel — Opus AI */}
           {(deepDive||deepLoading)&&(
-            <div style={{background:t.surface,borderRadius:12,padding:'14px 16px',border:`1px solid ${t.purple}44`}}>
-              <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:10}}>
-                <span style={{fontSize:14}}>🔬</span>
-                <span style={{color:t.purple,fontSize:11,fontWeight:700,letterSpacing:'0.08em'}}>DEEP DIVE — {sym}</span>
-                {deepLoading&&<div style={{width:10,height:10,border:`2px solid ${t.purple}44`,borderTopColor:t.purple,borderRadius:'50%',animation:'spin 0.8s linear infinite',marginLeft:'auto'}}/>}
+            <div style={{background:'#0d0a1a',borderRadius:14,padding:'16px 18px',border:`1px solid ${t.purple}55`}}>
+              <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}>
+                <span style={{fontSize:16}}>🧠</span>
+                <span style={{color:t.purple,fontSize:12,fontWeight:800,letterSpacing:'0.06em'}}>DEEP ANALYSIS — {sym}</span>
+                {deepDive?.tier==='opus'&&<span style={{background:t.purple+'22',color:t.purple,fontSize:9,fontWeight:700,padding:'2px 7px',borderRadius:20,border:`1px solid ${t.purple}44`,marginLeft:2}}>OPUS AI</span>}
+                {deepDive?.cached&&<span style={{background:t.amber+'18',color:t.amber,fontSize:9,fontWeight:600,padding:'2px 7px',borderRadius:20,marginLeft:'auto'}}>CACHED</span>}
+                {deepLoading&&<div style={{width:12,height:12,border:`2px solid ${t.purple}44`,borderTopColor:t.purple,borderRadius:'50%',animation:'spin 0.8s linear infinite',marginLeft:'auto'}}/>}
               </div>
               {deepLoading
-                ?<p style={{color:t.muted,fontSize:12,fontStyle:'italic'}}>Fetching {sym} data, news, global context...</p>
+                ?<div>
+                  <p style={{color:t.muted,fontSize:12,fontStyle:'italic',marginBottom:4}}>Running deep analysis with global context...</p>
+                  <p style={{color:t.muted,fontSize:11}}>Fetching news + global data → Claude Opus analysis (15-20 seconds)</p>
+                </div>
                 :<>
-                  <p style={{color:t.text2,fontSize:12,lineHeight:1.8,whiteSpace:'pre-wrap'}}>{deepDive?.analysis}</p>
+                  <div style={{color:t.text2,fontSize:13,lineHeight:1.85,whiteSpace:'pre-wrap'}}>{deepDive?.analysis}</div>
                   {deepDive?.news?.length>0&&(
-                    <div style={{marginTop:10,borderTop:`1px solid ${t.border}`,paddingTop:8}}>
-                      <p style={{color:t.muted,fontSize:10,fontWeight:700,marginBottom:6}}>RECENT NEWS</p>
+                    <div style={{marginTop:12,borderTop:`1px solid ${t.border}44`,paddingTop:10}}>
+                      <p style={{color:t.muted,fontSize:10,fontWeight:700,marginBottom:6,letterSpacing:'0.06em'}}>RECENT NEWS USED IN ANALYSIS</p>
                       {deepDive.news.slice(0,4).map((n,i)=>(
-                        <p key={i} style={{color:t.muted,fontSize:11,marginBottom:4}}>• [{n.timeAgo}] {n.title?.slice(0,90)}</p>
+                        <p key={i} style={{color:t.muted,fontSize:11,marginBottom:4,lineHeight:1.4}}>• [{n.timeAgo}] {n.title?.slice(0,90)}</p>
                       ))}
                     </div>
                   )}
@@ -1063,13 +1108,43 @@ function CryptoSignalCard({symbol, strategy, stratName, t, aiMode='smart'}) {
   const [cryptoDeepLoad,setCryptoDeepLoad] = useState(false)
 
   async function fetchCryptoDeep() {
-    if(cryptoDeepLoad) return
-    setCryptoDeepLoad(true); setCryptoDeep({news:[]})
+    if(cryptoDeepLoad || !data) return
+    setCryptoDeepLoad(true); setCryptoDeep(null)
     try{
-      const r=await fetch(`/api/asset-deep-dive?symbol=${symbol}&market=crypto`)
-      const d=await r.json()
-      if(d.status==='success') setCryptoDeep(d)
-    }catch{}
+      const [ddR, globalR] = await Promise.all([
+        fetch(`/api/asset-deep-dive?symbol=${symbol}&market=crypto`),
+        fetch('/api/global-pulse').catch(()=>({json:()=>({})})),
+      ])
+      const dd = await ddR.json()
+      const global = await globalR.json().catch(()=>({}))
+
+      const aiR = await fetch('/api/ai-analysis', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          type: 'deep_analysis',
+          data: {
+            symbol, signal: data.signal, strategy,
+            price: data.price, stopLoss: data.stopLoss, target: data.target,
+            rr: data.rr, confidence: data.confidence,
+            globalData: global?.pulse ? {
+              sp500: global.pulse.us?.sp500, vix: global.pulse.us?.vix,
+              dxy: global.pulse.currencies?.dxy, btc: global.pulse.crypto?.btc,
+              crude: global.pulse.commodities?.crude,
+            } : null,
+            marketRegime: global?.globalSentiment || 'unknown',
+            newsItems: dd?.news || [],
+          }
+        })
+      })
+      const aiData = await aiR.json()
+      setCryptoDeep({
+        analysis: aiData.analysis || '',
+        news: dd?.news || [],
+        priceData: dd?.priceData || {},
+        tier: aiData.tier || 'standard',
+        cached: aiData.cached || false,
+      })
+    }catch(e){ console.warn('Crypto deep dive error:', e.message) }
     setCryptoDeepLoad(false)
   }
 

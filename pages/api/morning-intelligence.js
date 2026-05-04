@@ -134,23 +134,37 @@ Structure:
 
 Max 150 words. Be specific with coin names and price levels.`
 
-    const [indiaR, cryptoR] = await Promise.all([
-      fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 'Content-Type':'application/json', 'x-api-key':ANTHROPIC_API_KEY, 'anthropic-version':'2023-06-01' },
-        body: JSON.stringify({ model:'claude-haiku-4-5-20251001', max_tokens:700, messages:[{role:'user',content:indiaPrompt}] })
-      }),
-      fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 'Content-Type':'application/json', 'x-api-key':ANTHROPIC_API_KEY, 'anthropic-version':'2023-06-01' },
-        body: JSON.stringify({ model:'claude-haiku-4-5-20251001', max_tokens:400, messages:[{role:'user',content:cryptoPrompt}] })
-      }),
-    ])
+    // Use ai-analysis endpoint for Opus + caching
+    const baseUrl2 = process.env.DASHBOARD_URL || 'https://projectzero-psi.vercel.app'
+    const miR = await fetch(`${baseUrl2}/api/ai-analysis`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'morning_briefing',
+        data: {
+          date: dateStr, dayOfWeek: dow,
+          globalData: {
+            sp500:   p.us?.sp500,   nasdaq:  p.us?.nasdaq,
+            vix:     p.us?.vix,     crude:   p.commodities?.crude,
+            gold:    p.commodities?.gold, usdinr: p.currencies?.usdinr,
+            dxy:     p.currencies?.dxy,  nikkei:  p.asia?.nikkei,
+            hangseng:p.asia?.hangseng,   btc:     p.crypto?.btc,
+          },
+          fearGreed, signals: pulse.signals || [],
+        }
+      })
+    })
+    const miData = await miR.json()
+    const indiaBrief  = miData.analysis || 'Indian market brief unavailable'
 
-    const [indiaData, cryptoData] = await Promise.all([indiaR.json(), cryptoR.json()])
-
-    const indiaBrief  = indiaData?.content?.[0]?.text  || 'Indian market brief unavailable'
-    const cryptoBrief = cryptoData?.content?.[0]?.text || 'Crypto brief unavailable'
+    // Crypto brief — separate call
+    const cryptoR2 = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json', 'x-api-key':ANTHROPIC_API_KEY, 'anthropic-version':'2023-06-01' },
+      body: JSON.stringify({ model:'claude-haiku-4-5-20251001', max_tokens:400, messages:[{role:'user',content:cryptoPrompt}] })
+    })
+    const cryptoData2 = await cryptoR2.json()
+    const cryptoBrief = cryptoData2?.content?.[0]?.text || 'Crypto brief unavailable'
 
     return res.status(200).json({
       status: 'success',
