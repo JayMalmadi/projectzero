@@ -473,6 +473,15 @@ server.listen(CONFIG.PORT, () => {
 })
 
 // ── Boot notification ─────────────────────────────────────────
+// Fetch and announce Railway's outbound IP on startup
+fetch('https://api.ipify.org?format=json')
+  .then(r => r.json())
+  .then(d => {
+    console.log(`[Worker] Outbound IP: ${d.ip}`)
+    sendTelegram(`🌐 Railway IP: <code>${d.ip}</code>
+Whitelist this on Delta Exchange API key.`).catch(()=>{})
+  }).catch(()=>{})
+
 sendTelegram(`🚀 <b>Projectzero Worker v2 Started</b>
 ━━━━━━━━━━━━━━━━
 ✅ Signal monitoring (every 30s)
