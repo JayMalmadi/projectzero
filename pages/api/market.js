@@ -50,6 +50,10 @@ export default async function handler(req, res) {
       'SENSEX':    '^BSESN',
       'BTC':       'BTC-USD',
       'ETH':       'ETH-USD',
+      'SOL':       'SOL-USD',
+      'BNB':       'BNB-USD',
+      'XRP':       'XRP-USD',
+      'ADA':       'ADA-USD',
     }
 
     const fetches = symbolList.map(async (sym) => {

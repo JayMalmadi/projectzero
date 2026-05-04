@@ -3053,14 +3053,14 @@ export default function Dashboard() {
   async function fetchMkt(){
     try{
       // Always fetch crypto prices (Kite doesn't have crypto)
-      const cryptoR = fetch('/api/market?symbols=BTC,ETH,SOL').then(r=>r.json()).catch(()=>({}))
+      const cryptoR = fetch('/api/market?symbols=BTC,ETH,SOL,BNB').then(r=>r.json()).catch(()=>({}))
 
       if(at){
         const r=await fetch('/api/kite-pro?action=quote&instruments=NSE:NIFTY+50,NSE:NIFTY+BANK,BSE:SENSEX',{headers:{'x-kite-access-token':at}})
         const d=await r.json()
         if(d.data){
           const m={},km={'NIFTY 50':'NIFTY','NIFTY BANK':'BANKNIFTY','SENSEX':'SENSEX'}
-          Object.entries(d.data).forEach(([k,v])=>{const s=km[k.split(':')[1]]||k.split(':')[1];m[s]={price:v.last_price,change:v.net_change,pct:v.change}})
+          Object.entries(d.data).forEach(([k,v])=>{const s=km[k.split(':')[1]]||k.split(':')[1];m[s]={price:v.last_price,change:v.net_change,pct:v.change||((v.last_price&&v.ohlc?.close)?parseFloat(((v.last_price-v.ohlc.close)/v.ohlc.close*100).toFixed(2)):null)}})
           // Merge crypto prices
           const cryptoD=await cryptoR
           if(cryptoD.data) Object.assign(m, cryptoD.data)
@@ -3068,7 +3068,7 @@ export default function Dashboard() {
         }
       }
       // Fallback: fetch everything from Yahoo
-      const r=await fetch('/api/market?symbols=NIFTY,BANKNIFTY,SENSEX,BTC,ETH,SOL')
+      const r=await fetch('/api/market?symbols=NIFTY,BANKNIFTY,SENSEX,BTC,ETH,SOL,BNB')
       const d=await r.json()
       if(d.data)setMkt(d.data)
     }catch{}
@@ -3152,7 +3152,7 @@ export default function Dashboard() {
                 <div style={{display:'flex',alignItems:'center',gap:6,cursor:'pointer'}} onClick={()=>setTab('signals')}>
                   <span style={{fontSize:11,color:t.muted}}>NIFTY</span>
                   <span style={{fontFamily:'JetBrains Mono,monospace',fontWeight:600,fontSize:13,color:t.text}}>₹{mkt.NIFTY?.price?.toLocaleString('en-IN',{maximumFractionDigits:0})}</span>
-                  <span style={{fontSize:11,fontWeight:600,color:(mkt.NIFTY?.pct||0)>=0?t.green:t.red}}>{(mkt.NIFTY?.pct||0)>=0?'+':''}{mkt.NIFTY?.pct!=null?mkt.NIFTY.pct.toFixed(2):'--'}%</span>
+                  <span style={{fontSize:11,fontWeight:600,color:(mkt.NIFTY?.pct||0)>=0?t.green:t.red}}>{(mkt.NIFTY?.pct||mkt.NIFTY?.change||0)>=0?'+':''}{(mkt.NIFTY?.pct??mkt.NIFTY?.change)!=null?(mkt.NIFTY.pct??mkt.NIFTY.change).toFixed(2):'--'}%</span>
                 </div>
               )}
               {mkt.BTC && (
