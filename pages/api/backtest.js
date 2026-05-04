@@ -14,7 +14,7 @@ export default async function handler(req, res) {
       // Binance: get daily candles
       const SYMS = {BTC:'BTCUSDT',ETH:'ETHUSDT',SOL:'SOLUSDT',BNB:'BNBUSDT',XRP:'XRPUSDT',DOGE:'DOGEUSDT'}
       const binSym = SYMS[symbol] || `${symbol}USDT`
-      const r = await fetch(`https://api.binance.us/api/v3/klines?symbol=${binSym}&interval=${days<=90?'4h':'1d'}&limit=${Math.min(days<=90?days*6:days,1000)}`)
+      const r = await fetch(`https://api.binance.com/api/v3/klines?symbol=${binSym}&interval=${days<=90?'4h':'1d'}&limit=${Math.min(days<=90?days*6:days,1000)}`)
       const data = await r.json()
       if (Array.isArray(data)) {
         candles = data.map(k => ({

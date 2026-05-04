@@ -7,7 +7,7 @@ export default async function handler(req, res) {
     const SYMS = {BTC:'BTCUSDT',ETH:'ETHUSDT',SOL:'SOLUSDT',BNB:'BNBUSDT',XRP:'XRPUSDT',DOGE:'DOGEUSDT',ADA:'ADAUSDT'}
     const binSym = SYMS[symbol] || `${symbol}USDT`
 
-    const r = await fetch(`https://api.binance.us/api/v3/klines?symbol=${binSym}&interval=15m&limit=200`)
+    const r = await fetch(`https://api.binance.com/api/v3/klines?symbol=${binSym}&interval=15m&limit=200`)
     const klines = await r.json()
     if (!Array.isArray(klines) || klines.length < 50)
       return res.status(500).json({error:'Not enough data',signal:'HOLD',confidence:0})

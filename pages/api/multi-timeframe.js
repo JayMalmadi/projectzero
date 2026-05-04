@@ -13,9 +13,9 @@ export default async function handler(req, res) {
       const binSym = SYMS[symbol] || `${symbol}USDT`
 
       const [r15m, r1h, r1d] = await Promise.all([
-        fetch(`https://api.binance.us/api/v3/klines?symbol=${binSym}&interval=15m&limit=100`),
-        fetch(`https://api.binance.us/api/v3/klines?symbol=${binSym}&interval=1h&limit=100`),
-        fetch(`https://api.binance.us/api/v3/klines?symbol=${binSym}&interval=1d&limit=50`),
+        fetch(`https://api.binance.com/api/v3/klines?symbol=${binSym}&interval=15m&limit=100`),
+        fetch(`https://api.binance.com/api/v3/klines?symbol=${binSym}&interval=1h&limit=100`),
+        fetch(`https://api.binance.com/api/v3/klines?symbol=${binSym}&interval=1d&limit=50`),
       ])
       const [d15, d1h, d1d] = await Promise.all([r15m.json(), r1h.json(), r1d.json()])
 
