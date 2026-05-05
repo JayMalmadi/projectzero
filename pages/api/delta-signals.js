@@ -22,7 +22,7 @@ export default async function handler(req, res) {
     const start = end - (200 * 900) // 200 x 15min
 
     const [candleR, tickerR] = await Promise.all([
-      fetch(`https://api.india.delta.exchange/v2/history/candles?symbol=${product.symbol}&resolution=15&start=${start}&end=${end}`),
+      fetch(`https://api.india.delta.exchange/v2/history/candles?symbol=${product.symbol}&resolution=15m&start=${start}&end=${end}`),
       fetch(`https://api.india.delta.exchange/v2/tickers/${product.symbol}`),
     ])
 

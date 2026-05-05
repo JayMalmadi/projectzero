@@ -8,9 +8,17 @@ export default async function handler(req, res) {
     const binSym = SYMS[symbol] || `${symbol}USDT`
 
     const r = await fetch(`https://api.binance.com/api/v3/klines?symbol=${binSym}&interval=15m&limit=200`)
-    const klines = await r.json()
-    if (!Array.isArray(klines) || klines.length < 50)
-      return res.status(500).json({error:'Not enough data',signal:'HOLD',confidence:0})
+    const raw = await r.json()
+    const klines = Array.isArray(raw) ? raw : []
+    if (klines.length < 50) {
+      // Binance may return error object or rate limit — try with fewer candles
+      if (klines.length > 20) {
+        // Use what we have
+      } else {
+        const errMsg = !Array.isArray(raw) ? `Binance error: ${JSON.stringify(raw).slice(0,80)}` : `only ${klines.length} candles`
+        return res.status(500).json({error: errMsg, signal:'HOLD', confidence:0})
+      }
+    }
 
     const closes  = klines.map(k=>parseFloat(k[4]))
     const highs   = klines.map(k=>parseFloat(k[2]))

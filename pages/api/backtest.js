@@ -159,13 +159,13 @@ export default async function handler(req, res) {
       let signal = null, stopLoss = null, target = null
 
       if (strategy === 'supertrend' || strategy === 'momentum') {
-        const bullish = ema9v > ema21v && ema21v > ema50v && rsiVal > 50 && rsiVal < 70 && macdLine > 0 && macdLine > prevMacd
-        const bearish = ema9v < ema21v && ema21v < ema50v && rsiVal < 50 && rsiVal > 30 && macdLine < 0 && macdLine < prevMacd
-        if (bullish && volRatio > 1.1) {
+        const bullish = ema9v > ema21v && ema21v > ema50v && rsiVal > 50 && rsiVal < 72 && macdLine > 0 && macdLine > prevMacd
+        const bearish = ema9v < ema21v && ema21v < ema50v && rsiVal < 50 && rsiVal > 28 && macdLine < 0 && macdLine < prevMacd
+        if (bullish) {
           signal = 'BUY'
           stopLoss = price - atrVal*2
           target   = price + atrVal*3
-        } else if (bearish && volRatio > 1.1) {
+        } else if (bearish) {
           signal = 'SELL'
           stopLoss = price + atrVal*2
           target   = price - atrVal*3

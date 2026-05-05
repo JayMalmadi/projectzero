@@ -51,10 +51,12 @@ async function getFromCache(key) {
 
 async function saveToCache(key, type, analysis, metadata = {}, expiresHours = null) {
   const expires_at = expiresHours ? new Date(Date.now() + expiresHours * 3600000).toISOString() : null
-  await sb.from('ai_cache').upsert({
-    cache_key: key, type, analysis, metadata, expires_at,
-    created_at: new Date().toISOString(),
-  }, { onConflict: 'cache_key' }).catch(e => console.error('Cache save error:', e.message))
+  try {
+    await sb.from('ai_cache').upsert({
+      cache_key: key, type, analysis, metadata, expires_at,
+      created_at: new Date().toISOString(),
+    }, { onConflict: 'cache_key' })
+  } catch(cachErr) { console.error('Cache save error:', cachErr.message) }
 }
 
 export default async function handler(req, res) {
