@@ -4,26 +4,23 @@
 export default async function handler(req, res) {
   const { symbol = 'BTC', strategy = 'momentum' } = req.query
   try {
-    const SYMS = {BTC:'BTCUSDT',ETH:'ETHUSDT',SOL:'SOLUSDT',BNB:'BNBUSDT',XRP:'XRPUSDT',DOGE:'DOGEUSDT',ADA:'ADAUSDT'}
-    const binSym = SYMS[symbol] || `${symbol}USDT`
-
-    const r = await fetch(`https://api.binance.com/api/v3/klines?symbol=${binSym}&interval=15m&limit=200`)
-    const raw = await r.json()
-    const klines = Array.isArray(raw) ? raw : []
-    if (klines.length < 50) {
-      // Binance may return error object or rate limit — try with fewer candles
-      if (klines.length > 20) {
-        // Use what we have
-      } else {
-        const errMsg = !Array.isArray(raw) ? `Binance error: ${JSON.stringify(raw).slice(0,80)}` : `only ${klines.length} candles`
-        return res.status(500).json({error: errMsg, signal:'HOLD', confidence:0})
-      }
-    }
-
-    const closes  = klines.map(k=>parseFloat(k[4]))
-    const highs   = klines.map(k=>parseFloat(k[2]))
-    const lows    = klines.map(k=>parseFloat(k[3]))
-    const volumes = klines.map(k=>parseFloat(k[5]))
+    // Delta Exchange OHLCV (Binance geo-blocks Vercel server IPs)
+    const DSYMS = {BTC:'BTCUSD',ETH:'ETHUSD',SOL:'SOLUSD',BNB:'BNBUSD',XRP:'XRPUSD',DOGE:'DOGEUSD',ADA:'ADAUSD'}
+    const dsym  = DSYMS[symbol] || `${symbol}USD`
+    const nowTs = Math.floor(Date.now()/1000)
+    const stTs  = nowTs - (200*900)
+    const r     = await fetch(
+      `https://api.india.delta.exchange/v2/history/candles?symbol=${dsym}&resolution=15m&start=${stTs}&end=${nowTs}`,
+      {headers:{'User-Agent':'projectzero/1.0'}}
+    )
+    const rj     = await r.json()
+    const klines = rj.result || []
+    if (klines.length < 30)
+      return res.status(500).json({error:`Need 30+ candles, got ${klines.length}`,signal:'HOLD',confidence:0})
+    const closes  = klines.map(k=>parseFloat(k.close))
+    const highs   = klines.map(k=>parseFloat(k.high))
+    const lows    = klines.map(k=>parseFloat(k.low))
+    const volumes = klines.map(k=>parseFloat(k.volume))
     const price   = closes[closes.length-1]
 
     // EMA
