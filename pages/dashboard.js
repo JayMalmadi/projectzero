@@ -740,6 +740,124 @@ function SignalCard({strat,at,onTrade,t,aiMode='smart'}) {
   )
 }
 
+// ── Kite Trades Panel ──────────────────────────────────────────
+function KiteTradesPanel({at, t}) {
+  const [data,    setData]    = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [error,   setError]   = useState('')
+
+  useEffect(() => { if (at) load() }, [at])
+
+  async function load() {
+    setLoading(true); setError('')
+    try {
+      const r = await fetch('/api/kite-trades', {
+        headers: { 'x-kite-access-token': at }
+      })
+      const d = await r.json()
+      if (d.status === 'success') setData(d)
+      else setError(d.error || 'Failed to load')
+    } catch(e) { setError(e.message) }
+    setLoading(false)
+  }
+
+  if (!at) return null  // only show when Zerodha connected
+
+  const fmt = (n) => `₹${Math.abs(n).toLocaleString('en-IN', {maximumFractionDigits:2})}`
+  const fmtTime = (d) => d ? new Date(d).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Kolkata'}) : '—'
+
+  return (
+    <div style={{marginBottom:20}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+        <p style={{fontWeight:800,fontSize:15,color:t.text}}>📋 Today's Zerodha Activity</p>
+        <button onClick={load} style={{background:'none',border:`1px solid ${t.border}`,borderRadius:8,
+          color:t.muted,cursor:'pointer',fontSize:12,padding:'4px 10px'}}>
+          {loading ? '⏳' : '↻ Refresh'}
+        </button>
+      </div>
+
+      {error && <p style={{color:t.red,fontSize:12,marginBottom:8}}>{error}</p>}
+
+      {data && (
+        <>
+          {/* P&L Summary */}
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(140px,1fr))',gap:10,marginBottom:16}}>
+            {[
+              {l:'TRADES TODAY',    v:data.summary.tradesCount,                    c:t.text},
+              {l:'REALISED P&L',    v:(data.summary.realisedPnL>=0?'+':'')+fmt(data.summary.realisedPnL),  c:data.summary.realisedPnL>=0?t.green:t.red},
+              {l:'UNREALISED P&L',  v:(data.summary.unrealisedPnL>=0?'+':'')+fmt(data.summary.unrealisedPnL), c:data.summary.unrealisedPnL>=0?t.green:t.red},
+              {l:'TOTAL P&L',       v:(data.summary.totalPnL>=0?'+':'')+fmt(data.summary.totalPnL),        c:data.summary.totalPnL>=0?t.green:t.red},
+            ].map(x=>(
+              <div key={x.l} style={{background:t.card,borderRadius:12,padding:'12px 14px',border:`1px solid ${t.border}`,textAlign:'center'}}>
+                <p style={{color:t.muted,fontSize:9,fontWeight:700,letterSpacing:'0.06em',marginBottom:4}}>{x.l}</p>
+                <p style={{color:x.c,fontSize:15,fontWeight:800,fontFamily:'JetBrains Mono,monospace'}}>{x.v}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Today's trades table */}
+          {data.trades.length > 0 ? (
+            <div style={{background:t.card,borderRadius:12,border:`1px solid ${t.border}`,overflow:'hidden',marginBottom:12}}>
+              <div style={{padding:'8px 14px',background:t.surface,borderBottom:`1px solid ${t.border}`,fontSize:11,fontWeight:700,color:t.muted,letterSpacing:'0.06em'}}>
+                EXECUTED TRADES TODAY ({data.trades.length})
+              </div>
+              <table style={{width:'100%',borderCollapse:'collapse'}}>
+                <thead>
+                  <tr style={{background:t.surface+'88'}}>
+                    {['TIME','SYMBOL','DIRECTION','QTY','PRICE','VALUE'].map(h=>(
+                      <th key={h} style={{padding:'8px 12px',textAlign:'left',fontSize:10,fontWeight:700,color:t.muted,borderBottom:`1px solid ${t.border}`}}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.trades.map((tr,i)=>(
+                    <tr key={tr.id} style={{borderBottom:`1px solid ${t.border}22`}}>
+                      <td style={{padding:'8px 12px',color:t.muted,fontSize:11}}>{fmtTime(tr.filledAt)}</td>
+                      <td style={{padding:'8px 12px',fontWeight:700,color:t.text,fontSize:12}}>{tr.symbol}</td>
+                      <td style={{padding:'8px 12px'}}>
+                        <span style={{color:tr.direction==='BUY'?t.green:t.red,fontWeight:700,fontSize:11}}>
+                          {tr.direction==='BUY'?'▲ BUY':'▼ SELL'}
+                        </span>
+                      </td>
+                      <td style={{padding:'8px 12px',color:t.text2,fontSize:12}}>{tr.quantity}</td>
+                      <td style={{padding:'8px 12px',fontFamily:'JetBrains Mono,monospace',fontSize:12,color:t.text}}>₹{tr.price?.toLocaleString('en-IN',{maximumFractionDigits:2})}</td>
+                      <td style={{padding:'8px 12px',fontFamily:'JetBrains Mono,monospace',fontSize:12,color:t.text2}}>₹{tr.value?.toLocaleString('en-IN',{maximumFractionDigits:0})}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div style={{background:t.card,borderRadius:12,padding:'20px',border:`1px solid ${t.border}`,textAlign:'center',marginBottom:12}}>
+              <p style={{color:t.muted,fontSize:13}}>No trades executed today on Zerodha</p>
+            </div>
+          )}
+
+          {/* Open orders */}
+          {data.orders.filter(o=>o.status==='OPEN').length > 0 && (
+            <div style={{background:t.amber+'0a',borderRadius:12,border:`1px solid ${t.amber}33`,padding:'12px 14px'}}>
+              <p style={{color:t.amber,fontSize:12,fontWeight:700,marginBottom:8}}>⏳ PENDING ORDERS ({data.orders.filter(o=>o.status==='OPEN').length})</p>
+              {data.orders.filter(o=>o.status==='OPEN').map(o=>(
+                <p key={o.id} style={{color:t.text2,fontSize:12,marginBottom:4}}>
+                  {o.direction} {o.quantity} {o.symbol} @ ₹{o.price} — {o.orderType}
+                </p>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {loading && !data && (
+        <div style={{textAlign:'center',padding:20}}>
+          <div style={{width:20,height:20,border:`3px solid ${t.border}`,borderTopColor:'#ff6600',borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'0 auto 8px'}}/>
+          <p style={{color:t.muted,fontSize:12}}>Loading Zerodha trade history...</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+
 function Positions({at,t}) {
   const [pos,setPos]=useState([]),[funds,setFunds]=useState(null),[orders,setOrders]=useState([]),[loading,setLoading]=useState(false)
   useEffect(()=>{if(at)load()},[at])
@@ -3571,6 +3689,7 @@ export default function Dashboard() {
                   <p style={{color:t.muted,fontSize:13,marginTop:5}}>Indian markets (Zerodha) + Crypto (Binance) · Live balances</p>
                 </div>
               </div>
+              <KiteTradesPanel at={at} t={t}/>
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:20,marginBottom:24}}>
                 <div style={{background:t.card,borderRadius:16,padding:20,border:`1px solid ${t.border}`}}>
                   <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>

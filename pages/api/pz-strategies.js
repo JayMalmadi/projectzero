@@ -90,10 +90,11 @@ export default async function handler(req, res) {
       for (let i=0;i<closes.length;i++) {
         if (!closes[i]) continue
         const typical = ((highs[i]||0)+(lows[i]||0)+(closes[i]||0))/3
-        cumPV  += typical*(volumes[i]||0)
-        cumVol += (volumes[i]||0)
+        const vol = (volumes[i]||0) > 0 ? volumes[i] : 1  // fallback: equal-weight
+        cumPV  += typical * vol
+        cumVol += vol
       }
-      return cumPV/(cumVol||1)
+      return cumVol > 0 ? cumPV/cumVol : (closes[closes.length-1] || 0)
     }
 
     // Compute all indicators
