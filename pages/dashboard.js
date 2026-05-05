@@ -898,6 +898,103 @@ function Charts({t, at}) {
   )
 }
 
+// ── Manual Trade Form ──────────────────────────────────────────
+function ManualTradeForm({t, onSave, onClose, manForm, setManForm}) {
+  const [saving, setSaving] = useState(false)
+  const [error,  setError]  = useState('')
+
+  async function save() {
+    if (!manForm.entry_price) { setError('Entry price is required'); return }
+    setSaving(true); setError('')
+    try {
+      const r = await fetch('/api/trades', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+          symbol:      manForm.symbol.toUpperCase(),
+          direction:   manForm.direction,
+          quantity:    parseInt(manForm.quantity) || 1,
+          entry_price: parseFloat(manForm.entry_price),
+          stop_loss:   manForm.stop_loss ? parseFloat(manForm.stop_loss) : null,
+          target:      manForm.target    ? parseFloat(manForm.target)    : null,
+          strategy:    manForm.strategy  || 'Manual',
+          notes:       manForm.notes     || '',
+          market:      manForm.market,
+          status:      'OPEN',
+        })
+      })
+      const d = await r.json()
+      if (d.trade || d.id) { onSave() }
+      else setError(d.error || 'Failed to save')
+    } catch(e) { setError(e.message) }
+    setSaving(false)
+  }
+
+  const inp = (field, label, placeholder, type='text') => (
+    <div>
+      <p style={{color:t.muted,fontSize:11,fontWeight:700,marginBottom:4,letterSpacing:'0.06em'}}>{label}</p>
+      <input
+        type={type} value={manForm[field]} placeholder={placeholder}
+        onChange={e=>setManForm(f=>({...f,[field]:e.target.value}))}
+        style={{width:'100%',background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,
+          color:t.text,padding:'8px 10px',fontSize:13,fontFamily:'JetBrains Mono,monospace',boxSizing:'border-box'}}
+      />
+    </div>
+  )
+
+  return (
+    <div style={{background:t.card,borderRadius:16,padding:20,border:`1px solid #ff660044`,marginBottom:20}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+        <p style={{fontWeight:800,fontSize:15,color:t.text}}>📝 Log Manual Trade</p>
+        <button onClick={onClose} style={{background:'none',border:'none',color:t.muted,cursor:'pointer',fontSize:18}}>✕</button>
+      </div>
+
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(140px,1fr))',gap:12,marginBottom:12}}>
+        <div>
+          <p style={{color:t.muted,fontSize:11,fontWeight:700,marginBottom:4,letterSpacing:'0.06em'}}>MARKET</p>
+          <select value={manForm.market} onChange={e=>setManForm(f=>({...f,market:e.target.value}))}
+            style={{width:'100%',background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,padding:'8px 10px',fontSize:13,fontFamily:'Inter,sans-serif'}}>
+            <option value="india">🇮🇳 India (Zerodha)</option>
+            <option value="crypto">🪙 Crypto (Binance)</option>
+            <option value="delta">⚡ Delta Futures</option>
+          </select>
+        </div>
+        <div>
+          <p style={{color:t.muted,fontSize:11,fontWeight:700,marginBottom:4,letterSpacing:'0.06em'}}>DIRECTION</p>
+          <select value={manForm.direction} onChange={e=>setManForm(f=>({...f,direction:e.target.value}))}
+            style={{width:'100%',background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,padding:'8px 10px',fontSize:13,fontFamily:'Inter,sans-serif'}}>
+            <option value="BUY">▲ BUY / LONG</option>
+            <option value="SELL">▼ SELL / SHORT</option>
+          </select>
+        </div>
+        {inp('symbol',    'SYMBOL',     'NIFTY / BTC')}
+        {inp('quantity',  'QTY',        '50', 'number')}
+        {inp('entry_price','ENTRY ₹/$', '24500', 'number')}
+        {inp('stop_loss', 'STOP LOSS',  '24300', 'number')}
+        {inp('target',    'TARGET',     '24800', 'number')}
+        {inp('strategy',  'STRATEGY',   'Supertrend')}
+      </div>
+
+      <div style={{marginBottom:12}}>
+        <p style={{color:t.muted,fontSize:11,fontWeight:700,marginBottom:4,letterSpacing:'0.06em'}}>NOTES (optional)</p>
+        <input value={manForm.notes} placeholder="Why did you take this trade?"
+          onChange={e=>setManForm(f=>({...f,notes:e.target.value}))}
+          style={{width:'100%',background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,
+            color:t.text,padding:'8px 10px',fontSize:13,fontFamily:'Inter,sans-serif',boxSizing:'border-box'}}/>
+      </div>
+
+      {error && <p style={{color:t.red,fontSize:12,marginBottom:8}}>{error}</p>}
+
+      <button onClick={save} disabled={saving}
+        style={{padding:'10px 24px',background:saving?t.surface:'linear-gradient(135deg,#ff6600,#ff9500)',
+          border:'none',borderRadius:10,color:saving?t.muted:'#fff',fontWeight:700,
+          cursor:saving?'not-allowed':'pointer',fontFamily:'Inter,sans-serif',fontSize:14}}>
+        {saving?'Saving...':'✅ Save Trade'}
+      </button>
+    </div>
+  )
+}
+
+
 function History({refresh,t}) {
   const [trades,setTrades]=useState([]),[loading,setLoading]=useState(false)
   useEffect(()=>{load()},[refresh])
@@ -3184,7 +3281,7 @@ function DeltaSignalCard({symbol, strategy, t, at}) {
             {l:'STOP LOSS',  v:data.stopLoss?`$${data.stopLoss?.toFixed(2)}`:'—', c:data.stopLoss?t.red:t.muted},
             {l:'TARGET',     v:data.target?`$${data.target?.toFixed(2)}`:'—', c:data.target?t.green:t.muted},
             {l:'R:R',        v:data.rr?`1:${data.rr}`:'—', c:data.rr>=2?t.green:data.rr>=1.5?t.amber:t.muted},
-            {l:'CONFIDENCE', v:`${data.confidence}%`, c:data.confidence>70?t.green:data.confidence>50?t.amber:t.red},
+            {l:'CONFIDENCE', v:data.signal==='HOLD'?'—':`${data.confidence}%`, c:data.signal==='HOLD'?t.muted:data.confidence>70?t.green:data.confidence>50?t.amber:t.red},
           ].map(x=>(
             <div key={x.l} style={{background:t.surface,borderRadius:10,padding:'8px 10px',border:`1px solid ${t.border}`}}>
               <p style={{color:t.muted,fontSize:9,fontWeight:700,letterSpacing:'0.06em',marginBottom:3}}>{x.l}</p>
@@ -3461,7 +3558,7 @@ function TickerBar({mkt, t, setTab, isConn}) {
 
 export default function Dashboard() {
   const router=useRouter()
-  const [dark,setDark]=useState(true),[at,setAt]=useState(''),[kiteUser,setKU]=useState(null),[mkt,setMkt]=useState({}),[tab,setTab]=useState('signals'),[time,setTime]=useState(''),[tr,setTr]=useState(0),[loginUrl,setLoginUrl]=useState('')
+  const [dark,setDark]=useState(true),[at,setAt]=useState(''),[kiteUser,setKU]=useState(null),[mkt,setMkt]=useState({}),[tab,setTab]=useState('signals'),[time,setTime]=useState(''),[tr,setTr]=useState(0),[loginUrl,setLoginUrl]=useState(''),[showManual,setShowManual]=useState(false),[manForm,setManForm]=useState({symbol:'NIFTY',direction:'BUY',quantity:1,entry_price:'',stop_loss:'',target:'',strategy:'Manual',notes:'',market:'india'})
   const [aiMode,setAiMode]=useState('smart')
   useEffect(()=>{const s=localStorage.getItem('pz_ai_mode');if(s)setAiMode(s)},[]) // load persisted AI mode
   const t = dark ? DARK : LIGHT
@@ -3709,7 +3806,8 @@ export default function Dashboard() {
                 </div>
               </div>
             </div>}
-            {tab==='trades'&&<div><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:22}}><div><h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Trade History</h2><p style={{color:t.muted,fontSize:13,marginTop:5}}>All trades · Entry/Exit · P&L</p></div><button onClick={()=>setTr(r=>r+1)} style={{padding:'8px 16px',background:t.surface,border:`1px solid ${t.border}`,borderRadius:10,color:t.text,cursor:'pointer',fontSize:12,fontFamily:'Inter,sans-serif',fontWeight:600}}>🔄 Refresh</button></div><History refresh={tr} t={t}/></div>}
+            {tab==='trades'&&<div><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:22}}><div><h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Trade History</h2><p style={{color:t.muted,fontSize:13,marginTop:5}}>All trades · Entry/Exit · P&L</p></div><button onClick={()=>setTr(r=>r+1)} style={{padding:'8px 16px',background:t.surface,border:`1px solid ${t.border}`,borderRadius:10,color:t.text,cursor:'pointer',fontSize:12,fontFamily:'Inter,sans-serif',fontWeight:600}}>🔄 Refresh</button><button onClick={()=>setShowManual(v=>!v)} style={{padding:'8px 16px',background:'#ff660018',border:'1px solid #ff660044',borderRadius:10,color:'#ff6600',cursor:'pointer',fontSize:12,fontFamily:'Inter,sans-serif',fontWeight:700,marginLeft:8}}>+ Log Trade</button></div>{showManual&&<ManualTradeForm t={t} onSave={()=>{setShowManual(false);setTr(r=>r+1)}} onClose={()=>setShowManual(false)} manForm={manForm} setManForm={setManForm}/>}
+            <History refresh={tr} t={t}/></div>}
             {tab==='charts'&&<Charts t={t} at={at}/>}
           </div>
         </main>
