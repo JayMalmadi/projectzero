@@ -825,7 +825,7 @@ function KiteTradesPanel({at, t}) {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </table></div>
             </div>
           ) : (
             <div style={{background:t.card,borderRadius:12,padding:'20px',border:`1px solid ${t.border}`,textAlign:'center',marginBottom:12}}>
@@ -3015,7 +3015,7 @@ function SignalLogTab({t}) {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         </div>
       )}
     </div>
@@ -3197,7 +3197,7 @@ function BacktestTab({t}) {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </table></div>
             </div>
           )}
         </>
@@ -3621,7 +3621,7 @@ function PaperTradesTab({t}) {
                 )
               })}
             </tbody>
-          </table>
+          </table></div>
         </div>
       )}
 
@@ -3702,7 +3702,7 @@ function PaperTradesTab({t}) {
                 )
               })}
             </tbody>
-          </table>
+          </table></div>
         </div>
       )}
     </div>
