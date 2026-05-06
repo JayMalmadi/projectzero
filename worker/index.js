@@ -412,7 +412,7 @@ async function monitorPaperTrades() {
 
     for (const trade of openTrades) {
       try {
-        if (trade.signal_type === 'intraday' && afterClose && trade.market === 'india') {
+        if (trade.signal_type === 'intraday' && afterClose && (trade.market === 'india' || !trade.market)) {
           // Auto-close intraday trades at 3:15 PM
           // Get current price
           let currentPrice = trade.entry_price // fallback
@@ -452,12 +452,41 @@ async function monitorPaperTrades() {
         }
 
         // During market hours — check if SL or Target hit
-        if (!isMarketHours && trade.market === 'india') continue
+        // Skip monitoring: Indian trades outside market hours, crypto never skipped
+        if (!isMarketHours && (trade.market === 'india' || !trade.market)) continue
+        // Crypto: auto-close after 24 hours if neither SL nor target hit
+        if ((trade.market === 'crypto' || trade.market === 'delta') && trade.opened_at) {
+          const ageHours = (Date.now() - new Date(trade.opened_at).getTime()) / 3600000
+          if (ageHours > 24) {
+            let cprice = null
+            try {
+              const dr = await fetchJSON(`${CONFIG.DASHBOARD_URL}/api/delta?action=prices`)
+              cprice = dr.prices?.[trade.symbol]?.price || trade.entry_price
+            } catch {}
+            const exitP = cprice || trade.entry_price
+            const pnlPts = trade.direction === 'BUY' ? exitP - trade.entry_price : trade.entry_price - exitP
+            const pnlPct = (pnlPts / trade.entry_price) * 100
+            await fetch(`${CONFIG.DASHBOARD_URL}/api/paper-trades`, {
+              method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id: trade.id, status: pnlPts >= 0 ? 'WIN' : 'LOSS',
+                exit_price: exitP, exit_reason: '24H_EXPIRED', pnl_points: parseFloat(pnlPts.toFixed(4)), pnl_pct: parseFloat(pnlPct.toFixed(4)) })
+            })
+            console.log(`[PaperMonitor] Crypto 24h close: ${trade.symbol} ${pnlPts.toFixed(2)} pts`)
+            continue
+          }
+        }
 
         let currentPrice = null
         try {
-          const mktR = await fetchJSON(`${CONFIG.DASHBOARD_URL}/api/market?symbols=${trade.symbol}`)
-          currentPrice = mktR.data?.[trade.symbol]?.price
+          if (trade.market === 'crypto' || trade.market === 'delta') {
+            // Use Delta Exchange for crypto prices
+            const deltaR = await fetchJSON(`${CONFIG.DASHBOARD_URL}/api/delta?action=prices`)
+            currentPrice = deltaR.prices?.[trade.symbol]?.price
+          } else {
+            // Indian market prices
+            const mktR = await fetchJSON(`${CONFIG.DASHBOARD_URL}/api/market?symbols=${trade.symbol}`)
+            currentPrice = mktR.data?.[trade.symbol]?.price
+          }
         } catch {}
 
         if (!currentPrice) continue

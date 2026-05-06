@@ -801,7 +801,7 @@ function KiteTradesPanel({at, t}) {
               <div style={{padding:'8px 14px',background:t.surface,borderBottom:`1px solid ${t.border}`,fontSize:11,fontWeight:700,color:t.muted,letterSpacing:'0.06em'}}>
                 EXECUTED TRADES TODAY ({data.trades.length})
               </div>
-              <table style={{width:'100%',borderCollapse:'collapse'}}>
+              <div style={{overflowX:'auto',WebkitOverflowScrolling:'touch'}}><table style={{width:'100%',minWidth:500,borderCollapse:'collapse'}}>
                 <thead>
                   <tr style={{background:t.surface+'88'}}>
                     {['TIME','SYMBOL','DIRECTION','QTY','PRICE','VALUE'].map(h=>(
@@ -2978,7 +2978,8 @@ function SignalLogTab({t}) {
         </div>
       ) : (
         <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,overflow:'hidden'}}>
-          <table style={{width:'100%',borderCollapse:'collapse'}}>
+          <div style={{overflowX:'auto',WebkitOverflowScrolling:'touch'}}>
+          <table style={{width:'100%',minWidth:600,borderCollapse:'collapse'}}>
             <thead>
               <tr style={{background:t.surface}}>
                 {['TIME','SYMBOL','STRATEGY','SIGNAL','CONFIDENCE','PRICE','R:R','MARKET'].map(h=>(
@@ -3177,7 +3178,7 @@ function BacktestTab({t}) {
           {result.recentTrades?.length>0&&(
             <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,overflow:'hidden'}}>
               <div style={{padding:'10px 16px',borderBottom:`1px solid ${t.border}`,fontSize:11,fontWeight:700,color:t.muted,letterSpacing:'0.06em'}}>RECENT TRADES (last 10)</div>
-              <table style={{width:'100%',borderCollapse:'collapse'}}>
+              <div style={{overflowX:'auto',WebkitOverflowScrolling:'touch'}}><table style={{width:'100%',minWidth:650,borderCollapse:'collapse'}}>
                 <thead><tr style={{background:t.surface}}>
                   {['ENTRY DATE','EXIT DATE','DIRECTION','ENTRY','EXIT','P&L %','RESULT'].map(h=>(
                     <th key={h} style={{padding:'8px 12px',textAlign:'left',fontSize:10,fontWeight:700,color:t.muted,letterSpacing:'0.06em',borderBottom:`1px solid ${t.border}`}}>{h}</th>
@@ -3596,7 +3597,7 @@ function PaperTradesTab({t}) {
           <div style={{padding:'10px 16px',borderBottom:`1px solid ${t.border}`,fontSize:11,fontWeight:700,color:t.muted,letterSpacing:'0.06em'}}>
             STRATEGY SCOREBOARD
           </div>
-          <table style={{width:'100%',borderCollapse:'collapse'}}>
+          <div style={{overflowX:'auto',WebkitOverflowScrolling:'touch'}}><table style={{width:'100%',minWidth:550,borderCollapse:'collapse'}}>
             <thead><tr style={{background:t.surface}}>
               {['STRATEGY','TRADES','WINS','LOSSES','WIN RATE','AVG P&L%','VERDICT'].map(h=>(
                 <th key={h} style={{padding:'8px 14px',textAlign:'left',fontSize:10,fontWeight:700,color:t.muted,letterSpacing:'0.06em',borderBottom:`1px solid ${t.border}`}}>{h}</th>
@@ -3663,7 +3664,8 @@ function PaperTradesTab({t}) {
         </div>
       ) : (
         <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,overflow:'hidden'}}>
-          <table style={{width:'100%',borderCollapse:'collapse'}}>
+          <div style={{overflowX:'auto',WebkitOverflowScrolling:'touch'}}>
+          <table style={{width:'100%',minWidth:700,borderCollapse:'collapse'}}>
             <thead>
               <tr style={{background:t.surface}}>
                 {['OPENED','SYMBOL','STRATEGY','DIR','ENTRY','SL','TARGET','EXIT','P&L','STATUS'].map(h=>(
