@@ -13,6 +13,33 @@ const CONFIG = {
   TELEGRAM_CHAT_ID:   process.env.TELEGRAM_CHAT_ID,
   DASHBOARD_URL:      process.env.DASHBOARD_URL || 'https://projectzero-psi.vercel.app',
   PORT:               process.env.PORT || 3001,
+  PAPER_TRADE_MIN_CONFIDENCE: 65,  // Only paper trade signals >= 65% confidence
+  PAPER_TRADE_ENABLED: true,
+}
+
+// Get Kite access token from Supabase (stored when user logs in)
+let cachedKiteToken = null
+let cachedKiteTokenTime = 0
+
+async function getKiteToken() {
+  const now = Date.now()
+  // Cache for 5 minutes
+  if (cachedKiteToken && (now - cachedKiteTokenTime) < 300000) return cachedKiteToken
+  try {
+    const r = await fetch(`${CONFIG.DASHBOARD_URL}/api/kite-token`, {
+      headers: { 'User-Agent': 'projectzero-worker/1.0' }
+    })
+    const d = await r.json()
+    if (d.valid && d.access_token) {
+      cachedKiteToken = d.access_token
+      cachedKiteTokenTime = now
+      return d.access_token
+    }
+    cachedKiteToken = null
+    return null
+  } catch {
+    return null
+  }
 }
 
 // ── Helpers ────────────────────────────────────────────────────
@@ -164,6 +191,31 @@ ${data.reason?.slice(0,120)}
           market: s.market, reason: data.reason?.slice(0, 200)
         })
       } catch {}
+
+      // Auto paper trade if confidence >= threshold
+      if (CONFIG.PAPER_TRADE_ENABLED && data.confidence >= CONFIG.PAPER_TRADE_MIN_CONFIDENCE) {
+        try {
+          const ptResult = await postJSON(`${CONFIG.DASHBOARD_URL}/api/paper-trades`, {
+            symbol:     s.symbol,
+            strategy:   s.strategy,
+            market:     s.market,
+            direction:  data.signal,
+            signal_type:'intraday',
+            entry_price: data.price,
+            stop_loss:   data.stopLoss,
+            target:      data.target,
+            rr:          data.rr,
+            confidence:  data.confidence,
+            quantity:    1,
+            notes: `Auto paper trade | ${data.reason?.slice(0,100)}`,
+          })
+          if (ptResult.created) {
+            console.log(`[PaperTrade] Created: ${data.signal} ${s.symbol} @ ${data.price}`)
+          }
+        } catch(e) {
+          console.error('[PaperTrade] Failed to create:', e.message)
+        }
+      }
 
     } catch(e) {
       console.error(`[Signal] Error ${s.symbol}/${s.strategy}:`, e.message)
@@ -340,6 +392,124 @@ ${openToday.length > 0 ? `⚠️ You have ${openToday.length} open position(s)!\
   }
 }
 
+// ── Paper Trade Monitor ───────────────────────────────────────
+async function monitorPaperTrades() {
+  try {
+    const now = getNow()
+    const isMarketHours = isIndianMarketOpen()
+
+    // Fetch all open paper trades
+    const r = await fetchJSON(`${CONFIG.DASHBOARD_URL}/api/paper-trades?status=OPEN&limit=50`)
+    const openTrades = r.open || []
+
+    if (openTrades.length === 0) return
+    console.log(`[PaperMonitor] Checking ${openTrades.length} open paper trades`)
+
+    // Check if it's after 3:15 PM IST — close all intraday trades
+    const hour = now.getHours()
+    const min  = now.getMinutes()
+    const afterClose = hour > 15 || (hour === 15 && min >= 15)
+
+    for (const trade of openTrades) {
+      try {
+        if (trade.signal_type === 'intraday' && afterClose && trade.market === 'india') {
+          // Auto-close intraday trades at 3:15 PM
+          // Get current price
+          let currentPrice = trade.entry_price // fallback
+          try {
+            const mktR = await fetchJSON(`${CONFIG.DASHBOARD_URL}/api/market?symbols=${trade.symbol}`)
+            currentPrice = mktR.data?.[trade.symbol]?.price || trade.entry_price
+          } catch {}
+
+          const pnlPoints = trade.direction === 'BUY'
+            ? currentPrice - trade.entry_price
+            : trade.entry_price - currentPrice
+          const pnlPct = (pnlPoints / trade.entry_price) * 100
+
+          await postJSON(`${CONFIG.DASHBOARD_URL}/api/paper-trades`, {
+            _method: 'PATCH', id: trade.id,
+            status:     pnlPoints >= 0 ? 'WIN' : 'LOSS',
+            exit_price:  currentPrice,
+            exit_reason: 'MARKET_CLOSE',
+            pnl_points:  parseFloat(pnlPoints.toFixed(2)),
+            pnl_pct:     parseFloat(pnlPct.toFixed(4)),
+          })
+          // PATCH via fetch directly
+          await fetch(`${CONFIG.DASHBOARD_URL}/api/paper-trades`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              id: trade.id,
+              status:     pnlPoints >= 0 ? 'WIN' : 'LOSS',
+              exit_price:  currentPrice,
+              exit_reason: 'MARKET_CLOSE',
+              pnl_points:  parseFloat(pnlPoints.toFixed(2)),
+              pnl_pct:     parseFloat(pnlPct.toFixed(4)),
+            })
+          })
+          console.log(`[PaperMonitor] Closed at market: ${trade.symbol} P&L: ${pnlPoints.toFixed(0)} pts`)
+          continue
+        }
+
+        // During market hours — check if SL or Target hit
+        if (!isMarketHours && trade.market === 'india') continue
+
+        let currentPrice = null
+        try {
+          const mktR = await fetchJSON(`${CONFIG.DASHBOARD_URL}/api/market?symbols=${trade.symbol}`)
+          currentPrice = mktR.data?.[trade.symbol]?.price
+        } catch {}
+
+        if (!currentPrice) continue
+
+        const slHit  = trade.stop_loss && (
+          trade.direction === 'BUY'  ? currentPrice <= trade.stop_loss :
+          trade.direction === 'SELL' ? currentPrice >= trade.stop_loss : false
+        )
+        const tgtHit = trade.target && (
+          trade.direction === 'BUY'  ? currentPrice >= trade.target :
+          trade.direction === 'SELL' ? currentPrice <= trade.target : false
+        )
+
+        if (slHit || tgtHit) {
+          const exitPrice = slHit ? trade.stop_loss : trade.target
+          const pnlPoints = trade.direction === 'BUY'
+            ? exitPrice - trade.entry_price
+            : trade.entry_price - exitPrice
+          const pnlPct = (pnlPoints / trade.entry_price) * 100
+
+          await fetch(`${CONFIG.DASHBOARD_URL}/api/paper-trades`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              id: trade.id,
+              status:     tgtHit ? 'WIN' : 'LOSS',
+              exit_price:  exitPrice,
+              exit_reason: tgtHit ? 'TARGET_HIT' : 'SL_HIT',
+              pnl_points:  parseFloat(pnlPoints.toFixed(2)),
+              pnl_pct:     parseFloat(pnlPct.toFixed(4)),
+            })
+          })
+
+          // Send Telegram notification
+          const emoji = tgtHit ? '🎯' : '🛑'
+          const msg = `${emoji} <b>PAPER TRADE ${tgtHit?'WIN':'LOSS'}</b>
+${trade.direction} ${trade.symbol} (${trade.strategy})
+Entry: ₹${trade.entry_price} → Exit: ₹${exitPrice}
+P&L: ${pnlPoints >= 0?'+':''}${pnlPoints.toFixed(0)} pts (${pnlPct >= 0?'+':''}${pnlPct.toFixed(2)}%)
+Reason: ${tgtHit ? 'Target hit ✅' : 'Stop loss hit ❌'}`
+          await sendTelegram(msg)
+          console.log(`[PaperMonitor] ${tgtHit?'WIN':'LOSS'}: ${trade.symbol} ${pnlPoints.toFixed(0)} pts`)
+        }
+      } catch(e) {
+        console.error(`[PaperMonitor] Error on trade ${trade.id}:`, e.message)
+      }
+    }
+  } catch(e) {
+    console.error('[PaperMonitor] Error:', e.message)
+  }
+}
+
 // ── Main scheduler ────────────────────────────────────────────
 let checkCount     = 0
 let lastBriefDate  = ''
@@ -384,6 +554,8 @@ async function tick() {
   if (Date.now() - lastAlertCheck > 300000) {
     lastAlertCheck = Date.now()
     await checkPriceAlerts()
+    // Monitor paper trades every 5 minutes during/after market hours
+    monitorPaperTrades().catch(e => console.error('[PaperMonitor]', e.message))
   }
 }
 

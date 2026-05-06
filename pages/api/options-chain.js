@@ -1,118 +1,200 @@
 // /api/options-chain
-// Fetches NIFTY/BANKNIFTY options chain
-// Primary: NSE India (works when cookies are valid)
-// Fallback: Zerodha Kite (when user is logged in)
+// Real options chain from Zerodha Kite API
+// Falls back to NSE if Kite not connected
+
+import { createClient } from '@supabase/supabase-js'
+const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY)
+
+const KITE_BASE = 'https://api.kite.trade'
+const API_KEY   = process.env.KITE_API_KEY
+
+// Get stored access token from Supabase (set when user logs in)
+async function getAccessToken(headerToken) {
+  if (headerToken) return headerToken
+  try {
+    const { data } = await sb.from('kite_session').select('access_token,expires_at').eq('id','current').single()
+    if (!data) return null
+    if (new Date() > new Date(data.expires_at)) return null
+    return data.access_token
+  } catch { return null }
+}
+
+// Get all instruments for a segment (cached)
+async function getInstruments(exchange, segment) {
+  const r = await fetch(`${KITE_BASE}/instruments/${exchange}`, {
+    headers: { 'X-Kite-Version':'3', 'Authorization':`token ${API_KEY}:${segment}` }
+  })
+  return r.text()
+}
+
+// Get nearest weekly expiry Thursday
+function getNearestExpiry() {
+  const now  = new Date()
+  const day  = now.getDay() // 0=Sun, 4=Thu
+  const diff = day <= 4 ? 4 - day : 7 - day + 4
+  const expiry = new Date(now)
+  expiry.setDate(now.getDate() + (diff === 0 && now.getHours() >= 15 ? 7 : diff))
+  return expiry.toISOString().split('T')[0] // YYYY-MM-DD
+}
 
 export default async function handler(req, res) {
   const { symbol = 'NIFTY' } = req.query
-  const kiteToken = req.headers['x-kite-access-token']
+  const headerToken = req.headers['x-kite-access-token']
+  const accessToken = await getAccessToken(headerToken)
+
+  if (!accessToken) {
+    return res.status(200).json({
+      status: 'no_session',
+      symbol,
+      message: 'Login with Zerodha to see live options chain',
+      chain: [], expiries: [], spotPrice: 0
+    })
+  }
+
+  const AUTH = `token ${API_KEY}:${accessToken}`
+  const HDRS = { 'X-Kite-Version': '3', 'Authorization': AUTH }
 
   try {
-    const nseSymbol = symbol === 'BANKNIFTY' ? 'BANKNIFTY' : 'NIFTY'
+    // Step 1: Get spot price
+    const spotMap = {
+      NIFTY:    'NSE:NIFTY 50',
+      BANKNIFTY:'NSE:NIFTY BANK',
+      FINNIFTY:  'NSE:NIFTY FIN SERVICE',
+    }
+    const spotInstr = spotMap[symbol] || 'NSE:NIFTY 50'
+    const spotR = await fetch(`${KITE_BASE}/quote?i=${encodeURIComponent(spotInstr)}`, { headers: HDRS })
+    const spotD = await spotR.json()
+    const spotPrice = spotD.data?.[spotInstr]?.last_price || 0
 
-    // Try NSE with proper session headers
-    try {
-      // First get a session cookie
-      const sessionR = await fetch('https://www.nseindia.com/option-chain', {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-          'Accept-Language': 'en-IN,en;q=0.9',
-          'Accept-Encoding': 'gzip, deflate, br',
-          'Connection': 'keep-alive',
-        }
-      })
-      const cookies = sessionR.headers.get('set-cookie') || ''
+    if (!spotPrice) {
+      return res.status(200).json({ status: 'no_data', symbol, spotPrice: 0, chain: [], expiries: [] })
+    }
 
-      // Now fetch options data with the session cookie
-      const r = await fetch(
-        `https://www.nseindia.com/api/option-chain-indices?symbol=${nseSymbol}`,
-        {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'application/json, text/plain, */*',
-            'Accept-Language': 'en-IN,en;q=0.9',
-            'Referer': 'https://www.nseindia.com/option-chain',
-            'Cookie': cookies,
-          }
-        }
-      )
+    // Step 2: Get options instruments (NFO segment)
+    const instrR = await fetch(`${KITE_BASE}/instruments/NFO`, { headers: HDRS })
+    const instrText = await instrR.text()
+    const lines = instrText.split('\n').slice(1) // skip header
 
-      if (!r.ok) throw new Error(`NSE returned ${r.status}`)
-      const data = await r.json()
-
-      const records = data?.records?.data || []
-      const spotPrice = data?.records?.underlyingValue || 0
-      const expiries  = data?.records?.expiryDates || []
-      const nearestExpiry = expiries[0]
-
-      if (!records.length || !spotPrice) throw new Error('No data from NSE')
-
-      // Filter for nearest expiry + strikes within ±6% of spot
-      const filtered = records
-        .filter(r => r.expiryDate === nearestExpiry)
-        .filter(r => Math.abs(r.strikePrice - spotPrice) <= spotPrice * 0.06)
-        .sort((a, b) => a.strikePrice - b.strikePrice)
-
-      const chain = filtered.map(r => ({
-        strike: r.strikePrice,
-        isATM: Math.abs(r.strikePrice - spotPrice) < spotPrice * 0.005,
-        call: r.CE ? {
-          oi: r.CE.openInterest || 0, oiChange: r.CE.changeinOpenInterest || 0,
-          ltp: r.CE.lastPrice || 0, iv: r.CE.impliedVolatility || 0,
-          volume: r.CE.totalTradedVolume || 0, bid: r.CE.bidprice || 0, ask: r.CE.askPrice || 0,
-        } : null,
-        put: r.PE ? {
-          oi: r.PE.openInterest || 0, oiChange: r.PE.changeinOpenInterest || 0,
-          ltp: r.PE.lastPrice || 0, iv: r.PE.impliedVolatility || 0,
-          volume: r.PE.totalTradedVolume || 0, bid: r.PE.bidprice || 0, ask: r.PE.askPrice || 0,
-        } : null,
-      }))
-
-      const totalCallOI = chain.reduce((a, c) => a + (c.call?.oi || 0), 0)
-      const totalPutOI  = chain.reduce((a, c) => a + (c.put?.oi  || 0), 0)
-      const pcr = totalCallOI > 0 ? parseFloat((totalPutOI/totalCallOI).toFixed(2)) : 0
-      const pcrSentiment = pcr > 1.3 ? 'Bullish' : pcr < 0.7 ? 'Bearish' : 'Neutral'
-      let maxPain = 0, maxPainOI = 0
-      chain.forEach(s => {
-        const oi = (s.call?.oi||0) + (s.put?.oi||0)
-        if (oi > maxPainOI) { maxPainOI=oi; maxPain=s.strike }
-      })
-
-      return res.status(200).json({
-        status: 'success', symbol: nseSymbol, spotPrice,
-        expiry: nearestExpiry, expiries: expiries.slice(0,4),
-        pcr, pcrSentiment, maxPain, chain, source: 'NSE',
-      })
-    } catch(nseErr) {
-      console.error('NSE options error:', nseErr.message)
-      
-      // If Kite is connected, use their quote for spot price at least
-      if (kiteToken) {
-        try {
-          const kiteR = await fetch(`/api/kite-pro?action=quote&instruments=NSE:${nseSymbol === 'BANKNIFTY' ? 'NIFTY BANK' : 'NIFTY 50'}`,
-            { headers: { 'x-kite-access-token': kiteToken } })
-          const kiteD = await kiteR.json()
-          const spotPrice = kiteD?.data?.['NSE:NIFTY 50']?.last_price || 0
-          return res.status(200).json({
-            status: 'partial', symbol: nseSymbol, spotPrice,
-            expiries: [], chain: [],
-            message: 'Options chain requires NSE session. Login during market hours for live data.',
-            source: 'kite-partial',
-          })
-        } catch {}
-      }
-      
-      // Return a graceful partial response
-      return res.status(200).json({
-        status: 'unavailable',
-        symbol: nseSymbol,
-        spotPrice: 0, expiries: [], chain: [],
-        message: 'NSE options data unavailable outside market hours or due to API restrictions. Available 9:15 AM - 3:30 PM IST.',
-        source: 'none',
+    // Parse CSV: instrument_token,exchange_token,tradingsymbol,name,last_price,expiry,strike,tick_size,lot_size,instrument_type,segment,exchange
+    const instruments = []
+    for (const line of lines) {
+      if (!line.trim()) continue
+      const cols = line.split(',')
+      if (cols.length < 12) continue
+      const name = cols[3]
+      const type = cols[9] // CE or PE
+      const seg  = cols[10]
+      if (name !== symbol) continue
+      if (type !== 'CE' && type !== 'PE') continue
+      instruments.push({
+        token:    cols[0],
+        symbol:   cols[2],  // e.g. NIFTY24MAY24000CE
+        expiry:   cols[5],  // YYYY-MM-DD
+        strike:   parseFloat(cols[6]),
+        lotSize:  parseInt(cols[8]),
+        type:     type,     // CE or PE
       })
     }
-  } catch (err) {
-    return res.status(500).json({ error: err.message })
+
+    // Step 3: Find expiries
+    const expiries = [...new Set(instruments.map(i => i.expiry))].sort()
+    const nearestExpiry = expiries[0]
+
+    // Step 4: Filter strikes near ATM (ATM ± 10 strikes, step 50 for NIFTY/100 for BN)
+    const step = symbol === 'BANKNIFTY' ? 100 : symbol === 'FINNIFTY' ? 50 : 50
+    const atm  = Math.round(spotPrice / step) * step
+    const strikesWanted = []
+    for (let i = -10; i <= 10; i++) strikesWanted.push(atm + i * step)
+
+    const filtered = instruments.filter(i =>
+      i.expiry === nearestExpiry && strikesWanted.includes(i.strike)
+    )
+
+    if (filtered.length === 0) {
+      return res.status(200).json({
+        status: 'no_strikes', symbol, spotPrice, expiries: expiries.slice(0,4), chain: [],
+        message: 'No options found for this expiry. Market may be closed.'
+      })
+    }
+
+    // Step 5: Get live quotes for all filtered options
+    const tokens = filtered.map(i => `NFO:${i.symbol}`)
+    const chunkSize = 100 // Kite max per request
+    const allQuotes = {}
+
+    for (let i = 0; i < tokens.length; i += chunkSize) {
+      const chunk = tokens.slice(i, i + chunkSize)
+      const qUrl  = `${KITE_BASE}/quote?${chunk.map(t => `i=${encodeURIComponent(t)}`).join('&')}`
+      const qR    = await fetch(qUrl, { headers: HDRS })
+      const qD    = await qR.json()
+      Object.assign(allQuotes, qD.data || {})
+    }
+
+    // Step 6: Build chain
+    const chainMap = {}
+    for (const instr of filtered) {
+      const key    = instr.strike
+      const qKey   = `NFO:${instr.symbol}`
+      const quote  = allQuotes[qKey] || {}
+      const oiData = quote.oi || 0
+      const oiChg  = quote.oi_day_high && quote.oi_day_low ? quote.oi - quote.oi_day_low : 0
+
+      if (!chainMap[key]) chainMap[key] = { strike: key, isATM: key === atm }
+
+      const side = instr.type === 'CE' ? 'call' : 'put'
+      chainMap[key][side] = {
+        symbol:    instr.symbol,
+        token:     instr.token,
+        lotSize:   instr.lotSize,
+        ltp:       quote.last_price || 0,
+        bid:       quote.depth?.buy?.[0]?.price || 0,
+        ask:       quote.depth?.sell?.[0]?.price || 0,
+        oi:        oiData,
+        oiChange:  oiChg,
+        volume:    quote.volume || 0,
+        iv:        0, // Kite doesn't provide IV directly
+        high:      quote.ohlc?.high || 0,
+        low:       quote.ohlc?.low || 0,
+      }
+    }
+
+    const chain = Object.values(chainMap).sort((a,b) => a.strike - b.strike)
+
+    // Step 7: Calculate PCR and Max Pain
+    const totalCallOI = chain.reduce((a,s) => a + (s.call?.oi || 0), 0)
+    const totalPutOI  = chain.reduce((a,s) => a + (s.put?.oi  || 0), 0)
+    const pcr = totalCallOI > 0 ? parseFloat((totalPutOI/totalCallOI).toFixed(2)) : 0
+
+    // Max pain = strike where total option seller loss is minimum
+    let maxPain = atm, minLoss = Infinity
+    for (const s of chain) {
+      let totalLoss = 0
+      for (const other of chain) {
+        if (other.strike < s.strike) totalLoss += (s.strike - other.strike) * (other.call?.oi || 0)
+        if (other.strike > s.strike) totalLoss += (other.strike - s.strike) * (other.put?.oi  || 0)
+      }
+      if (totalLoss < minLoss) { minLoss = totalLoss; maxPain = s.strike }
+    }
+
+    return res.status(200).json({
+      status:     'success',
+      symbol,
+      spotPrice,
+      atm,
+      expiry:     nearestExpiry,
+      expiries:   expiries.slice(0, 6),
+      pcr,
+      pcrSentiment: pcr > 1.2 ? 'Bullish' : pcr < 0.8 ? 'Bearish' : 'Neutral',
+      maxPain,
+      chain,
+      totalCallOI,
+      totalPutOI,
+      lotSize:    filtered[0]?.lotSize || 25,
+      source:     'kite',
+    })
+
+  } catch(err) {
+    console.error('Options chain error:', err)
+    return res.status(500).json({ error: err.message, symbol })
   }
 }

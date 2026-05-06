@@ -57,6 +57,27 @@ export default async function handler(req, res) {
 
     const { access_token, user_id, user_name, email, exchanges, products } = tokenData.data
 
+    // Save token to Supabase so Railway worker can use it throughout the day
+    try {
+      const { createClient } = await import('@supabase/supabase-js')
+      const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY)
+      const midnight = new Date()
+      midnight.setHours(23, 59, 59, 0)
+      await sb.from('kite_session').upsert({
+        id: 'current',
+        access_token,
+        user_id,
+        user_name,
+        created_at: new Date().toISOString(),
+        expires_at: midnight.toISOString(),
+        is_valid: true,
+      }, { onConflict: 'id' })
+      console.log('Kite token saved to Supabase for worker use')
+    } catch(e) {
+      console.error('Failed to save token to Supabase:', e.message)
+      // Don't block login if Supabase save fails
+    }
+
     // Pass token to frontend via HTML page that stores in localStorage
     const html = `<!DOCTYPE html>
 <html>

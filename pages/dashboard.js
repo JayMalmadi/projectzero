@@ -3530,6 +3530,184 @@ function DeltaTab({t, at}) {
 }
 
 
+// ── Paper Trades Tab ───────────────────────────────────────────
+function PaperTradesTab({t}) {
+  const [data,    setData]    = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [filter,  setFilter]  = useState('all')  // all | open | closed
+  const [days,    setDays]    = useState(30)
+
+  useEffect(() => { load() }, [filter, days])
+  
+  async function load() {
+    setLoading(true)
+    try {
+      const status = filter === 'open' ? '&status=OPEN' : filter === 'closed' ? '&status=WIN,LOSS,EXPIRED' : ''
+      const r = await fetch(`/api/paper-trades?days=${days}&limit=100${status}`)
+      const d = await r.json()
+      setData(d)
+    } catch(e) { console.warn('Paper trades:', e) }
+    setLoading(false)
+  }
+
+  const fmtTime = d => new Date(d).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',timeZone:'Asia/Kolkata'})
+  const pnlColor = v => v > 0 ? t.green : v < 0 ? t.red : t.muted
+
+  // Equity curve — cumulative P&L over closed trades
+  const closed = (data?.trades||[]).filter(tr=>['WIN','LOSS','EXPIRED','CLOSED'].includes(tr.status))
+    .sort((a,b)=>new Date(a.closed_at)-new Date(b.closed_at))
+  let cumPnL = 0
+  const equityCurve = closed.map(tr => { cumPnL += (tr.pnl_pct||0); return cumPnL.toFixed(2) })
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{marginBottom:20}}>
+        <h2 style={{fontSize:22,fontWeight:900,color:t.text}}>🧪 Paper Trades</h2>
+        <p style={{color:t.muted,fontSize:13,marginTop:4}}>
+          Auto-paper-trading — every signal with ≥65% confidence is automatically tracked.
+          Shows if the strategy would have won or lost.
+        </p>
+      </div>
+
+      {/* Stats */}
+      {data?.stats && (
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(130px,1fr))',gap:10,marginBottom:20}}>
+          {[
+            {l:'TOTAL',        v:data.stats.total,                            c:t.text},
+            {l:'OPEN',         v:data.stats.open,                             c:t.amber},
+            {l:'WIN RATE',     v:data.stats.winRate ? `${data.stats.winRate}%` : '—',    c:parseFloat(data.stats.winRate||0)>=55?t.green:t.red},
+            {l:'AVG WIN',      v:data.stats.avgWin  ? `+${data.stats.avgWin}%`  : '—',  c:t.green},
+            {l:'AVG LOSS',     v:data.stats.avgLoss ? `${data.stats.avgLoss}%` : '—',   c:t.red},
+            {l:'EXPECTANCY',   v:data.stats.expectancy ? `${parseFloat(data.stats.expectancy)>0?'+':''}${data.stats.expectancy}%` : '—',
+              c:parseFloat(data.stats.expectancy||0)>0?t.green:t.red},
+          ].map(x=>(
+            <div key={x.l} style={{background:t.card,borderRadius:12,padding:'12px 14px',border:`1px solid ${t.border}`,textAlign:'center'}}>
+              <p style={{color:t.muted,fontSize:9,fontWeight:700,letterSpacing:'0.07em',marginBottom:4}}>{x.l}</p>
+              <p style={{color:x.c,fontSize:16,fontWeight:800,fontFamily:'JetBrains Mono,monospace'}}>{x.v}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Strategy scoreboard */}
+      {data?.byStrategy && Object.keys(data.byStrategy).length > 0 && (
+        <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,marginBottom:20,overflow:'hidden'}}>
+          <div style={{padding:'10px 16px',borderBottom:`1px solid ${t.border}`,fontSize:11,fontWeight:700,color:t.muted,letterSpacing:'0.06em'}}>
+            STRATEGY SCOREBOARD
+          </div>
+          <table style={{width:'100%',borderCollapse:'collapse'}}>
+            <thead><tr style={{background:t.surface}}>
+              {['STRATEGY','TRADES','WINS','LOSSES','WIN RATE','AVG P&L%','VERDICT'].map(h=>(
+                <th key={h} style={{padding:'8px 14px',textAlign:'left',fontSize:10,fontWeight:700,color:t.muted,letterSpacing:'0.06em',borderBottom:`1px solid ${t.border}`}}>{h}</th>
+              ))}
+            </tr></thead>
+            <tbody>
+              {Object.entries(data.byStrategy).map(([strat, s]) => {
+                const wr = s.total > 0 ? (s.wins/s.total*100).toFixed(0) : 0
+                const avgPnl = s.total > 0 ? (s.pnl/s.total).toFixed(2) : 0
+                const verdict = parseFloat(wr) >= 55 && parseFloat(avgPnl) > 0 ? '✅ TRADE' : parseFloat(wr) < 40 ? '❌ AVOID' : '⚠️ MARGINAL'
+                return (
+                  <tr key={strat} style={{borderBottom:`1px solid ${t.border}22`}}>
+                    <td style={{padding:'10px 14px',fontWeight:700,color:t.text,fontSize:13}}>{strat}</td>
+                    <td style={{padding:'10px 14px',color:t.muted,fontSize:12}}>{s.total}</td>
+                    <td style={{padding:'10px 14px',color:t.green,fontSize:12,fontWeight:600}}>{s.wins}</td>
+                    <td style={{padding:'10px 14px',color:t.red,fontSize:12,fontWeight:600}}>{s.losses}</td>
+                    <td style={{padding:'10px 14px',color:parseFloat(wr)>=55?t.green:parseFloat(wr)<40?t.red:t.amber,fontWeight:700,fontFamily:'JetBrains Mono,monospace'}}>{wr}%</td>
+                    <td style={{padding:'10px 14px',color:parseFloat(avgPnl)>=0?t.green:t.red,fontFamily:'JetBrains Mono,monospace',fontWeight:600}}>{parseFloat(avgPnl)>=0?'+':''}{avgPnl}%</td>
+                    <td style={{padding:'10px 14px',fontSize:12,fontWeight:700}}>{verdict}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Filters */}
+      <div style={{display:'flex',gap:10,marginBottom:16,flexWrap:'wrap',alignItems:'center'}}>
+        <div style={{display:'flex',background:t.surface,border:`1px solid ${t.border}`,borderRadius:20,padding:'2px 3px',gap:1}}>
+          {[['all','All'],['open','Open'],['closed','Closed']].map(([v,l])=>(
+            <button key={v} onClick={()=>setFilter(v)}
+              style={{padding:'4px 14px',borderRadius:16,border:'none',background:filter===v?'#ff660022':'transparent',
+                color:filter===v?'#ff6600':t.muted,fontWeight:filter===v?700:400,cursor:'pointer',fontSize:12,fontFamily:'Inter,sans-serif'}}>
+              {l}
+            </button>
+          ))}
+        </div>
+        <div style={{display:'flex',background:t.surface,border:`1px solid ${t.border}`,borderRadius:20,padding:'2px 3px',gap:1}}>
+          {[[7,'7D'],[30,'30D'],[90,'90D']].map(([v,l])=>(
+            <button key={v} onClick={()=>setDays(v)}
+              style={{padding:'4px 12px',borderRadius:16,border:'none',background:days===v?t.blue+'22':'transparent',
+                color:days===v?t.blue:t.muted,fontWeight:days===v?700:400,cursor:'pointer',fontSize:12,fontFamily:'Inter,sans-serif'}}>
+              {l}
+            </button>
+          ))}
+        </div>
+        <button onClick={load} style={{padding:'4px 12px',background:'none',border:`1px solid ${t.border}`,borderRadius:20,color:t.muted,cursor:'pointer',fontSize:12}}>↻ Refresh</button>
+      </div>
+
+      {/* Trades table */}
+      {loading ? (
+        <div style={{textAlign:'center',padding:40}}>
+          <div style={{width:28,height:28,border:`3px solid ${t.border}`,borderTopColor:'#ff6600',borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'0 auto'}}/>
+        </div>
+      ) : !data?.trades?.length ? (
+        <div style={{background:t.card,borderRadius:16,padding:40,border:`1px solid ${t.border}`,textAlign:'center'}}>
+          <p style={{fontSize:40,marginBottom:12}}>🧪</p>
+          <p style={{color:t.text,fontWeight:700,marginBottom:8}}>No paper trades yet</p>
+          <p style={{color:t.muted,fontSize:13}}>
+            Paper trades auto-create when signals fire with ≥65% confidence during market hours.
+            The Railway worker monitors them and records WIN/LOSS automatically.
+          </p>
+        </div>
+      ) : (
+        <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,overflow:'hidden'}}>
+          <table style={{width:'100%',borderCollapse:'collapse'}}>
+            <thead>
+              <tr style={{background:t.surface}}>
+                {['OPENED','SYMBOL','STRATEGY','DIR','ENTRY','SL','TARGET','EXIT','P&L','STATUS'].map(h=>(
+                  <th key={h} style={{padding:'9px 12px',textAlign:'left',fontSize:10,fontWeight:700,color:t.muted,letterSpacing:'0.06em',borderBottom:`1px solid ${t.border}`}}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {(data.trades||[]).map((tr,i)=>{
+                const statusColor = tr.status==='WIN'?t.green:tr.status==='LOSS'?t.red:tr.status==='OPEN'?t.amber:t.muted
+                const statusEmoji = tr.status==='WIN'?'✅':tr.status==='LOSS'?'❌':tr.status==='OPEN'?'⏳':'—'
+                return (
+                  <tr key={tr.id} style={{borderBottom:`1px solid ${t.border}22`,background:i%2===0?'transparent':t.surface+'44'}}>
+                    <td style={{padding:'9px 12px',color:t.muted,fontSize:11,whiteSpace:'nowrap'}}>{fmtTime(tr.opened_at)}</td>
+                    <td style={{padding:'9px 12px',fontWeight:800,color:t.text,fontFamily:'JetBrains Mono,monospace'}}>{tr.symbol}</td>
+                    <td style={{padding:'9px 12px',color:t.text2,fontSize:11,maxWidth:120,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{tr.strategy}</td>
+                    <td style={{padding:'9px 12px'}}>
+                      <span style={{color:tr.direction==='BUY'?t.green:t.red,fontWeight:700,fontSize:11}}>
+                        {tr.direction==='BUY'?'▲ BUY':'▼ SELL'}
+                      </span>
+                    </td>
+                    <td style={{padding:'9px 12px',fontFamily:'JetBrains Mono,monospace',fontSize:12,color:t.text}}>₹{tr.entry_price?.toLocaleString('en-IN',{maximumFractionDigits:2})}</td>
+                    <td style={{padding:'9px 12px',fontFamily:'JetBrains Mono,monospace',fontSize:11,color:t.red}}>{tr.stop_loss?`₹${tr.stop_loss?.toLocaleString('en-IN',{maximumFractionDigits:0})}`:'—'}</td>
+                    <td style={{padding:'9px 12px',fontFamily:'JetBrains Mono,monospace',fontSize:11,color:t.green}}>{tr.target?`₹${tr.target?.toLocaleString('en-IN',{maximumFractionDigits:0})}`:'—'}</td>
+                    <td style={{padding:'9px 12px',fontFamily:'JetBrains Mono,monospace',fontSize:11,color:t.text2}}>{tr.exit_price?`₹${tr.exit_price?.toLocaleString('en-IN',{maximumFractionDigits:0})}`:'—'}</td>
+                    <td style={{padding:'9px 12px',fontFamily:'JetBrains Mono,monospace',fontWeight:700,fontSize:12,color:pnlColor(tr.pnl_pct||0)}}>
+                      {tr.pnl_pct!=null?`${tr.pnl_pct>=0?'+':''}${tr.pnl_pct?.toFixed(2)}%`:'—'}
+                    </td>
+                    <td style={{padding:'9px 12px'}}>
+                      <span style={{color:statusColor,fontWeight:700,fontSize:11}}>{statusEmoji} {tr.status}</span>
+                      {tr.exit_reason && <span style={{color:t.muted,fontSize:10,display:'block'}}>{tr.exit_reason}</span>}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+
 function TickerBar({mkt, t, setTab, isConn}) {
   const syms = ['NIFTY','BANKNIFTY','SENSEX','BTC','ETH','SOL']
   return (
@@ -3636,7 +3814,7 @@ export default function Dashboard() {
     return () => window.removeEventListener('keydown', handler)
   }, [])
 
-  const tabs=[{id:'signals',l:'📡 Signals'},{id:'crypto',l:'🪙 Crypto'},{id:'delta',l:'⚡ Delta'},{id:'positions',l:'💼 Portfolio'},{id:'trades',l:'📋 History'},{id:'charts',l:'📈 Charts'},{id:'alerts',l:'🔔 Alerts'},{id:'performance',l:'🏆 Performance'},{id:'options',l:'⛓ Options'},{id:'watchlist',l:'👁 Watchlist'},{id:'reports',l:'📅 Reports'},{id:'siglog',l:'📊 Signal Log'},{id:'backtest',l:'🔬 Backtest'}]
+  const tabs=[{id:'signals',l:'📡 Signals'},{id:'crypto',l:'🪙 Crypto'},{id:'delta',l:'⚡ Delta'},{id:'positions',l:'💼 Portfolio'},{id:'trades',l:'📋 History'},{id:'paper',l:'🧪 Paper Trades'},{id:'charts',l:'📈 Charts'},{id:'alerts',l:'🔔 Alerts'},{id:'performance',l:'🏆 Performance'},{id:'options',l:'⛓ Options'},{id:'watchlist',l:'👁 Watchlist'},{id:'reports',l:'📅 Reports'},{id:'siglog',l:'📊 Signal Log'},{id:'backtest',l:'🔬 Backtest'}]
   const isConn=!!at
 
   return (
@@ -3778,6 +3956,7 @@ export default function Dashboard() {
             {tab==='reports'&&<ReportsTab t={t}/>}
             {tab==='siglog'&&<SignalLogTab t={t}/>}
             {tab==='delta'&&<DeltaTab t={t} at={at}/>}
+            {tab==='paper'&&<PaperTradesTab t={t}/>}
             {tab==='backtest'&&<BacktestTab t={t}/>}
             {tab==='positions'&&<div>
               <div style={{marginBottom:22,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
