@@ -3710,6 +3710,193 @@ function PaperTradesTab({t}) {
 }
 
 
+// ── Delta Portfolio Panel ──────────────────────────────────────
+function DeltaPortfolioPanel({t}) {
+  const [wallet,    setWallet]    = useState(null)
+  const [positions, setPositions] = useState([])
+  const [prices,    setPrices]    = useState({})
+  const [loading,   setLoading]   = useState(true)
+  const [error,     setError]     = useState('')
+
+  useEffect(() => { load() }, [])
+
+  async function load() {
+    setLoading(true); setError('')
+    try {
+      // Fetch prices (public - always works)
+      const priceR = await fetch('/api/delta?action=prices')
+      const priceD = await priceR.json()
+      if (priceD.prices) setPrices(priceD.prices)
+
+      // Fetch wallet (needs IP whitelist)
+      const walletR = await fetch('/api/delta?action=wallet')
+      if (walletR.ok) {
+        const walletD = await walletR.json()
+        if (walletD.status === 'success') setWallet(walletD)
+        else setError(walletD.error || 'Connection error')
+      } else {
+        const err = await walletR.json()
+        setError(err.error || 'Delta API not reachable')
+      }
+
+      // Fetch open positions
+      const posR = await fetch('/api/delta?action=positions')
+      if (posR.ok) {
+        const posD = await posR.json()
+        if (posD.positions) setPositions(posD.positions)
+      }
+    } catch(e) { setError(e.message) }
+    setLoading(false)
+  }
+
+  const usdToInr = (usd) => `₹${(usd * 84).toLocaleString('en-IN', {maximumFractionDigits:0})}`
+  const fmtUSD   = (v) => `$${parseFloat(v||0).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}`
+
+  const totalUSD  = wallet?.totalUSD || 0
+  const totalINR  = totalUSD * 84
+
+  // Live P&L on open positions
+  const unrealPnL = positions.reduce((a, p) => a + (p.unrealizedPnL || 0), 0)
+
+  return (
+    <div style={{marginTop:20,background:t.card,borderRadius:20,padding:22,border:`1px solid ${t.border}`}}>
+      {/* Header */}
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+        <div style={{display:'flex',alignItems:'center',gap:10}}>
+          <span style={{fontSize:22}}>⚡</span>
+          <div>
+            <p style={{fontWeight:800,fontSize:15,color:t.text}}>Delta Exchange</p>
+            <p style={{color:t.muted,fontSize:12}}>Perpetual Futures · Up to 200x leverage</p>
+          </div>
+        </div>
+        <div style={{display:'flex',gap:8,alignItems:'center'}}>
+          {error ? (
+            <span style={{background:t.red+'15',color:t.red,fontSize:11,fontWeight:600,padding:'3px 10px',borderRadius:20,border:`1px solid ${t.red}33`}}>
+              ⚠️ {error.includes('IP') || error.includes('proxy') ? 'IP not whitelisted — add Fixie' : 'Connection error'}
+            </span>
+          ) : (
+            <span style={{background:t.green+'15',color:t.green,fontSize:11,fontWeight:600,padding:'3px 10px',borderRadius:20,border:`1px solid ${t.green}33`}}>
+              ✅ Connected
+            </span>
+          )}
+          <button onClick={load} style={{background:'none',border:`1px solid ${t.border}`,borderRadius:8,color:t.muted,cursor:'pointer',fontSize:12,padding:'4px 10px'}}>
+            {loading ? '⏳' : '↻'}
+          </button>
+        </div>
+      </div>
+
+      {/* IP error message */}
+      {error && (error.includes('proxy') || error.includes('401') || error.includes('IP')) && (
+        <div style={{background:t.amber+'0d',border:`1px solid ${t.amber}33`,borderRadius:12,padding:'12px 16px',marginBottom:16}}>
+          <p style={{color:t.amber,fontWeight:700,fontSize:13,marginBottom:4}}>⚡ Delta trading needs a fixed IP</p>
+          <p style={{color:t.muted,fontSize:12}}>
+            Add <b>Fixie</b> add-on to Railway (~₹400/mo) → whitelist Fixie IPs on Delta → wallet and trading go live.
+            Prices and signals work without this.
+          </p>
+        </div>
+      )}
+
+      {/* Live prices row */}
+      <div style={{display:'flex',gap:10,overflowX:'auto',marginBottom:16,paddingBottom:4}}>
+        {Object.entries(prices).map(([sym, p]) => (
+          <div key={sym} style={{background:t.surface,borderRadius:12,padding:'10px 14px',border:`1px solid ${t.border}`,flexShrink:0,minWidth:110}}>
+            <p style={{fontWeight:800,fontSize:12,color:t.text,marginBottom:2}}>{sym}/USD</p>
+            <p style={{fontSize:14,fontWeight:700,fontFamily:'JetBrains Mono,monospace',color:t.text}}>
+              ${parseFloat(p.price||0).toLocaleString('en-US',{maximumFractionDigits:2})}
+            </p>
+            <p style={{fontSize:11,color:(p.pct||0)>=0?t.green:t.red,fontWeight:600}}>
+              {(p.pct||0)>=0?'+':''}{(p.pct||0).toFixed(2)}%
+            </p>
+            <p style={{fontSize:9,color:t.muted,marginTop:2}}>
+              FR: {((p.fundingRate||0)*100).toFixed(4)}%
+            </p>
+          </div>
+        ))}
+      </div>
+
+      {/* Wallet balances */}
+      {wallet && (
+        <>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(150px,1fr))',gap:10,marginBottom:16}}>
+            {[
+              {l:'TOTAL VALUE', v:fmtUSD(totalUSD),     s:usdToInr(totalUSD), c:'#ff6600'},
+              {l:'AVAILABLE',   v:fmtUSD(wallet.balances?.find(b=>b.asset==='USD')?.availableBalance||0),
+                                s:'ready to trade',    c:t.green},
+              {l:'OPEN P&L',    v:(unrealPnL>=0?'+':'')+fmtUSD(unrealPnL), s:'unrealised', c:unrealPnL>=0?t.green:t.red},
+              {l:'POSITIONS',   v:positions.length,     s:'open now',         c:t.text},
+            ].map(x=>(
+              <div key={x.l} style={{background:t.surface,borderRadius:12,padding:'12px 14px',border:`1px solid ${t.border}`}}>
+                <p style={{color:t.muted,fontSize:9,fontWeight:700,letterSpacing:'0.07em',marginBottom:4}}>{x.l}</p>
+                <p style={{color:x.c,fontSize:15,fontWeight:800,fontFamily:'JetBrains Mono,monospace'}}>{x.v}</p>
+                <p style={{color:t.muted,fontSize:10,marginTop:2}}>{x.s}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Asset breakdown */}
+          {wallet.balances?.filter(b=>b.balance>0).length > 0 && (
+            <div style={{marginBottom:16}}>
+              <p style={{color:t.muted,fontSize:11,fontWeight:700,marginBottom:8,letterSpacing:'0.06em'}}>ASSETS</p>
+              <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                {wallet.balances.filter(b=>b.balance>0).map(b=>(
+                  <div key={b.asset} style={{background:t.surface,borderRadius:10,padding:'8px 14px',border:`1px solid ${t.border}`}}>
+                    <p style={{fontWeight:700,color:t.text,fontSize:13}}>{b.asset}</p>
+                    <p style={{fontFamily:'JetBrains Mono,monospace',color:t.text2,fontSize:12}}>{parseFloat(b.balance).toFixed(4)}</p>
+                    <p style={{color:t.muted,fontSize:10}}>avail: {parseFloat(b.availableBalance).toFixed(4)}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Open positions */}
+      {positions.length > 0 ? (
+        <div>
+          <p style={{color:t.muted,fontSize:11,fontWeight:700,marginBottom:8,letterSpacing:'0.06em'}}>OPEN POSITIONS ({positions.length})</p>
+          <div style={{overflowX:'auto',WebkitOverflowScrolling:'touch'}}>
+          <table style={{width:'100%',minWidth:500,borderCollapse:'collapse',background:t.surface,borderRadius:10,overflow:'hidden'}}>
+            <thead><tr style={{borderBottom:`1px solid ${t.border}`}}>
+              {['SYMBOL','SIDE','SIZE','ENTRY','MARK','P&L','LEVERAGE','LIQ. PRICE'].map(h=>(
+                <th key={h} style={{padding:'8px 12px',textAlign:'left',fontSize:10,fontWeight:700,color:t.muted,letterSpacing:'0.06em'}}>{h}</th>
+              ))}
+            </tr></thead>
+            <tbody>
+              {positions.map((p,i)=>(
+                <tr key={i} style={{borderTop:`1px solid ${t.border}22`}}>
+                  <td style={{padding:'9px 12px',fontWeight:800,color:t.text,fontFamily:'JetBrains Mono,monospace'}}>{p.symbol}</td>
+                  <td style={{padding:'9px 12px',color:p.side==='BUY'?t.green:t.red,fontWeight:700,fontSize:12}}>{p.side==='BUY'?'▲ LONG':'▼ SHORT'}</td>
+                  <td style={{padding:'9px 12px',color:t.text2,fontSize:12}}>{p.size}</td>
+                  <td style={{padding:'9px 12px',fontFamily:'JetBrains Mono,monospace',fontSize:12,color:t.text}}>${parseFloat(p.entryPrice||0).toLocaleString('en-US',{maximumFractionDigits:2})}</td>
+                  <td style={{padding:'9px 12px',fontFamily:'JetBrains Mono,monospace',fontSize:12,color:t.text}}>${parseFloat(p.markPrice||0).toLocaleString('en-US',{maximumFractionDigits:2})}</td>
+                  <td style={{padding:'9px 12px',fontFamily:'JetBrains Mono,monospace',fontWeight:700,fontSize:12,color:parseFloat(p.unrealizedPnL||0)>=0?t.green:t.red}}>
+                    {parseFloat(p.unrealizedPnL||0)>=0?'+':''}${parseFloat(p.unrealizedPnL||0).toFixed(2)}
+                  </td>
+                  <td style={{padding:'9px 12px',color:t.amber,fontWeight:700,fontSize:12}}>{p.leverage}x</td>
+                  <td style={{padding:'9px 12px',fontFamily:'JetBrains Mono,monospace',fontSize:12,color:t.red}}>${parseFloat(p.liquidationPrice||0).toFixed(2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          </div>
+        </div>
+      ) : !error && !loading && (
+        <div style={{textAlign:'center',padding:'20px 0',color:t.muted,fontSize:13}}>
+          No open positions · Start trading from the ⚡ Delta tab
+        </div>
+      )}
+
+      {loading && (
+        <div style={{textAlign:'center',padding:20}}>
+          <div style={{width:20,height:20,border:`3px solid ${t.border}`,borderTopColor:'#ff6600',borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'0 auto'}}/>
+        </div>
+      )}
+    </div>
+  )
+}
+
+
 function TickerBar({mkt, t, setTab, isConn}) {
   const syms = ['NIFTY','BANKNIFTY','SENSEX','BTC','ETH','SOL']
   return (
@@ -3964,7 +4151,7 @@ export default function Dashboard() {
               <div style={{marginBottom:22,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                 <div>
                   <h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Portfolio</h2>
-                  <p style={{color:t.muted,fontSize:13,marginTop:5}}>Indian markets (Zerodha) + Crypto (Binance) · Live balances</p>
+                  <p style={{color:t.muted,fontSize:13,marginTop:5}}>Zerodha (India) · Binance (Crypto) · Delta Exchange (Futures)</p>
                 </div>
               </div>
               <KiteTradesPanel at={at} t={t}/>
@@ -3986,6 +4173,10 @@ export default function Dashboard() {
                   <BinancePortfolio t={t}/>
                 </div>
               </div>
+
+              {/* Delta Exchange Portfolio — full width */}
+              <DeltaPortfolioPanel t={t}/>
+
             </div>}
             {tab==='trades'&&<div><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:22}}><div><h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Trade History</h2><p style={{color:t.muted,fontSize:13,marginTop:5}}>All trades · Entry/Exit · P&L</p></div><button onClick={()=>setTr(r=>r+1)} style={{padding:'8px 16px',background:t.surface,border:`1px solid ${t.border}`,borderRadius:10,color:t.text,cursor:'pointer',fontSize:12,fontFamily:'Inter,sans-serif',fontWeight:600}}>🔄 Refresh</button><button onClick={()=>setShowManual(v=>!v)} style={{padding:'8px 16px',background:'#ff660018',border:'1px solid #ff660044',borderRadius:10,color:'#ff6600',cursor:'pointer',fontSize:12,fontFamily:'Inter,sans-serif',fontWeight:700,marginLeft:8}}>+ Log Trade</button></div>{showManual&&<ManualTradeForm t={t} onSave={()=>{setShowManual(false);setTr(r=>r+1)}} onClose={()=>setShowManual(false)} manForm={manForm} setManForm={setManForm}/>}
             <History refresh={tr} t={t}/></div>}
