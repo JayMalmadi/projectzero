@@ -403,7 +403,32 @@ async function monitorPaperTrades() {
     const openTrades = r.open || []
 
     if (openTrades.length === 0) return
-    console.log(`[PaperMonitor] Checking ${openTrades.length} open paper trades`)
+
+    // Fetch ALL prices in ONE call (much more efficient than per-trade fetching)
+    let allPrices = {}
+    try {
+      // Indian market prices
+      const indiaSymbols = [...new Set(openTrades.filter(t => t.market === 'india').map(t => t.symbol))]
+      if (indiaSymbols.length > 0 && isMarketHours) {
+        const mktR = await fetchJSON(`${CONFIG.DASHBOARD_URL}/api/market?symbols=${indiaSymbols.join(',')}`)
+        Object.assign(allPrices, mktR.data || {})
+      }
+      // Crypto prices (always fetch — 24/7)
+      const hasCrypto = openTrades.some(t => t.market === 'crypto' || t.market === 'delta')
+      if (hasCrypto) {
+        const deltaR = await fetchJSON(`${CONFIG.DASHBOARD_URL}/api/delta?action=prices`)
+        // Map Delta prices: { BTC: { price: 81000 }, ... }
+        for (const [sym, data] of Object.entries(deltaR.prices || {})) {
+          allPrices[sym] = { price: data.price }
+        }
+      }
+    } catch(e) {
+      console.error('[PaperMonitor] Price fetch error:', e.message)
+      return  // skip this cycle if prices unavailable
+    }
+
+    if (Object.keys(allPrices).length === 0) return
+    console.log(`[PaperMonitor] Checking ${openTrades.length} trades, ${Object.keys(allPrices).length} price feeds`)
 
     // Check if it's after 3:15 PM IST — close all intraday trades
     const hour = now.getHours()
@@ -415,11 +440,8 @@ async function monitorPaperTrades() {
         if (trade.signal_type === 'intraday' && afterClose && (trade.market === 'india' || !trade.market)) {
           // Auto-close intraday trades at 3:15 PM
           // Get current price
-          let currentPrice = trade.entry_price // fallback
-          try {
-            const mktR = await fetchJSON(`${CONFIG.DASHBOARD_URL}/api/market?symbols=${trade.symbol}`)
-            currentPrice = mktR.data?.[trade.symbol]?.price || trade.entry_price
-          } catch {}
+          // Use pre-fetched price
+          let currentPrice = allPrices[trade.symbol]?.price || trade.entry_price
 
           const pnlPoints = trade.direction === 'BUY'
             ? currentPrice - trade.entry_price
@@ -458,12 +480,7 @@ async function monitorPaperTrades() {
         if ((trade.market === 'crypto' || trade.market === 'delta') && trade.opened_at) {
           const ageHours = (Date.now() - new Date(trade.opened_at).getTime()) / 3600000
           if (ageHours > 24) {
-            let cprice = null
-            try {
-              const dr = await fetchJSON(`${CONFIG.DASHBOARD_URL}/api/delta?action=prices`)
-              cprice = dr.prices?.[trade.symbol]?.price || trade.entry_price
-            } catch {}
-            const exitP = cprice || trade.entry_price
+            const exitP = allPrices[trade.symbol]?.price || trade.entry_price
             const pnlPts = trade.direction === 'BUY' ? exitP - trade.entry_price : trade.entry_price - exitP
             const pnlPct = (pnlPts / trade.entry_price) * 100
             await fetch(`${CONFIG.DASHBOARD_URL}/api/paper-trades`, {
@@ -476,18 +493,8 @@ async function monitorPaperTrades() {
           }
         }
 
-        let currentPrice = null
-        try {
-          if (trade.market === 'crypto' || trade.market === 'delta') {
-            // Use Delta Exchange for crypto prices
-            const deltaR = await fetchJSON(`${CONFIG.DASHBOARD_URL}/api/delta?action=prices`)
-            currentPrice = deltaR.prices?.[trade.symbol]?.price
-          } else {
-            // Indian market prices
-            const mktR = await fetchJSON(`${CONFIG.DASHBOARD_URL}/api/market?symbols=${trade.symbol}`)
-            currentPrice = mktR.data?.[trade.symbol]?.price
-          }
-        } catch {}
+        // Use pre-fetched prices (no extra API call per trade)
+        const currentPrice = allPrices[trade.symbol]?.price || null
 
         if (!currentPrice) continue
 
@@ -583,8 +590,6 @@ async function tick() {
   if (Date.now() - lastAlertCheck > 300000) {
     lastAlertCheck = Date.now()
     await checkPriceAlerts()
-    // Monitor paper trades every 5 minutes during/after market hours
-    monitorPaperTrades().catch(e => console.error('[PaperMonitor]', e.message))
   }
 }
 
@@ -697,3 +702,18 @@ sendTelegram(`🚀 <b>Projectzero Worker v2 Started</b>
 // Start ticking every 30 seconds
 tick().catch(console.error)
 setInterval(() => tick().catch(console.error), 30000)
+
+// ── Fast loop: paper trade monitoring every 5 seconds ─────────
+// Uses PUBLIC Delta/market price APIs — no auth, no Fixie needed
+// Checks if SL or Target hit for any open paper trade
+let paperMonitorRunning = false
+setInterval(async () => {
+  if (paperMonitorRunning) return  // skip if previous check still running
+  paperMonitorRunning = true
+  try {
+    await monitorPaperTrades()
+  } catch(e) {
+    console.error('[FastMonitor]', e.message)
+  }
+  paperMonitorRunning = false
+}, 5000)  // Every 5 seconds
