@@ -75,21 +75,21 @@ export default async function handler(req, res) {
       regimeEmoji = '⚡'
       color = '#f59e0b'
       description = `NIFTY moving ${rangeAsPct.toFixed(1)}% range over 5 days. ATR ${atrPct.toFixed(2)}% — high risk. Widen stops or reduce size.`
-      bestStrategies = ['PZ-ORB Filter', 'Bollinger Breakout', 'Supertrend']
+      bestStrategies = ['PZ-ORB Filter', 'Bollinger Breakout', 'MACD Crossover']
       avoidStrategies = ['VWAP Reversion', 'Gap & Fade']
     } else if (emaTrend === 'STRONG_UP' && dayChange > 0.3) {
       regime = 'TRENDING UP'
       regimeEmoji = '📈'
       color = '#10b981'
       description = `EMA9 > EMA21 > EMA50 — clean uptrend. Price +${dayChange.toFixed(1)}% today. Momentum strategies work best.`
-      bestStrategies = ['Supertrend', 'MACD Crossover', 'Tuesday Momentum']
+      bestStrategies = ['MACD Crossover', 'MACD Crossover', 'Tuesday Momentum']
       avoidStrategies = ['Gap & Fade (short)', 'RSI Reversal (sell)']
     } else if (emaTrend === 'STRONG_DOWN' && dayChange < -0.3) {
       regime = 'TRENDING DOWN'
       regimeEmoji = '📉'
       color = '#ef4444'
       description = `EMA9 < EMA21 < EMA50 — downtrend. Price ${dayChange.toFixed(1)}% today. Short bias or avoid longs.`
-      bestStrategies = ['Weak Stock Swing', 'MACD Crossover (SELL)', 'Supertrend (SELL)']
+      bestStrategies = ['Weak Stock Swing', 'MACD Crossover (SELL)', 'MACD Crossover (SELL)']
       avoidStrategies = ['Tuesday Momentum (long)', 'VWAP (long)']
     } else {
       regime = 'SIDEWAYS'
@@ -97,7 +97,7 @@ export default async function handler(req, res) {
       color = '#6366f1'
       description = `EMAs clustered — no clear trend. Range ${rangeAsPct.toFixed(1)}% over 5 days. Reversion strategies work best.`
       bestStrategies = ['VWAP Reversion', 'Bollinger Bands', 'Gap & Fade']
-      avoidStrategies = ['Supertrend', 'Tuesday Momentum']
+      avoidStrategies = ['MACD Crossover', 'Tuesday Momentum']
     }
 
     // Fear & Greed

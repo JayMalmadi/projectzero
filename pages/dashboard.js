@@ -25,7 +25,6 @@ const PZ_STRATEGIES = [
   {id:'pz-tuesday', name:'Tuesday Momentum', emoji:'📅', desc:'Tue avg +0.97% BankNifty. Only fires Tue/Wed.',      symbols:['NIFTY','BANKNIFTY'],           type:'Intraday'},
   {id:'pz-gap-fade',name:'Gap and Fade',      emoji:'〰', desc:'24 gap events in 3 months. Fades gaps >0.35%.',      symbols:['NIFTY','BANKNIFTY'],           type:'Intraday'},
   {id:'pz-swing',   name:'Weak Stock Swing', emoji:'📊', desc:'IT sector weak. Short bounces to EMA21.',            symbols:['TCS','INFY','ICICIBANK'],      type:'Swing'},
-  {id:'supertrend', name:'Supertrend',        emoji:'🔺', desc:'ATR-based trend filter. Rides momentum both ways.',  symbols:['NIFTY','BANKNIFTY','RELIANCE'],type:'Intraday'},
   {id:'vwap',       name:'VWAP Reversion',   emoji:'〽', desc:'Trade with or against VWAP. Best intraday anchor.',  symbols:['NIFTY','BANKNIFTY','HDFCBANK'],type:'Intraday'},
   {id:'bollinger',  name:'Bollinger Bands',   emoji:'🎯', desc:'Squeeze breakouts and mean reversion near bands.',   symbols:['NIFTY','BANKNIFTY','SBIN'],    type:'Intraday'},
   {id:'macd',       name:'MACD Crossover',    emoji:'📈', desc:'Classic MACD signal with EMA confirmation filter.',  symbols:['NIFTY','BANKNIFTY','TCS'],     type:'Intraday'},
@@ -971,7 +970,7 @@ function ManualTradeForm({t, onSave, onClose, manForm, setManForm}) {
         {inp('entry_price','ENTRY ₹/$', '24500', 'number')}
         {inp('stop_loss', 'STOP LOSS',  '24300', 'number')}
         {inp('target',    'TARGET',     '24800', 'number')}
-        {inp('strategy',  'STRATEGY',   'Supertrend')}
+        {inp('strategy',  'STRATEGY',   'VWAP')}
       </div>
 
       <div style={{marginBottom:12}}>
@@ -2273,13 +2272,13 @@ function DayStrategyHint({t}) {
     2: { // Tuesday
       label: '📅 Best Day', color: t.green,
       tip: 'Tuesday avg +0.97% BankNifty. Best day for momentum. Tuesday Momentum strategy has highest win rate today.',
-      focus: ['Tuesday Momentum ⭐','PZ-ORB Filter','Supertrend'],
+      focus: ['Tuesday Momentum ⭐','PZ-ORB Filter','VWAP'],
       avoid: ['Gap & Fade (avoid fading strength)'],
     },
     3: { // Wednesday
       label: 'Good Day', color: t.green,
       tip: 'Wednesday second best day (+0.54% avg). Momentum strategies continue to work. Watch for trend continuation.',
-      focus: ['Supertrend','MACD Crossover','VWAP'],
+      focus: ['VWAP','MACD Crossover','Bollinger'],
       avoid: ['Mean reversion on strong trends'],
     },
     4: { // Thursday
@@ -3026,7 +3025,7 @@ function SignalLogTab({t}) {
 // ── Backtest Tab ───────────────────────────────────────────────
 function BacktestTab({t}) {
   const [sym,     setSym]    = useState('NIFTY')
-  const [strat,   setStrat]  = useState('supertrend')
+  const [strat,   setStrat]  = useState('vwap')
   const [market,  setMkt]    = useState('india')
   const [period,  setPeriod] = useState('1year')
   const [result,  setResult] = useState(null)
@@ -3035,7 +3034,7 @@ function BacktestTab({t}) {
 
   const INDIA_SYMS   = ['NIFTY','BANKNIFTY','SENSEX','TCS','INFY','RELIANCE','HDFCBANK','ICICIBANK','SBIN']
   const CRYPTO_SYMS  = ['BTC','ETH','SOL','BNB','XRP','DOGE']
-  const INDIA_STRATS = ['supertrend','vwap','bollinger','macd']
+  const INDIA_STRATS = ['vwap','bollinger','macd']
   const CRYPTO_STRATS= ['momentum','macd-cross','rsi-reversal','bb-breakout']
   const syms   = market==='crypto'?CRYPTO_SYMS:INDIA_SYMS
   const strats = market==='crypto'?CRYPTO_STRATS:INDIA_STRATS
@@ -3065,7 +3064,7 @@ function BacktestTab({t}) {
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(160px,1fr))',gap:12,marginBottom:16}}>
           <div>
             <p style={{color:t.muted,fontSize:11,fontWeight:700,marginBottom:6,letterSpacing:'0.06em'}}>MARKET</p>
-            <select value={market} onChange={e=>{setMkt(e.target.value);setSym(e.target.value==='crypto'?'BTC':'NIFTY');setStrat(e.target.value==='crypto'?'momentum':'supertrend')}}
+            <select value={market} onChange={e=>{setMkt(e.target.value);setSym(e.target.value==='crypto'?'BTC':'NIFTY');setStrat(e.target.value==='crypto'?'momentum':'vwap')}}
               style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,padding:'8px 10px',width:'100%',fontSize:13,fontFamily:'Inter,sans-serif'}}>
               <option value="india">🇮🇳 Indian</option>
               <option value="crypto">🪙 Crypto</option>
@@ -4136,7 +4135,7 @@ export default function Dashboard() {
           <div style={{background:t.card,border:`1px solid ${t.border}`,borderRadius:'0 16px 16px 16px',padding:28}}>
             {!isConn&&(tab==='signals'||tab==='positions')&&<div style={{background:dark?t.blue+'0d':t.blue+'0a',border:`1px solid ${t.blue}33`,borderRadius:16,padding:18,marginBottom:24,display:'flex',alignItems:'center',justifyContent:'space-between',gap:16}}><div><p style={{color:t.blue,fontWeight:700,fontSize:14}}>🔐 Login with Zerodha for live data & 1-click execution</p><p style={{color:t.muted,fontSize:12,marginTop:3}}>Live prices · Real positions · Auto stop loss · SL + Target in one click</p></div><button onClick={()=>loginUrl&&window.location.assign(loginUrl)} style={{padding:'10px 22px',background:`linear-gradient(135deg,${t.green},${t.teal})`,border:'none',borderRadius:12,color:'#fff',fontWeight:700,cursor:'pointer',fontSize:13,fontFamily:'Inter,sans-serif',flexShrink:0,boxShadow:`0 4px 20px ${t.green}33`}}>Connect Now →</button></div>}
 
-            {tab==='signals'&&<div><MarketStatusBanner t={t}/><DayStrategyHint t={t}/><div style={{marginBottom:18,display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}><div><h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Live Signals</h2><p style={{color:t.muted,fontSize:13,marginTop:5}}>8 PZ strategies · ORB, Momentum, Supertrend, VWAP, Bollinger, MACD</p></div></div><MarketRegimeBanner t={t}/><NewsBar t={t} market='india'/><div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(min(340px,100%),1fr))',gap:20,marginTop:20}}>{PZ_STRATEGIES.map(s=><SignalCard key={s.id} strat={s} at={at} onTrade={()=>setTr(r=>r+1)} t={t} aiMode={aiMode}/>)}</div></div>}
+            {tab==='signals'&&<div><MarketStatusBanner t={t}/><DayStrategyHint t={t}/><div style={{marginBottom:18,display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}><div><h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Live Signals</h2><p style={{color:t.muted,fontSize:13,marginTop:5}}>7 PZ strategies · ORB, Momentum, VWAP, Bollinger, MACD</p></div></div><MarketRegimeBanner t={t}/><NewsBar t={t} market='india'/><div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(min(340px,100%),1fr))',gap:20,marginTop:20}}>{PZ_STRATEGIES.map(s=><SignalCard key={s.id} strat={s} at={at} onTrade={()=>setTr(r=>r+1)} t={t} aiMode={aiMode}/>)}</div></div>}
             {tab==='crypto'&&<CryptoTab t={t} aiMode={aiMode} />}
             {tab==='alerts'&&<AlertsTab t={t}/>}
             {tab==='performance'&&<PerformanceTab t={t} setTab={setTab}/>}

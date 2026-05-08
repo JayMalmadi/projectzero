@@ -91,7 +91,7 @@ Structure it exactly like this:
 [2-3 sentences: Based on global cues, how will NIFTY likely open? Gap up or down? Which sectors look strong or weak today?]
 
 🎯 TODAY'S TRADING PLAN
-[Specific plan: Which of these strategies to focus on today: PZ-ORB Filter, Tuesday Momentum, Gap & Fade, Weak Stock Swing, Supertrend, VWAP, Bollinger, MACD. Give specific reasons based on today's data. Be very specific - e.g. "Gap & Fade likely if NIFTY opens +0.5% or more given overnight US rally"]
+[Specific plan: Which of these strategies to focus on today: PZ-ORB Filter, Tuesday Momentum, Gap & Fade, Weak Stock Swing, VWAP, Bollinger, MACD. Give specific reasons based on today's data. Be very specific - e.g. "Gap & Fade likely if NIFTY opens +0.5% or more given overnight US rally"]
 
 ⚠️ KEY RISKS TODAY
 [2 specific risk factors to watch — events, levels, or global factors that could hurt trades]

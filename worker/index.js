@@ -122,7 +122,6 @@ async function checkSignals() {
     strategies.push(
       { symbol:'NIFTY',     strategy:'pz-orb',      market:'india',  minConf:65 },
       { symbol:'BANKNIFTY', strategy:'pz-tuesday',   market:'india',  minConf:60 },
-      { symbol:'NIFTY',     strategy:'supertrend',   market:'india',  minConf:65 },
       { symbol:'BANKNIFTY', strategy:'vwap',         market:'india',  minConf:60 },
       { symbol:'NIFTY',     strategy:'bollinger',    market:'india',  minConf:65 },
       { symbol:'TCS',       strategy:'macd',         market:'india',  minConf:65 },

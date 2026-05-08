@@ -217,31 +217,6 @@ export default async function handler(req, res) {
     }
 
     // ════════════════════════════════════════════════════════════
-    // STRATEGY 5: Supertrend
-    // ════════════════════════════════════════════════════════════
-    else if (strategy === 'supertrend') {
-      const mult = 3
-      const upperBand = ((highs[highs.length-1]||0)+(lows[lows.length-1]||0))/2 + mult*ATR
-      const lowerBand = ((highs[highs.length-1]||0)+(lows[lows.length-1]||0))/2 - mult*ATR
-      const bullish   = price > lowerBand && EMA9 > EMA21
-      const bearish   = price < upperBand && EMA9 < EMA21
-
-      if (bullish && RSI>50 && RSI<75) {
-        signal='BUY'; confidence=71
-        stopLoss=parseFloat((lowerBand).toFixed(2))
-        target  =parseFloat((price+ATR*3).toFixed(2))
-        reason  =`Supertrend bullish. Price above lower band ${lowerBand?.toFixed(0)}. ATR ${ATR?.toFixed(1)} confirms momentum. RSI ${RSI}.`
-      } else if (bearish && RSI<50 && RSI>25) {
-        signal='SELL'; confidence=69
-        stopLoss=parseFloat((upperBand).toFixed(2))
-        target  =parseFloat((price-ATR*3).toFixed(2))
-        reason  =`Supertrend bearish. Price below upper band ${upperBand?.toFixed(0)}. ATR ${ATR?.toFixed(1)}. RSI ${RSI}.`
-      } else {
-        reason=`Supertrend neutral. ATR: ${ATR?.toFixed(1)}. RSI ${RSI}. Bands: ${lowerBand?.toFixed(0)}-${upperBand?.toFixed(0)}.`
-      }
-    }
-
-    // ════════════════════════════════════════════════════════════
     // STRATEGY 6: VWAP Reversion
     // ════════════════════════════════════════════════════════════
     else if (strategy === 'vwap') {

@@ -158,7 +158,6 @@ export default async function handler(req, res) {
 
       let signal = null, stopLoss = null, target = null
 
-      if (strategy === 'supertrend' || strategy === 'momentum') {
         const bullish = ema9v > ema21v && ema21v > ema50v && rsiVal > 50 && rsiVal < 72 && macdLine > 0 && macdLine > prevMacd
         const bearish = ema9v < ema21v && ema21v < ema50v && rsiVal < 50 && rsiVal > 28 && macdLine < 0 && macdLine < prevMacd
         if (bullish) {
