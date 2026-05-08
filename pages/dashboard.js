@@ -133,11 +133,15 @@ function PZChart({symbol, t, h=420, accessToken, market='india'}) {
     setLast(clean[clean.length - 1])
     lastFetch.current = Date.now()
     canvasData.current = clean
+    // Store S/R synchronously so buildChart can access immediately
+    const srResult = { support: d.support || [], resistance: d.resistance || [] }
+    if (d.support || d.resistance) setSRLevels(srResult)
+    window._pzSR = srResult
     return clean
   }
 
   // ── Build chart ──────────────────────────────────────────────
-  function buildChart(candles) {
+  function buildChart(candles, srData) {
     if (!chartRef.current) return
     if (!window.LightweightCharts) { setErrMsg('Chart library failed to load. Refresh page.'); setStatus('error'); return }
 
@@ -202,7 +206,7 @@ function PZChart({symbol, t, h=420, accessToken, market='india'}) {
     chart.timeScale().fitContent()
 
     // Draw S/R levels as horizontal lines
-    const srData = srLevels
+    if (!srData) srData = { support:[], resistance:[] }
     for (const sup of (srData.support || []).slice(0, 3)) {
       try {
         const line = cSer.createPriceLine({
@@ -244,7 +248,9 @@ function PZChart({symbol, t, h=420, accessToken, market='india'}) {
     try {
       await loadLWC()          // ensure library is ready FIRST
       const candles = await fetchCandles()
-      buildChart(candles)      // now safe to build
+      // fetchCandles sets srLevels state but we need the raw value here
+      // so we read from canvasData and pass directly
+      buildChart(candles, window._pzSR || { support:[], resistance:[] })
       setStatus('ready')
     } catch(e) {
       console.error('[PZChart]', e.message)
@@ -287,7 +293,7 @@ function PZChart({symbol, t, h=420, accessToken, market='india'}) {
   // ── Theme change: rebuild chart with same data ────────────────
   useEffect(() => {
     if (status === 'ready' && canvasData.current.length) {
-      buildChart(canvasData.current)
+      buildChart(canvasData.current, window._pzSR)
     }
   }, [t])
 
