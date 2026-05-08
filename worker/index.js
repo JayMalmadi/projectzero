@@ -15,6 +15,18 @@ const CONFIG = {
   PORT:               process.env.PORT || 3001,
   PAPER_TRADE_MIN_CONFIDENCE: 65,  // Only paper trade signals >= 65% confidence
   PAPER_TRADE_ENABLED: true,
+
+  // ── Position Sizing ────────────────────────────────────────
+  // Paper trading capital (simulated) — used for position sizing
+  PAPER_CAPITAL_USD:        1000,   // Crypto paper capital in USD
+  PAPER_CAPITAL_INR:        50000,  // India paper capital in INR
+  RISK_PER_TRADE_PCT:       1.5,    // Risk 1.5% of capital per trade
+  MAX_POSITION_PCT:         10,     // Never more than 10% of capital in one trade
+
+  // ── Trailing Stop Loss ─────────────────────────────────────
+  TRAILING_SL_ENABLED:      true,
+  TRAILING_SL_ACTIVATE_PCT: 1.0,   // Activate trailing SL once 1% in profit
+  TRAILING_SL_TRAIL_PCT:    0.5,   // Trail SL 0.5% below highest price reached
 }
 
 // Get Kite access token from Supabase (stored when user logs in)
@@ -111,6 +123,29 @@ function getTimeStr() {
   return `${n.getHours().toString().padStart(2,'0')}:${n.getMinutes().toString().padStart(2,'0')}`
 }
 
+
+// ── Position Sizing ───────────────────────────────────────────
+// Calculates quantity based on risk % of capital
+// Risk-based sizing: quantity = (capital × riskPct) / (entry - stopLoss)
+function calcPositionSize(entryPrice, stopLoss, market) {
+  try {
+    const capital    = market === 'india' ? CONFIG.PAPER_CAPITAL_INR : CONFIG.PAPER_CAPITAL_USD
+    const riskAmt    = capital * (CONFIG.RISK_PER_TRADE_PCT / 100)  // e.g. ₹750
+    const slDistance = Math.abs(entryPrice - stopLoss)
+    if (!slDistance || slDistance <= 0) return 1
+
+    let qty = Math.floor(riskAmt / slDistance)
+
+    // Cap at MAX_POSITION_PCT of capital
+    const maxQty = Math.floor((capital * CONFIG.MAX_POSITION_PCT / 100) / entryPrice)
+    qty = Math.min(qty, maxQty)
+
+    return Math.max(qty, 1)  // always at least 1
+  } catch {
+    return 1
+  }
+}
+
 // ── Signal monitoring ─────────────────────────────────────────
 const FIRED_SIGNALS = new Set() // prevent duplicate alerts
 
@@ -128,13 +163,17 @@ async function checkSignals() {
     )
   }
 
-  // Crypto strategies (24/7)
+  // Crypto strategies (24/7) — paper trades only, no real orders
   strategies.push(
     { symbol:'BTC', strategy:'momentum',     market:'crypto', minConf:70 },
     { symbol:'ETH', strategy:'macd-cross',   market:'crypto', minConf:70 },
     { symbol:'SOL', strategy:'rsi-reversal', market:'crypto', minConf:70 },
     { symbol:'XRP', strategy:'rsi-reversal', market:'crypto', minConf:75 },
     { symbol:'BTC', strategy:'macd-cross',   market:'crypto', minConf:72 },
+    // Delta Exchange perpetual futures — paper only
+    { symbol:'BTC', strategy:'momentum',     market:'delta',  minConf:72 },
+    { symbol:'ETH', strategy:'macd-cross',   market:'delta',  minConf:72 },
+    { symbol:'SOL', strategy:'rsi-reversal', market:'delta',  minConf:75 },
   )
 
   for (const s of strategies) {
@@ -205,7 +244,7 @@ ${data.reason?.slice(0,120)}
             target:      data.target,
             rr:          data.rr,
             confidence:  data.confidence,
-            quantity:    1,
+            quantity:    calcPositionSize(data.price, data.stopLoss, s.market),
             notes: `Auto paper trade | ${data.reason?.slice(0,100)}`,
           })
           if (ptResult.created) {
@@ -496,6 +535,35 @@ async function monitorPaperTrades() {
         const currentPrice = allPrices[trade.symbol]?.price || null
 
         if (!currentPrice) continue
+
+        // ── Trailing Stop Loss ──────────────────────────────
+        if (CONFIG.TRAILING_SL_ENABLED && trade.stop_loss && trade.entry_price) {
+          const profitPct = trade.direction === 'BUY'
+            ? (currentPrice - trade.entry_price) / trade.entry_price * 100
+            : (trade.entry_price - currentPrice) / trade.entry_price * 100
+
+          // Activate once trade is in profit by TRAILING_SL_ACTIVATE_PCT
+          if (profitPct >= CONFIG.TRAILING_SL_ACTIVATE_PCT) {
+            const trailAmt = currentPrice * (CONFIG.TRAILING_SL_TRAIL_PCT / 100)
+            const newSL = trade.direction === 'BUY'
+              ? currentPrice - trailAmt
+              : currentPrice + trailAmt
+
+            // Only move SL in favour — never widen it
+            const shouldUpdate = trade.direction === 'BUY'
+              ? newSL > trade.stop_loss
+              : newSL < trade.stop_loss
+
+            if (shouldUpdate) {
+              await fetch(`${CONFIG.DASHBOARD_URL}/api/paper-trades`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: trade.id, stop_loss: parseFloat(newSL.toFixed(4)) })
+              })
+              console.log(`[TrailingSL] ${trade.symbol} SL moved to ${newSL.toFixed(4)}`)
+            }
+          }
+        }
 
         const slHit  = trade.stop_loss && (
           trade.direction === 'BUY'  ? currentPrice <= trade.stop_loss :
