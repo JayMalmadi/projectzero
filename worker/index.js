@@ -762,9 +762,8 @@ server.listen(CONFIG.PORT, () => {
 fetch('https://api.ipify.org?format=json')
   .then(r => r.json())
   .then(d => {
-    console.log(`[Worker] Outbound IP: ${d.ip}`)
-    sendTelegram(`🌐 Railway IP: <code>${d.ip}</code>
-Whitelist this on Delta Exchange API key.`).catch(()=>{})
+    console.log(`[Worker] Outbound IP: ${d.ip} (Railway — variable, not used for Delta)`)
+    // No Telegram alert — Railway IP changes on every deploy, Hetzner (178.105.45.73) is the fixed IP
   }).catch(()=>{})
 
 sendTelegram(`🚀 <b>Projectzero Worker v2 Started</b>
