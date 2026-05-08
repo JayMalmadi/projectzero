@@ -2279,6 +2279,35 @@ function OptionsTab({t, defaultSymbol}) {
             ))}
           </div>
 
+          {/* PCR Sentiment Banner */}
+          {data.pcr && (
+            <div style={{padding:'10px 16px',borderRadius:10,marginBottom:12,
+              background: data.pcr > 1.2 ? t.green+'18' : data.pcr < 0.8 ? t.red+'18' : t.amber+'18',
+              border: `1px solid ${data.pcr > 1.2 ? t.green+'44' : data.pcr < 0.8 ? t.red+'44' : t.amber+'44'}`,
+              display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:8}}>
+              <div style={{display:'flex',alignItems:'center',gap:10}}>
+                <span style={{fontSize:20}}>{data.pcr > 1.2 ? '🐂' : data.pcr < 0.8 ? '🐻' : '⚖️'}</span>
+                <div>
+                  <p style={{fontWeight:800,color:t.text,fontSize:13}}>
+                    PCR {data.pcr} — {data.pcrSentiment}
+                  </p>
+                  <p style={{color:t.muted,fontSize:11}}>
+                    {data.pcr > 1.2 ? 'Put writing dominant — institutional support. Bullish lean.' :
+                     data.pcr < 0.8 ? 'Call writing dominant — resistance building. Bearish lean.' :
+                     'Balanced — rangebound. Wait for directional breakout.'}
+                  </p>
+                </div>
+              </div>
+              <div style={{textAlign:'right',flexShrink:0}}>
+                <p style={{color:t.muted,fontSize:9,fontWeight:700}}>MAX PAIN</p>
+                <p style={{color:t.text,fontWeight:900,fontSize:15,fontFamily:'JetBrains Mono,monospace'}}>
+                  ₹{data.maxPain?.toLocaleString('en-IN')}
+                </p>
+                <p style={{color:t.muted,fontSize:9}}>highlighted below ↓</p>
+              </div>
+            </div>
+          )}
+
           {/* Expiry selector */}
           {data?.expiries && data.expiries.length > 1 && (
             <div style={{marginBottom:16}}>
@@ -2319,7 +2348,9 @@ function OptionsTab({t, defaultSymbol}) {
             </div>
             {data.chain.map(row=>(
               <div key={row.strike}
-                style={{display:'grid',gridTemplateColumns:'0.8fr 0.5fr 0.5fr 0.5fr 0.6fr 0.7fr 0.6fr 0.5fr 0.5fr 0.5fr 0.8fr',gap:0,padding:'7px 16px',borderBottom:`1px solid ${t.border}22`,fontSize:11,minWidth:780,background:row.isATM?t.accentC+'08':'transparent'}}>
+                style={{display:'grid',gridTemplateColumns:'0.8fr 0.5fr 0.5fr 0.5fr 0.6fr 0.7fr 0.6fr 0.5fr 0.5fr 0.5fr 0.8fr',gap:0,padding:'7px 16px',borderBottom:`1px solid ${t.border}22`,fontSize:11,minWidth:780,
+                background:row.strike===data.maxPain?t.amber+'15':row.isATM?t.accentC+'08':'transparent',
+                boxShadow:row.strike===data.maxPain?`inset 0 0 0 1px ${t.amber}44`:'none'}}>
                 <span style={{color:t.green,fontFamily:'monospace',fontWeight:row.isATM?700:400}}>{fmtOI(row.call?.oi||0)}</span>
                 <span style={{color:t.green,fontFamily:'monospace',fontSize:10}}>{row.call?.delta!=null?row.call.delta.toFixed(2):'—'}</span>
                 <span style={{color:t.red,fontFamily:'monospace',fontSize:10}}>{row.call?.theta!=null?row.call.theta.toFixed(1):'—'}</span>
@@ -2470,102 +2501,225 @@ function AlertsTab({t}) {
 }
 
 // ── Performance Tab — Strategy Stats ──────────────────────────
-function PerformanceTab({t, setTab}) {
+function PerformanceTab({t}) {
   const [data,    setData]    = useState(null)
   const [loading, setLoading] = useState(true)
+  const [period,  setPeriod]  = useState(30)
 
-  useEffect(()=>{load()},[])
+  useEffect(() => { load() }, [period])
 
-  async function load(){
+  async function load() {
     setLoading(true)
-    try{const r=await fetch('/api/strategy-performance');const d=await r.json();setData(d)}catch{}
+    try {
+      const r = await fetch(`/api/paper-trades?days=${period}`)
+      const d = await r.json()
+      setData(d)
+    } catch {}
     setLoading(false)
   }
 
-  const fmtPnl = (n) => {
-    const v = parseFloat(n||0)
-    return <span style={{color:v>0?t.green:v<0?t.red:t.muted,fontWeight:700,fontFamily:'monospace'}}>{v>0?'+':''}{v.toFixed(2)}</span>
+  const fmtPct = (n, base='₹10k') => {
+    const v = parseFloat(n || 0)
+    return <span style={{color:v>0?t.green:v<0?t.red:t.muted,fontWeight:700,fontFamily:'JetBrains Mono,monospace'}}>
+      {v>0?'+':''}{v.toFixed(2)}%
+    </span>
   }
+
+  const stats = data?.stats || {}
+  const monthly = data?.monthly || {}
+  const analytics = data?.analytics || {}
 
   return (
     <div>
-      <div style={{marginBottom:20,display:'flex',justifyContent:'space-between',alignItems:'flex-start',flexWrap:'wrap',gap:12}}>
+      {/* Header */}
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20,flexWrap:'wrap',gap:12}}>
         <div>
-          <h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Strategy Performance</h2>
-          <p style={{color:t.muted,fontSize:13,marginTop:5}}>Win rates and P&L per strategy — based on your closed trades</p>
+          <h2 style={{fontSize:22,fontWeight:900,color:t.text}}>📊 Performance</h2>
+          <p style={{color:t.muted,fontSize:13,marginTop:4}}>
+            Base: ₹10,000 (India) · $1,000 (Crypto) · Risk 1%/trade · TradingView signals only
+          </p>
         </div>
-        <button onClick={()=>setTab('backtest')}
-          style={{padding:'9px 18px',background:'linear-gradient(135deg,#ff6600,#ff9500)',border:'none',borderRadius:10,color:'#fff',fontWeight:700,cursor:'pointer',fontFamily:'Inter,sans-serif',fontSize:13,boxShadow:'0 4px 14px #ff660033',flexShrink:0}}>
-          🔬 Run Backtest →
-        </button>
+        <div style={{display:'flex',gap:6}}>
+          {[7,30,90].map(d => (
+            <button key={d} onClick={() => setPeriod(d)}
+              style={{padding:'6px 14px',borderRadius:8,border:`1px solid ${period===d?t.accentC:t.border}`,
+                background:period===d?t.accentC+'22':t.surface,
+                color:period===d?t.accentC:t.muted,
+                fontWeight:period===d?700:400,cursor:'pointer',fontSize:12,fontFamily:'Inter,sans-serif'}}>
+              {d}D
+            </button>
+          ))}
+          <button onClick={load} style={{padding:'6px 10px',borderRadius:8,border:`1px solid ${t.border}`,
+            background:'none',color:t.muted,cursor:'pointer',fontSize:13}}>↻</button>
+        </div>
       </div>
 
-      {loading&&<div style={{textAlign:'center',padding:40}}><div style={{width:32,height:32,border:`3px solid ${t.border}`,borderTopColor:t.blue,borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'0 auto 12px'}}/><p style={{color:t.muted}}>Calculating performance...</p></div>}
+      {loading && (
+        <div style={{textAlign:'center',padding:60}}>
+          <div style={{width:32,height:32,border:`3px solid ${t.border}`,borderTopColor:t.accentC,
+            borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'0 auto 12px'}}/>
+          <p style={{color:t.muted}}>Loading analytics...</p>
+        </div>
+      )}
 
-      {!loading&&data&&(
-        <>
-          {/* Overall stats */}
-          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(140px,1fr))',gap:12,marginBottom:24}}>
+      {!loading && data && (
+        <div style={{display:'flex',flexDirection:'column',gap:16}}>
+
+          {/* Key metrics */}
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(130px,1fr))',gap:10}}>
             {[
-              {l:'TOTAL TRADES', v:data.overall.totalTrades, c:t.text},
-              {l:'WIN RATE',     v:`${data.overall.winRate}%`, c:data.overall.winRate>50?t.green:t.red},
-              {l:'TOTAL P&L',   v:`₹${data.overall.totalPnl}`, c:data.overall.totalPnl>0?t.green:t.red},
-              {l:'AVG P&L',     v:`₹${data.overall.avgPnl}`, c:data.overall.avgPnl>0?t.green:t.red},
-            ].map(x=>(
-              <div key={x.l} style={{background:t.card,borderRadius:14,padding:'16px',border:`1px solid ${t.border}`,textAlign:'center'}}>
-                <p style={{color:t.muted,fontSize:10,fontWeight:700,letterSpacing:'0.08em',marginBottom:6}}>{x.l}</p>
-                <p style={{color:x.c,fontSize:20,fontWeight:900,fontFamily:'monospace'}}>{x.v}</p>
+              {l:'CLOSED TRADES', v:stats.closed||0,           c:t.text},
+              {l:'WIN RATE',      v:`${stats.winRate||0}%`,     c:parseFloat(stats.winRate||0)>50?t.green:t.red},
+              {l:'TOTAL P&L',     v:null, pct:monthly.total_pnl_pct||0},
+              {l:'EXPECTANCY',    v:null, pct:parseFloat(stats.expectancy||0)},
+              {l:'MAX DRAWDOWN',  v:`-${(stats.maxDrawdown||0).toFixed(2)}%`, c:t.red},
+              {l:'BEST STREAK',   v:`${stats.maxWinStreak||0}W`, c:t.green},
+              {l:'AVG WIN',       v:null, pct:parseFloat(stats.avgWin||0)},
+              {l:'AVG LOSS',      v:null, pct:parseFloat(stats.avgLoss||0)},
+            ].map(x => (
+              <div key={x.l} style={{background:t.card,borderRadius:12,padding:'12px 14px',
+                border:`1px solid ${t.border}`,textAlign:'center'}}>
+                <p style={{color:t.muted,fontSize:9,fontWeight:700,letterSpacing:'0.06em',marginBottom:6}}>{x.l}</p>
+                {x.pct !== undefined
+                  ? <p style={{fontSize:16,fontWeight:900}}>{fmtPct(x.pct)}</p>
+                  : <p style={{color:x.c||t.text,fontSize:16,fontWeight:900,fontFamily:'JetBrains Mono,monospace'}}>{x.v}</p>
+                }
               </div>
             ))}
           </div>
 
-          {/* By strategy */}
-          {data.byStrategy.length > 0 ? (
-            <div style={{background:t.card,borderRadius:20,border:`1px solid ${t.border}`,overflow:'hidden'}}>
-              <div style={{padding:'16px 22px',borderBottom:`1px solid ${t.border}`}}>
-                <p style={{fontWeight:700,color:t.text}}>By Strategy</p>
+          {/* Strategy leaderboard */}
+          {monthly.strategies_ranked?.length > 0 ? (
+            <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,overflow:'hidden'}}>
+              <div style={{padding:'12px 16px',borderBottom:`1px solid ${t.border}`,
+                display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                <p style={{fontWeight:700,color:t.text,fontSize:14}}>🏆 Strategy Leaderboard</p>
+                <p style={{color:t.muted,fontSize:11}}>Ranked by P&L% of ₹10k base</p>
               </div>
-              {data.byStrategy.map(s=>(
-                <div key={s.strategy} style={{padding:'16px 22px',borderBottom:`1px solid ${t.border}`}}>
-                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',flexWrap:'wrap',gap:10}}>
-                    <div>
-                      <p style={{fontWeight:700,color:t.text,marginBottom:4}}>{s.strategy}</p>
-                      <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-                        <span style={{color:t.muted,fontSize:12}}>{s.trades} trades</span>
-                        <span style={{color:t.green,fontSize:12,fontWeight:600}}>{s.wins}W</span>
-                        <span style={{color:t.red,fontSize:12,fontWeight:600}}>{s.losses}L</span>
-                      </div>
+              {monthly.strategies_ranked.map((s, i) => (
+                <div key={s.name} style={{padding:'12px 16px',borderBottom:`1px solid ${t.border}22`,
+                  display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
+                  <span style={{color:t.muted,fontWeight:700,fontSize:13,minWidth:24}}>#{i+1}</span>
+                  <div style={{flex:1,minWidth:120}}>
+                    <p style={{fontWeight:700,color:t.text,fontSize:13}}>{s.name}</p>
+                    <p style={{color:t.muted,fontSize:11}}>{s.market} · {s.total} trades · {s.winRate}% WR</p>
+                  </div>
+                  <div style={{display:'flex',gap:16,alignItems:'center'}}>
+                    <div style={{textAlign:'right'}}>
+                      <p style={{color:t.muted,fontSize:9,fontWeight:600}}>P&L%</p>
+                      <p style={{fontSize:15,fontWeight:900}}>{fmtPct(s.pnl_pct)}</p>
                     </div>
-                    <div style={{display:'flex',gap:16,alignItems:'center',flexWrap:'wrap'}}>
-                      <div style={{textAlign:'right'}}>
-                        <p style={{color:t.muted,fontSize:10,fontWeight:600}}>WIN RATE</p>
-                        <p style={{color:s.winRate>50?t.green:t.red,fontWeight:800,fontSize:18}}>{s.winRate}%</p>
-                      </div>
-                      <div style={{textAlign:'right'}}>
-                        <p style={{color:t.muted,fontSize:10,fontWeight:600}}>TOTAL P&L</p>
-                        <p style={{fontWeight:800,fontSize:16}}>{fmtPnl(s.totalPnl)}</p>
-                      </div>
-                      <div style={{textAlign:'right'}}>
-                        <p style={{color:t.muted,fontSize:10,fontWeight:600}}>AVG/TRADE</p>
-                        <p style={{fontWeight:700,fontSize:14}}>{fmtPnl(s.avgPnl)}</p>
-                      </div>
+                    <div style={{textAlign:'right'}}>
+                      <p style={{color:t.muted,fontSize:9,fontWeight:600}}>AVG R:R</p>
+                      <p style={{color:t.text,fontSize:13,fontWeight:700,fontFamily:'JetBrains Mono,monospace'}}>
+                        {s.avgRR > 0 ? `1:${s.avgRR}` : '—'}
+                      </p>
                     </div>
                   </div>
                   {/* Win rate bar */}
-                  <div style={{marginTop:10,height:5,background:t.surface,borderRadius:3,overflow:'hidden'}}>
-                    <div style={{height:'100%',width:`${s.winRate}%`,background:s.winRate>60?t.green:s.winRate>40?t.amber:t.red,borderRadius:3,transition:'width 0.5s'}}/>
+                  <div style={{width:'100%',height:4,background:t.surface,borderRadius:2,overflow:'hidden'}}>
+                    <div style={{height:'100%',width:`${s.winRate}%`,borderRadius:2,
+                      background:s.winRate>60?t.green:s.winRate>40?t.amber:t.red,
+                      transition:'width 0.6s'}}/>
                   </div>
                 </div>
               ))}
             </div>
           ) : (
-            <div style={{background:t.card,borderRadius:20,padding:40,border:`1px solid ${t.border}`,textAlign:'center'}}>
+            <div style={{background:t.card,borderRadius:14,padding:40,border:`1px solid ${t.border}`,textAlign:'center'}}>
               <p style={{fontSize:32,marginBottom:12}}>📊</p>
-              <p style={{color:t.text,fontWeight:700,fontSize:16,marginBottom:8}}>No closed trades yet</p>
-              <p style={{color:t.muted,fontSize:13}}>Execute and close trades to see strategy performance stats here.</p>
+              <p style={{color:t.text,fontWeight:700,marginBottom:8}}>No closed trades yet</p>
+              <p style={{color:t.muted,fontSize:13}}>
+                Waiting for TradingView signals to fire and trades to close.
+                <br/>Monday 9:15 AM IST — NIFTY signals will start.
+              </p>
             </div>
           )}
-        </>
+
+          {/* Best time of day */}
+          {analytics.byHour?.length > 0 && (
+            <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,overflow:'hidden'}}>
+              <div style={{padding:'12px 16px',borderBottom:`1px solid ${t.border}`}}>
+                <p style={{fontWeight:700,color:t.text,fontSize:14}}>⏰ Best Time of Day (IST)</p>
+              </div>
+              <div style={{padding:'12px 16px',display:'flex',gap:8,flexWrap:'wrap'}}>
+                {analytics.byHour.map(h => (
+                  <div key={h.hour} style={{textAlign:'center',padding:'8px 12px',borderRadius:8,
+                    background:h.winRate>60?t.green+'18':h.winRate<40?t.red+'18':t.surface,
+                    border:`1px solid ${h.winRate>60?t.green+'44':h.winRate<40?t.red+'44':t.border}`}}>
+                    <p style={{color:t.muted,fontSize:9,fontWeight:600}}>{h.hourIST}</p>
+                    <p style={{color:t.text,fontSize:13,fontWeight:700}}>{h.winRate}%</p>
+                    <p style={{color:t.muted,fontSize:9}}>{h.count} trades</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Best day of week */}
+          {analytics.byDay?.length > 0 && (
+            <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,overflow:'hidden'}}>
+              <div style={{padding:'12px 16px',borderBottom:`1px solid ${t.border}`}}>
+                <p style={{fontWeight:700,color:t.text,fontSize:14}}>📅 Best Day of Week</p>
+              </div>
+              <div style={{padding:'12px 16px',display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:6}}>
+                {analytics.byDay.map(d => (
+                  <div key={d.day} style={{textAlign:'center',padding:'8px 4px',borderRadius:8,
+                    background:d.winRate>60?t.green+'18':d.winRate<40&&d.count>0?t.red+'18':t.surface,
+                    border:`1px solid ${d.winRate>60?t.green+'44':t.border}`}}>
+                    <p style={{color:t.text,fontSize:12,fontWeight:700}}>{d.day}</p>
+                    <p style={{color:d.winRate>50?t.green:d.count>0?t.red:t.muted,fontSize:12,fontWeight:700}}>
+                      {d.count > 0 ? d.winRate+'%' : '—'}
+                    </p>
+                    <p style={{color:t.muted,fontSize:9}}>{d.count>0?d.count+' trades':''}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Equity curve */}
+          {analytics.equity?.length > 1 && (
+            <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,overflow:'hidden'}}>
+              <div style={{padding:'12px 16px',borderBottom:`1px solid ${t.border}`}}>
+                <p style={{fontWeight:700,color:t.text,fontSize:14}}>📈 Equity Curve (Cumulative P&L%)</p>
+              </div>
+              <div style={{padding:'16px',overflowX:'auto'}}>
+                {(() => {
+                  const eq = analytics.equity
+                  const min = Math.min(...eq.map(e=>e.pnl), 0)
+                  const max = Math.max(...eq.map(e=>e.pnl), 0)
+                  const range = max - min || 1
+                  const W = 400, H = 80
+                  const pts = eq.map((e,i) => {
+                    const x = (i/(eq.length-1))*W
+                    const y = H - ((e.pnl - min)/range)*H
+                    return `${x},${y}`
+                  }).join(' ')
+                  const lastPnl = eq[eq.length-1].pnl
+                  return (
+                    <div>
+                      <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:80}}>
+                        <polyline points={pts} fill="none"
+                          stroke={lastPnl>=0?t.green:t.red} strokeWidth="2"/>
+                        <line x1="0" y1={H-((0-min)/range)*H} x2={W} y2={H-((0-min)/range)*H}
+                          stroke={t.border} strokeWidth="1" strokeDasharray="4,4"/>
+                      </svg>
+                      <div style={{display:'flex',justifyContent:'space-between',marginTop:4}}>
+                        <p style={{color:t.muted,fontSize:10}}>{eq[0].date}</p>
+                        <p style={{color:lastPnl>=0?t.green:t.red,fontSize:11,fontWeight:700}}>
+                          {lastPnl>=0?'+':''}{lastPnl.toFixed(2)}% cumulative
+                        </p>
+                        <p style={{color:t.muted,fontSize:10}}>{eq[eq.length-1].date}</p>
+                      </div>
+                    </div>
+                  )
+                })()}
+              </div>
+            </div>
+          )}
+
+        </div>
       )}
     </div>
   )

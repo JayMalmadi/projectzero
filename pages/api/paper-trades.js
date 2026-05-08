@@ -87,6 +87,65 @@ export default async function handler(req, res) {
         .map(([name, st]) => ({ name, ...st })),
     }
 
+    // ── Time-based analysis ───────────────────────────────────
+    // Best/worst hour of day and day of week from closed trades
+    const byHour = {}
+    const byDay  = { Mon:[], Tue:[], Wed:[], Thu:[], Fri:[], Sat:[], Sun:[] }
+    const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
+
+    for (const t of closed) {
+      if (!t.opened_at) continue
+      const dt  = new Date(t.opened_at)
+      const hr  = dt.getUTCHours()  // UTC hour
+      const day = dayNames[dt.getUTCDay()]
+      const pct = t.pnl_pct || 0
+
+      if (!byHour[hr]) byHour[hr] = { wins:0, losses:0, pnl:0, count:0 }
+      byHour[hr].count++
+      byHour[hr].pnl += pct
+      if (t.status === 'WIN') byHour[hr].wins++
+      else byHour[hr].losses++
+
+      if (byDay[day]) byDay[day].push(pct)
+    }
+
+    const hourStats = Object.entries(byHour).map(([h, s]) => ({
+      hour:    parseInt(h),
+      hourIST: ((parseInt(h) + 5) % 24) + ':' + (30 > 9 ? '30' : '30'),
+      count:   s.count,
+      winRate: s.count > 0 ? Math.round(s.wins/s.count*100) : 0,
+      avgPnl:  s.count > 0 ? parseFloat((s.pnl/s.count).toFixed(2)) : 0,
+    })).sort((a,b) => a.hour - b.hour)
+
+    const dayStats = Object.entries(byDay).map(([day, pnls]) => ({
+      day,
+      count:   pnls.length,
+      avgPnl:  pnls.length > 0 ? parseFloat((pnls.reduce((a,b)=>a+b,0)/pnls.length).toFixed(2)) : 0,
+      winRate: pnls.length > 0 ? Math.round(pnls.filter(p=>p>0).length/pnls.length*100) : 0,
+    }))
+
+    // ── Drawdown calculation ──────────────────────────────────
+    let peak = 0, maxDrawdown = 0, runningPnl = 0
+    const equity = []
+    for (const t of closed.sort((a,b) => new Date(a.closed_at)-new Date(b.closed_at))) {
+      runningPnl += t.pnl_pct || 0
+      equity.push({ date: t.closed_at?.split('T')[0], pnl: parseFloat(runningPnl.toFixed(2)) })
+      if (runningPnl > peak) peak = runningPnl
+      const dd = peak - runningPnl
+      if (dd > maxDrawdown) maxDrawdown = dd
+    }
+
+    // ── Streak analysis ───────────────────────────────────────
+    let curStreak = 0, maxWinStreak = 0, maxLossStreak = 0
+    let lastResult = null
+    for (const t of closed.sort((a,b) => new Date(a.closed_at)-new Date(b.closed_at))) {
+      const res = t.status === 'WIN' ? 'W' : 'L'
+      if (res === lastResult) { curStreak++ }
+      else { curStreak = 1; lastResult = res }
+      if (res === 'W' && curStreak > maxWinStreak)  maxWinStreak  = curStreak
+      if (res === 'L' && curStreak > maxLossStreak) maxLossStreak = curStreak
+    }
+
     return res.status(200).json({
       trades: all,
       open:   all.filter(t => t.status === 'OPEN'),
@@ -94,9 +153,16 @@ export default async function handler(req, res) {
         total: all.length, open: all.filter(t=>t.status==='OPEN').length,
         closed: closed.length, wins: wins.length, losses: losses.length,
         winRate, avgWin, avgLoss, expectancy,
+        maxDrawdown: parseFloat(maxDrawdown.toFixed(2)),
+        maxWinStreak, maxLossStreak,
       },
       byStrategy,
       monthly,
+      analytics: {
+        byHour:   hourStats,
+        byDay:    dayStats,
+        equity,
+      },
     })
   }
 

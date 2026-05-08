@@ -47,11 +47,22 @@ export default async function handler(req, res) {
   try {
     const baseUrl = process.env.DASHBOARD_URL || 'https://projectzero-psi.vercel.app'
 
-    // Fetch global data in parallel
-    const [pulseRes, fngRes] = await Promise.all([
+    // Fetch all data in parallel
+    const [pulseRes, fngRes, livePricesRes, niftyChainRes] = await Promise.all([
       fetch(`${baseUrl}/api/global-pulse`).then(r => r.json()).catch(() => ({})),
       fetch('https://api.alternative.me/fng/?limit=3').then(r => r.json()).catch(() => ({})),
+      fetch(`${baseUrl}/api/live-prices`).then(r => r.json()).catch(() => ({})),
+      fetch(`${baseUrl}/api/options-chain?symbol=NIFTY`).then(r => r.json()).catch(() => ({})),
     ])
+
+    // Live prices
+    const liveIndia  = livePricesRes.india  || {}
+    const liveCrypto = livePricesRes.crypto || {}
+
+    // Option chain data
+    const niftyPCR  = niftyChainRes.pcr       || null
+    const niftyPCRS = niftyChainRes.pcrSentiment || null
+    const maxPain   = niftyChainRes.maxPain    || null
 
     const p           = pulseRes.pulse || {}
     const fearGreed   = fngRes?.data?.[0] || {}
@@ -75,9 +86,12 @@ S&P 500: ${fmt(p.us?.sp500)} | NASDAQ: ${fmt(p.us?.nasdaq)} | Dow: ${fmt(p.us?.d
 VIX: ${p.us?.vix?.price || 'N/A'} ${(p.us?.vix?.price > 25) ? '⚠️ HIGH FEAR' : (p.us?.vix?.price > 20) ? 'Elevated' : 'Normal'}
 US 10Y Yield: ${p.us?.yield10y?.price || 'N/A'}%
 
-INDIA (prev close):
-NIFTY: ${fmt(p.india?.nifty, '₹')} | BankNifty: ${fmt(p.india?.banknifty, '₹')} | SENSEX: ${fmt(p.india?.sensex, '₹')}
-USD/INR: ${fmt(p.india?.usdinr)} | SGX Nifty: ${p.india?.sgxNifty ? fmt(p.india.sgxNifty) : 'N/A'}
+INDIA (current/prev close):
+NIFTY: ${liveIndia.NIFTY ? '₹'+liveIndia.NIFTY.price.toLocaleString('en-IN') + ' (' + (liveIndia.NIFTY.changePct >= 0 ? '+' : '') + liveIndia.NIFTY.changePct + '%)' : fmt(p.india?.nifty, '₹')}
+BANKNIFTY: ${liveIndia.BANKNIFTY ? '₹'+liveIndia.BANKNIFTY.price.toLocaleString('en-IN') + ' (' + (liveIndia.BANKNIFTY.changePct >= 0 ? '+' : '') + liveIndia.BANKNIFTY.changePct + '%)' : fmt(p.india?.banknifty, '₹')}
+FINNIFTY: ${liveIndia.FINNIFTY ? '₹'+liveIndia.FINNIFTY.price.toLocaleString('en-IN') : 'N/A'}
+USD/INR: ${fmt(p.india?.usdinr)}
+NIFTY Option Chain: PCR ${niftyPCR || 'N/A'} (${niftyPCRS || 'N/A'}) | Max Pain: ${maxPain ? '₹'+maxPain.toLocaleString('en-IN') : 'N/A'}
 
 COMMODITIES:
 Crude WTI: ${fmt(p.commodities?.crude, '$')} | Brent: ${fmt(p.commodities?.brent, '$')}
@@ -89,8 +103,11 @@ DXY: ${fmt(p.currencies?.dxy)} | EUR/USD: ${fmt(p.currencies?.eurusd)} | USD/JPY
 ASIAN MARKETS:
 Nikkei: ${fmt(p.asia?.nikkei)} | Hang Seng: ${fmt(p.asia?.hangseng)} | Shanghai: ${fmt(p.asia?.shanghai)}
 
-CRYPTO:
-BTC: ${fmt(p.crypto?.btc, '$')} | ETH: ${fmt(p.crypto?.eth, '$')}
+CRYPTO (live):
+BTC: ${liveCrypto.BTC ? '$'+liveCrypto.BTC.price.toLocaleString('en-US') + ' (' + (liveCrypto.BTC.changePct >= 0 ? '+' : '') + liveCrypto.BTC.changePct + '%)' : fmt(p.crypto?.btc, '$')}
+ETH: ${liveCrypto.ETH ? '$'+liveCrypto.ETH.price.toLocaleString('en-US') + ' (' + (liveCrypto.ETH.changePct >= 0 ? '+' : '') + liveCrypto.ETH.changePct + '%)' : fmt(p.crypto?.eth, '$')}
+BTC Funding Rate: ${liveCrypto.BTC?.fundingRate ? (liveCrypto.BTC.fundingRate * 100).toFixed(4) + '%' : 'N/A'}
+BTC OI: ${liveCrypto.BTC?.oi ? '$' + (liveCrypto.BTC.oi/1000000).toFixed(1) + 'M' : 'N/A'}
 Fear & Greed: ${fearGreed.value || 'N/A'}/100 (${fearGreed.value_classification || 'N/A'})
 
 GLOBAL SIGNALS:
