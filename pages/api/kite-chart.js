@@ -1,3 +1,46 @@
+
+// ── Support / Resistance Detection ────────────────────────────────
+function detectSRLevels(candles, spot, numLevels=5) {
+  if (!candles || candles.length < 20) return { support:[], resistance:[] }
+
+  const highs   = candles.map(c => c.high)
+  const lows    = candles.map(c => c.low)
+  const volumes = candles.map(c => c.volume || 1)
+  const lookback = 3
+
+  const swingHighs = [], swingLows = []
+  for (let i = lookback; i < candles.length - lookback; i++) {
+    if (highs.slice(i-lookback,i).every(h=>h<highs[i]) && highs.slice(i+1,i+lookback+1).every(h=>h<highs[i]))
+      swingHighs.push({ price: highs[i], volume: volumes[i] })
+    if (lows.slice(i-lookback,i).every(l=>l>lows[i]) && lows.slice(i+1,i+lookback+1).every(l=>l>lows[i]))
+      swingLows.push({ price: lows[i], volume: volumes[i] })
+  }
+
+  function cluster(levels, pct=0.003) {
+    const sorted = [...levels].sort((a,b) => a.price - b.price)
+    const clusters = []
+    let cur = null
+    for (const lv of sorted) {
+      if (!cur) { cur = { ...lv, count:1, totalVol:lv.volume } }
+      else if ((lv.price - cur.price) / cur.price <= pct) {
+        const tv = cur.totalVol + lv.volume
+        cur.price = (cur.price * cur.totalVol + lv.price * lv.volume) / tv
+        cur.totalVol = tv; cur.count++
+      } else { clusters.push(cur); cur = { ...lv, count:1, totalVol:lv.volume } }
+    }
+    if (cur) clusters.push(cur)
+    return clusters.map(c => ({
+      price:    Math.round(c.price * 20) / 20, // round to nearest 0.05
+      strength: c.count,
+    })).sort((a,b) => b.strength - a.strength)
+  }
+
+  return {
+    resistance: cluster(swingHighs).filter(l=>l.price>spot).slice(0,numLevels).sort((a,b)=>a.price-b.price),
+    support:    cluster(swingLows).filter(l=>l.price<spot).slice(0,numLevels).sort((a,b)=>b.price-a.price),
+  }
+}
+
 // pages/api/kite-chart.js
 // Fetches real OHLCV candlestick data from Kite Historical API
 // Requires paid Kite Connect plan (which you have!)
@@ -74,6 +117,9 @@ export default async function handler(req, res) {
       volume: parseInt(c[5]),
     })).filter(c => c.open && c.close)
 
+    const spot = candles[candles.length - 1]?.close || 0
+    const srLevels = detectSRLevels(candles, spot)
+
     return res.status(200).json({
       status:   'success',
       source:   'kite',
@@ -81,6 +127,8 @@ export default async function handler(req, res) {
       interval,
       candles,
       last:     candles[candles.length - 1],
+      support:    srLevels.support,
+      resistance: srLevels.resistance,
     })
 
   } catch (err) {
@@ -117,6 +165,8 @@ async function fetchYahooFallback(symbol, res) {
       volume: q.volume[i] || 0,
     })).filter(c => c.open && c.close && !isNaN(c.close))
 
+    const spotY = candles[candles.length - 1]?.close || 0
+    const srY   = detectSRLevels(candles, spotY)
     return res.status(200).json({
       status:  'success',
       source:  'yahoo',
@@ -124,6 +174,8 @@ async function fetchYahooFallback(symbol, res) {
       interval: '1d',
       candles,
       last:    candles[candles.length - 1],
+      support:    srY.support,
+      resistance: srY.resistance,
     })
   } catch (err) {
     return res.status(500).json({ error: err.message })

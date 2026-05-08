@@ -128,6 +128,86 @@ async function getCachedInstruments(symbol, accessToken) {
   return instruments
 }
 
+
+// ── Black-Scholes Greeks ───────────────────────────────────────────
+// Calculates IV, Delta, Gamma, Theta, Vega for each option
+// Risk-free rate: 6.5% (India 10Y Gsec approximate)
+
+const RISK_FREE = 0.065
+
+function normCDF(x) {
+  return (1 + Math.erf ? erf(x) : approxErf(x)) / 2
+}
+function erf(x) {
+  const sign = x >= 0 ? 1 : -1
+  x = Math.abs(x)
+  const a1=0.254829592,a2=-0.284496736,a3=1.421413741,a4=-1.453152027,a5=1.061405429,p=0.3275911
+  const t = 1 / (1 + p * x)
+  const y = 1 - (((((a5*t+a4)*t)+a3)*t+a2)*t+a1)*t*Math.exp(-x*x)
+  return sign * y
+}
+function approxErf(x) {
+  const sign = x >= 0 ? 1 : -1
+  x = Math.abs(x)
+  const t = 1 / (1 + 0.3275911 * x)
+  const y = 1 - (0.254829592*t - 0.284496736*t*t + 1.421413741*t*t*t - 1.453152027*t*t*t*t + 1.061405429*t*t*t*t*t) * Math.exp(-x*x)
+  return sign * y
+}
+function nCDF(x) {
+  // Standard normal CDF
+  return (1 + erf(x / Math.sqrt(2))) / 2
+}
+function nPDF(x) {
+  return Math.exp(-x * x / 2) / Math.sqrt(2 * Math.PI)
+}
+
+function calcGreeks(S, K, T, sigma, optType) {
+  // S=spot, K=strike, T=time(years), sigma=IV(decimal), optType=CE|PE
+  if (T <= 0.0001 || sigma <= 0.001) {
+    const intrinsic = optType === 'CE' ? Math.max(S - K, 0) : Math.max(K - S, 0)
+    return { price: intrinsic, delta: optType==='CE'?1:- 1, gamma:0, theta:0, vega:0 }
+  }
+  const r  = RISK_FREE
+  const d1 = (Math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * Math.sqrt(T))
+  const d2 = d1 - sigma * Math.sqrt(T)
+  const eRT = Math.exp(-r * T)
+
+  const price = optType === 'CE'
+    ? S * nCDF(d1) - K * eRT * nCDF(d2)
+    : K * eRT * nCDF(-d2) - S * nCDF(-d1)
+
+  const delta = optType === 'CE' ? nCDF(d1) : nCDF(d1) - 1
+  const gamma = nPDF(d1) / (S * sigma * Math.sqrt(T))
+  const vega  = S * Math.sqrt(T) * nPDF(d1) * 0.01  // per 1% IV change
+  const theta = optType === 'CE'
+    ? (-(S * sigma * nPDF(d1)) / (2 * Math.sqrt(T)) - r * K * eRT * nCDF(d2))  / 365
+    : (-(S * sigma * nPDF(d1)) / (2 * Math.sqrt(T)) + r * K * eRT * nCDF(-d2)) / 365
+
+  return {
+    price: parseFloat(price.toFixed(2)),
+    delta: parseFloat(delta.toFixed(4)),
+    gamma: parseFloat(gamma.toFixed(6)),
+    theta: parseFloat(theta.toFixed(2)),
+    vega:  parseFloat(vega.toFixed(2)),
+  }
+}
+
+function calcIV(S, K, T, marketPrice, optType) {
+  if (marketPrice <= 0.5 || T <= 0.0001) return 0
+  let sigma = 0.3
+  for (let i = 0; i < 100; i++) {
+    const g = calcGreeks(S, K, T, sigma, optType)
+    const diff = g.price - marketPrice
+    if (Math.abs(diff) < 0.01) break
+    const vega = g.vega / 0.01
+    if (Math.abs(vega) < 1e-10) break
+    sigma -= diff / vega
+    if (sigma <= 0) sigma = 0.001
+    if (sigma > 5)  sigma = 5
+  }
+  return parseFloat((sigma * 100).toFixed(2))
+}
+
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store')
 
@@ -218,10 +298,19 @@ export default async function handler(req, res) {
       const quote = allQuotes[`NFO:${instr.symbol}`] || {}
       const oiChg = quote.oi && quote.oi_day_low ? quote.oi - quote.oi_day_low : 0
       const side  = instr.type === 'CE' ? 'call' : 'put'
+      const ltp   = quote.last_price || 0
+
+      // Calculate IV and Greeks using Black-Scholes
+      const expDate = new Date(instr.expiry + 'T15:30:00+05:30') // NSE expiry at 3:30 PM IST
+      const now     = new Date()
+      const T       = Math.max((expDate - now) / (1000 * 60 * 60 * 24 * 365), 0.0001)
+      const iv      = ltp > 0.5 ? calcIV(spotPrice, instr.strike, T, ltp, instr.type) : 0
+      const greeks  = iv > 0    ? calcGreeks(spotPrice, instr.strike, T, iv/100, instr.type) : null
+
       chainMap[instr.strike][side] = {
         symbol:   instr.symbol,
         lotSize:  instr.lotSize,
-        ltp:      quote.last_price   || 0,
+        ltp,
         bid:      quote.depth?.buy?.[0]?.price  || 0,
         ask:      quote.depth?.sell?.[0]?.price || 0,
         oi:       quote.oi           || 0,
@@ -229,7 +318,11 @@ export default async function handler(req, res) {
         volume:   quote.volume       || 0,
         high:     quote.ohlc?.high   || 0,
         low:      quote.ohlc?.low    || 0,
-        iv:       0,  // Kite doesn't provide IV — can calculate later
+        iv,
+        delta:    greeks?.delta  || null,
+        gamma:    greeks?.gamma  || null,
+        theta:    greeks?.theta  || null,
+        vega:     greeks?.vega   || null,
       }
     }
 

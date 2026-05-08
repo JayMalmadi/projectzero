@@ -83,6 +83,7 @@ function PZChart({symbol, t, h=420, accessToken, market='india'}) {
   const [source,  setSource]  = useState('')
   const [secAgo,  setSecAgo]  = useState(null)
   const [live,    setLive]    = useState(true)
+  const [srLevels, setSRLevels] = useState({ support:[], resistance:[] })
 
   const chartRef  = useRef(null)
   const lwChart   = useRef(null)
@@ -199,6 +200,29 @@ function PZChart({symbol, t, h=420, accessToken, market='india'}) {
     })))
 
     chart.timeScale().fitContent()
+
+    // Draw S/R levels as horizontal lines
+    const srData = srLevels
+    for (const sup of (srData.support || []).slice(0, 3)) {
+      try {
+        const line = cSer.createPriceLine({
+          price: sup.price, color: '#10f59e88',
+          lineWidth: 1, lineStyle: 2, // dashed
+          axisLabelVisible: true,
+          title: `S ${sup.strength > 2 ? '★' : ''}`,
+        })
+      } catch {}
+    }
+    for (const res of (srData.resistance || []).slice(0, 3)) {
+      try {
+        cSer.createPriceLine({
+          price: res.price, color: '#ff446688',
+          lineWidth: 1, lineStyle: 2,
+          axisLabelVisible: true,
+          title: `R ${res.strength > 2 ? '★' : ''}`,
+        })
+      } catch {}
+    }
 
     lwChart.current   = chart
     candleSer.current = cSer
@@ -2278,27 +2302,28 @@ function OptionsTab({t, defaultSymbol}) {
           {/* Options table */}
           <div style={{background:t.card,borderRadius:16,border:`1px solid ${t.border}`,overflow:'auto'}}>
             {/* Header */}
-            <div style={{display:'grid',gridTemplateColumns:'1fr 0.6fr 0.6fr 0.6fr 0.8fr 0.8fr 1fr 0.6fr 0.6fr 0.6fr',gap:0,padding:'10px 16px',background:t.surface,borderBottom:`1px solid ${t.border}`,fontSize:10,fontWeight:700,color:t.muted,letterSpacing:'0.07em',minWidth:700}}>
-              <span>CALL OI</span><span>CALL VOL</span><span>CALL IV</span><span>CALL LTP</span>
+            <div style={{display:'grid',gridTemplateColumns:'0.8fr 0.5fr 0.5fr 0.5fr 0.6fr 0.7fr 0.6fr 0.5fr 0.5fr 0.5fr 0.8fr',gap:0,padding:'10px 16px',background:t.surface,borderBottom:`1px solid ${t.border}`,fontSize:10,fontWeight:700,color:t.muted,letterSpacing:'0.07em',minWidth:780}}>
+              <span>CALL OI</span><span>Δ DELTA</span><span>THETA</span><span>IV%</span><span>CALL LTP</span>
               <span style={{textAlign:'center',color:t.text}}>STRIKE</span>
-              <span style={{textAlign:'right'}}>PUT LTP</span><span style={{textAlign:'right'}}>PUT IV</span><span style={{textAlign:'right'}}>PUT VOL</span><span style={{textAlign:'right'}}>PUT OI</span><span/>
+              <span style={{textAlign:'right'}}>PUT LTP</span><span style={{textAlign:'right'}}>IV%</span><span style={{textAlign:'right'}}>THETA</span><span style={{textAlign:'right'}}>Δ DELTA</span><span style={{textAlign:'right'}}>PUT OI</span>
             </div>
             {data.chain.map(row=>(
               <div key={row.strike}
-                style={{display:'grid',gridTemplateColumns:'1fr 0.6fr 0.6fr 0.6fr 0.8fr 0.8fr 1fr 0.6fr 0.6fr 0.6fr',gap:0,padding:'8px 16px',borderBottom:`1px solid ${t.border}`,fontSize:12,minWidth:700,background:row.isATM?t.blue+'0a':'transparent'}}>
+                style={{display:'grid',gridTemplateColumns:'0.8fr 0.5fr 0.5fr 0.5fr 0.6fr 0.7fr 0.6fr 0.5fr 0.5fr 0.5fr 0.8fr',gap:0,padding:'7px 16px',borderBottom:`1px solid ${t.border}22`,fontSize:11,minWidth:780,background:row.isATM?t.accentC+'08':'transparent'}}>
                 <span style={{color:t.green,fontFamily:'monospace',fontWeight:row.isATM?700:400}}>{fmtOI(row.call?.oi||0)}</span>
-                <span style={{color:t.muted,fontFamily:'monospace'}}>{fmtOI(row.call?.volume||0)}</span>
-                <span style={{color:t.muted,fontFamily:'monospace'}}>{row.call?.iv?.toFixed(1)||'—'}%</span>
+                <span style={{color:t.green,fontFamily:'monospace',fontSize:10}}>{row.call?.delta!=null?row.call.delta.toFixed(2):'—'}</span>
+                <span style={{color:t.red,fontFamily:'monospace',fontSize:10}}>{row.call?.theta!=null?row.call.theta.toFixed(1):'—'}</span>
+                <span style={{color:t.amber,fontFamily:'monospace',fontSize:10}}>{row.call?.iv>0?row.call.iv.toFixed(1)+'%':'—'}</span>
                 <span style={{color:t.text,fontFamily:'monospace',fontWeight:600}}>{fmtRs(row.call?.ltp)}</span>
-                <span style={{textAlign:'center',fontWeight:900,color:row.isATM?t.blue:t.text,fontFamily:'monospace',fontSize:row.isATM?14:12}}>
+                <span style={{textAlign:'center',fontWeight:900,color:row.isATM?t.accentC:t.text,fontFamily:'monospace',fontSize:row.isATM?13:11}}>
                   {row.strike?.toLocaleString('en-IN')}
-                  {row.isATM&&<span style={{fontSize:9,color:t.blue,display:'block'}}>ATM</span>}
+                  {row.isATM&&<span style={{fontSize:8,color:t.accentC,display:'block'}}>ATM</span>}
                 </span>
                 <span style={{textAlign:'right',color:t.text,fontFamily:'monospace',fontWeight:600}}>{fmtRs(row.put?.ltp)}</span>
-                <span style={{textAlign:'right',color:t.muted,fontFamily:'monospace'}}>{row.put?.iv?.toFixed(1)||'—'}%</span>
-                <span style={{textAlign:'right',color:t.muted,fontFamily:'monospace'}}>{fmtOI(row.put?.volume||0)}</span>
+                <span style={{textAlign:'right',color:t.amber,fontFamily:'monospace',fontSize:10}}>{row.put?.iv>0?row.put.iv.toFixed(1)+'%':'—'}</span>
+                <span style={{textAlign:'right',color:t.red,fontFamily:'monospace',fontSize:10}}>{row.put?.theta!=null?row.put.theta.toFixed(1):'—'}</span>
+                <span style={{textAlign:'right',color:t.red,fontFamily:'monospace',fontSize:10}}>{row.put?.delta!=null?row.put.delta.toFixed(2):'—'}</span>
                 <span style={{textAlign:'right',color:t.red,fontFamily:'monospace',fontWeight:row.isATM?700:400}}>{fmtOI(row.put?.oi||0)}</span>
-                <span/>
               </div>
             ))}
           </div>
