@@ -151,119 +151,61 @@ function calcPnlPct(pnlPoints, market) {
   return parseFloat(((pnlPoints / base) * 100).toFixed(4))
 }
 
-// ── Signal monitoring ─────────────────────────────────────────
-const FIRED_SIGNALS = new Set() // prevent duplicate alerts
+// ── Live Price Monitor ────────────────────────────────────────
+// Polls live prices every 15 seconds via /api/live-prices
+// Stores last known prices for paper trade monitoring and price alerts
+// Strategies will be built on top of this live data
 
-async function checkSignals() {
-  const strategies = []
+let livePrices = {}           // last known prices for all 7 instruments
+let priceHistory = {}         // rolling 60-tick history per instrument (5 min at 5s intervals)
+const MAX_HISTORY = 60        // keep last 60 price readings (~5 minutes at 5s)
+const FIRED_SIGNALS = new Set() // deduplicate price alerts
 
-  // Indian market strategies (only during market hours)
-  if (isIndianMarketOpen()) {
-    strategies.push(
-      { symbol:'NIFTY',     strategy:'pz-orb',      market:'india',  minConf:65 },
-      { symbol:'BANKNIFTY', strategy:'pz-tuesday',   market:'india',  minConf:60 },
-      { symbol:'BANKNIFTY', strategy:'vwap',         market:'india',  minConf:60 },
-      { symbol:'NIFTY',     strategy:'bollinger',    market:'india',  minConf:65 },
-      { symbol:'TCS',       strategy:'macd',         market:'india',  minConf:65 },
-    )
-  }
+async function fetchLivePrices() {
+  try {
+    const data = await fetchJSON(`${CONFIG.DASHBOARD_URL}/api/live-prices`)
+    if (data.status !== 'success') return
 
-  // Crypto strategies (24/7) — paper trades only, no real orders
-  strategies.push(
-    { symbol:'BTC', strategy:'momentum',     market:'crypto', minConf:70 },
-    { symbol:'ETH', strategy:'macd-cross',   market:'crypto', minConf:70 },
-    { symbol:'SOL', strategy:'rsi-reversal', market:'crypto', minConf:70 },
-    { symbol:'XRP', strategy:'rsi-reversal', market:'crypto', minConf:75 },
-    { symbol:'BTC', strategy:'macd-cross',   market:'crypto', minConf:72 },
-    // Delta Exchange perpetual futures — paper only
-    { symbol:'BTC', strategy:'momentum',     market:'delta',  minConf:72 },
-    { symbol:'ETH', strategy:'macd-cross',   market:'delta',  minConf:72 },
-    { symbol:'SOL', strategy:'rsi-reversal', market:'delta',  minConf:75 },
-  )
-
-  for (const s of strategies) {
-    try {
-      const apiPath = s.market === 'crypto'
-        ? `/api/crypto-signals?symbol=${s.symbol}&strategy=${s.strategy}`
-        : `/api/pz-strategies?symbol=${s.symbol}&strategy=${s.strategy}`
-
-      const data = await fetchJSON(`${CONFIG.DASHBOARD_URL}${apiPath}`)
-
-      if (!data.signal || data.signal === 'HOLD') continue
-      if (data.confidence < s.minConf) continue
-
-      // Deduplicate — don't fire same signal twice in 2 hours
-      const key = `${s.symbol}-${s.strategy}-${data.signal}-${Math.floor(Date.now()/7200000)}`
-      if (FIRED_SIGNALS.has(key)) continue
-      FIRED_SIGNALS.add(key)
-
-      const emoji    = data.signal === 'BUY' ? '🟢' : '🔴'
-      const mktEmoji = s.market === 'crypto' ? '🪙' : '🇮🇳'
-      const curr     = s.market === 'crypto' ? '$' : '₹'
-      const fmtP     = (n) => n ? `${curr}${Number(n).toLocaleString('en-US',{maximumFractionDigits:2})}` : '—'
-
-      // Check multi-timeframe confluence
-      let mtfNote = ''
-      try {
-        const mtf = await fetchJSON(`${CONFIG.DASHBOARD_URL}/api/multi-timeframe?symbol=${s.symbol}&market=${s.market}`)
-        if (mtf.confluence) mtfNote = `\nTimeframes: ${mtf.confluence} (${mtf.score}/3)`
-      } catch {}
-
-      const msg = `${emoji} <b>SIGNAL FIRED</b> ${mktEmoji}
-━━━━━━━━━━━━━━━━
-<b>${data.signal} ${s.symbol}</b> · ${s.strategy}
-Price: ${fmtP(data.price)}
-Stop Loss: ${fmtP(data.stopLoss)}
-Target: ${fmtP(data.target)}
-Confidence: ${data.confidence}%${data.rr?` · R:R 1:${data.rr}`:''}${mtfNote}
-
-${data.reason?.slice(0,120)}
-
-<a href="${CONFIG.DASHBOARD_URL}/dashboard">⚡ Open Dashboard to Execute →</a>`
-
-      await sendTelegram(msg)
-      console.log(`[Signal] ${data.signal} ${s.symbol} (${data.confidence}%)`)
-
-      // Log to signal_history DB
-      try {
-        await postJSON(`${CONFIG.DASHBOARD_URL}/api/signal-history`, {
-          symbol: s.symbol, strategy: s.strategy, signal: data.signal,
-          confidence: data.confidence, price: data.price,
-          stopLoss: data.stopLoss, target: data.target,
-          rr: data.rr, rsi: data.indicators?.rsi,
-          market: s.market, reason: data.reason?.slice(0, 200)
-        })
-      } catch {}
-
-      // Auto paper trade if confidence >= threshold
-      if (CONFIG.PAPER_TRADE_ENABLED && data.confidence >= CONFIG.PAPER_TRADE_MIN_CONFIDENCE) {
-        try {
-          const ptResult = await postJSON(`${CONFIG.DASHBOARD_URL}/api/paper-trades`, {
-            symbol:     s.symbol,
-            strategy:   s.strategy,
-            market:     s.market,
-            direction:  data.signal,
-            signal_type:'intraday',
-            entry_price: data.price,
-            stop_loss:   data.stopLoss,
-            target:      data.target,
-            rr:          data.rr,
-            confidence:  data.confidence,
-            quantity:    calcPositionSize(data.price, data.stopLoss, s.market),
-            notes: `Auto paper trade | ${data.reason?.slice(0,100)}`,
-          })
-          if (ptResult.created) {
-            console.log(`[PaperTrade] Created: ${data.signal} ${s.symbol} @ ${data.price}`)
-          }
-        } catch(e) {
-          console.error('[PaperTrade] Failed to create:', e.message)
-        }
-      }
-
-    } catch(e) {
-      console.error(`[Signal] Error ${s.symbol}/${s.strategy}:`, e.message)
+    // Update India prices
+    for (const [sym, quote] of Object.entries(data.india || {})) {
+      livePrices[sym] = quote
+      if (!priceHistory[sym]) priceHistory[sym] = []
+      priceHistory[sym].push({ price: quote.price, volume: quote.volume, time: Date.now() })
+      if (priceHistory[sym].length > MAX_HISTORY) priceHistory[sym].shift()
     }
-    await new Promise(r => setTimeout(r, 1500)) // throttle
+
+    // Update crypto prices
+    for (const [sym, quote] of Object.entries(data.crypto || {})) {
+      livePrices[sym] = quote
+      if (!priceHistory[sym]) priceHistory[sym] = []
+      priceHistory[sym].push({ price: quote.price, volume: quote.volume, time: Date.now() })
+      if (priceHistory[sym].length > MAX_HISTORY) priceHistory[sym].shift()
+    }
+
+    console.log(`[LivePrices] Updated: ${Object.keys(livePrices).join(', ')} | Market: ${data.market?.isOpen ? 'OPEN' : 'CLOSED'}`)
+    return data
+  } catch(e) {
+    console.error('[LivePrices] Fetch error:', e.message)
+    return null
+  }
+}
+
+// Get current price for any instrument (used by paper trade monitor)
+function getCurrentPrice(symbol) {
+  return livePrices[symbol]?.price || null
+}
+
+// Signal monitoring — placeholder for when strategies are built
+// Strategies will use livePrices and priceHistory
+async function checkSignals() {
+  // Live price data is available in livePrices and priceHistory
+  // Strategy logic will be added here when strategies are defined
+  // For now just log that monitoring is active
+  if (Object.keys(livePrices).length > 0) {
+    const isOpen = isIndianMarketOpen()
+    if (isOpen) {
+      console.log('[Signals] Market open — monitoring', Object.keys(livePrices).length, 'instruments')
+    }
   }
 }
 
@@ -533,7 +475,7 @@ async function monitorPaperTrades() {
         }
 
         // Use pre-fetched prices (no extra API call per trade)
-        const currentPrice = allPrices[trade.symbol]?.price || null
+        const currentPrice = getCurrentPrice(trade.symbol) || allPrices[trade.symbol]?.price || null
 
         if (!currentPrice) continue
 
@@ -661,6 +603,9 @@ async function tick() {
   // Signal checks
   const checkIndian  = isIndianMarketOpen() && checkCount % 2 === 0  // every ~60s
   const checkCrypto  = checkCount % 4 === 0                           // every ~120s
+
+  // Always fetch live prices on every tick (every 15s)
+  await fetchLivePrices().catch(e => console.error('[tick] Live prices error:', e.message))
   if (checkIndian || checkCrypto) {
     await checkSignals()
   }
@@ -779,7 +724,7 @@ sendTelegram(`🚀 <b>Projectzero Worker v2 Started</b>
 
 // Start ticking every 30 seconds
 tick().catch(console.error)
-setInterval(() => tick().catch(console.error), 30000)
+setInterval(() => tick().catch(console.error), 15000) // Every 15s — live prices fetched each tick
 
 // ── Fast loop: paper trade monitoring every 5 seconds ─────────
 // Uses PUBLIC Delta/market price APIs — no auth, no Fixie needed

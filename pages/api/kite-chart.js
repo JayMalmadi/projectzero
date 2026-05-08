@@ -6,6 +6,7 @@
 const TOKENS = {
   NIFTY:     '256265',
   BANKNIFTY: '260105',
+  FINNIFTY:  '257801',
   SENSEX:    '265',
   TCS:       '2953217',
   INFY:      '408065',
