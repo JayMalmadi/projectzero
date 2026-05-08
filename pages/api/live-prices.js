@@ -9,7 +9,6 @@ import { createClient } from '@supabase/supabase-js'
 const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY)
 
 const KITE_BASE  = 'https://api.kite.trade'
-const DELTA_BASE = 'https://api.india.delta.exchange'
 const API_KEY    = process.env.KITE_API_KEY
 
 // Kite instrument identifiers for quotes
@@ -140,42 +139,31 @@ async function fetchIndiaFallback() {
 }
 
 // Fetch crypto prices from Delta Exchange (always works, no auth)
-async function fetchCryptoPrices() {
+async function fetchCryptoPrices(baseUrl) {
   try {
-    const r = await fetch(
-      `${DELTA_BASE}/v2/tickers?contract_types=perpetual_futures`,
-      { headers: { 'User-Agent': 'projectzero/1.0' } }
-    )
+    // Use our existing /api/delta endpoint which routes through Hetzner proxy
+    const r = await fetch(`${baseUrl}/api/delta?action=prices`)
     const d = await r.json()
-    const tickers = d.result || []
+    if (d.status !== 'success' || !d.prices) return {}
 
     const result = {}
-    for (const [key, symbol] of Object.entries(CRYPTO_SYMBOLS)) {
-      const t = tickers.find(t => t.symbol === symbol)
-      if (!t) continue
-
-      const price    = parseFloat(t.mark_price || 0)
-      const prevClose = parseFloat(t.close || price)
-      const open     = parseFloat(t.open || price)
-      const change   = price - prevClose
-      const changePct = prevClose ? parseFloat(((change / prevClose) * 100).toFixed(2)) : 0
-      // 24h change vs open
-      const change24h    = price - open
-      const changePct24h = open ? parseFloat(((change24h / open) * 100).toFixed(2)) : 0
-
+    const wantedSyms = ['BTC', 'ETH', 'SOL', 'XRP']
+    for (const key of wantedSyms) {
+      const p = d.prices[key]
+      if (!p) continue
       result[key] = {
         symbol:      key,
-        price:       parseFloat(price.toFixed(4)),
-        change:      parseFloat(change24h.toFixed(4)),
-        changePct:   changePct24h,
-        open:        parseFloat(open.toFixed(4)),
-        high:        parseFloat((t.high || 0).toFixed(4)),
-        low:         parseFloat((t.low  || 0).toFixed(4)),
-        prevClose:   parseFloat(prevClose.toFixed(4)),
-        volume:      parseFloat((t.volume || 0).toFixed(2)),
-        oi:          parseFloat((t.oi_value_usd || 0).toFixed(0)),
-        fundingRate: parseFloat((t.funding_rate || 0).toFixed(6)),
-        spotPrice:   parseFloat((t.spot_price || 0).toFixed(4)),
+        price:       parseFloat(p.price || 0),
+        change:      parseFloat((p.price - (p.price / (1 + (p.pct||0)/100))).toFixed(4)),
+        changePct:   parseFloat(p.pct || 0),
+        open:        parseFloat(p.price || 0),
+        high:        parseFloat(p.high || 0),
+        low:         parseFloat(p.low  || 0),
+        prevClose:   parseFloat(p.price || 0),
+        volume:      parseFloat(p.volume || 0),
+        oi:          parseFloat(p.oi || 0),
+        fundingRate: parseFloat(p.fundingRate || 0),
+        spotPrice:   parseFloat(p.price || 0),
         source:      'delta',
         timestamp:   Date.now(),
       }
@@ -197,9 +185,10 @@ export default async function handler(req, res) {
     const accessToken = await getKiteToken(headerToken)
 
     // Fetch India and Crypto in parallel
+    const SELF_URL = process.env.DASHBOARD_URL || 'https://projectzero-psi.vercel.app'
     const [indiaResult, cryptoResult] = await Promise.all([
       accessToken ? fetchIndiaQuotes(accessToken) : null,
-      fetchCryptoPrices(),
+      fetchCryptoPrices(SELF_URL),
     ])
 
     // If Kite fails or no login, use Yahoo fallback for India
