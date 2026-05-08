@@ -3002,8 +3002,6 @@ export default function Dashboard() {
     { id:'paper',    l:'🧪 Paper'    },
     { id:'portfolio',l:'💼 Portfolio'},
     { id:'trades',   l:'📋 History'  },
-    { id:'watchlist',l:'👁 Watchlist'},
-    { id:'alerts',   l:'🔔 Alerts'   },
     { id:'backtest', l:'🔬 Backtest' },
   ]
 
@@ -3135,8 +3133,6 @@ export default function Dashboard() {
               <History refresh={tr} t={t} />
             </div>
           )}
-          {tab==='watchlist' && <WatchlistTab t={t} at={at} />}
-          {tab==='alerts'    && <AlertsTab t={t} />}
           {tab==='backtest'  && <BacktestTab t={t} />}
         </main>
       </div>
