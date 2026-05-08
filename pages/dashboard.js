@@ -948,6 +948,574 @@ function WatchlistTab({t, at}) {
 
 
 // ── Binance Portfolio ──────────────────────────────────────────
+function ReportsTab({t}) {
+  const [reports, setReports] = useState([])
+  const [selected, setSelected] = useState(null)
+  const [detail, setDetail] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => { loadList() }, [])
+
+  async function loadList() {
+    setLoading(true)
+    try {
+      const r = await fetch('/api/daily-reports?limit=30')
+      const d = await r.json()
+      const list = d.reports || []
+      setReports(list)
+      if (list.length > 0) loadDetail(list[0].report_date)
+    } catch {}
+    setLoading(false)
+  }
+
+  async function loadDetail(date) {
+    setSelected(date)
+    setDetail(null)
+    try {
+      const r = await fetch(`/api/daily-reports?date=${date}`)
+      const d = await r.json()
+      setDetail(d.report || null)
+    } catch {}
+  }
+
+  const fmtD = d => new Date(d).toLocaleDateString('en-IN',{weekday:'short',day:'2-digit',month:'short',timeZone:'UTC'})
+
+  return (
+    <div>
+      <div style={{marginBottom:20}}>
+        <h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Daily Reports</h2>
+        <p style={{color:t.muted,fontSize:13,marginTop:4}}>Morning briefs and daily summaries — saved automatically, viewable anytime. AI runs once per day and is cached forever.</p>
+      </div>
+
+      {loading ? (
+        <div style={{textAlign:'center',padding:60}}>
+          <div style={{width:28,height:28,border:`3px solid ${t.border}`,borderTopColor:'#ff6600',borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'0 auto'}}/>
+        </div>
+      ) : reports.length === 0 ? (
+        <div style={{background:t.card,borderRadius:16,padding:40,border:`1px solid ${t.border}`,textAlign:'center'}}>
+          <p style={{fontSize:40,marginBottom:12}}>📅</p>
+          <p style={{color:t.text,fontWeight:700,marginBottom:8}}>No reports yet</p>
+          <p style={{color:t.muted,fontSize:13}}>Reports save automatically at 9 AM and 3:35 PM via Railway. Check back after market hours.</p>
+        </div>
+      ) : (
+        <div style={{display:'grid',gridTemplateColumns:'220px 1fr',gap:16,alignItems:'start'}}>
+          <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,overflow:'hidden'}}>
+            <div style={{padding:'10px 14px',borderBottom:`1px solid ${t.border}`,fontSize:11,fontWeight:700,color:t.muted,letterSpacing:'0.06em'}}>HISTORY</div>
+            {reports.map(r => (
+              <div key={r.report_date} onClick={() => loadDetail(r.report_date)}
+                style={{padding:'12px 14px',borderBottom:`1px solid ${t.border}`,cursor:'pointer',
+                  background:selected===r.report_date?'#ff660014':'transparent',
+                  borderLeft:selected===r.report_date?'3px solid #ff6600':'3px solid transparent'}}>
+                <p style={{fontWeight:600,fontSize:13,color:selected===r.report_date?'#ff6600':t.text,marginBottom:2}}>{fmtD(r.report_date)}</p>
+                <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                  {r.morning_brief&&<span style={{fontSize:10,color:t.green}}>☀️ brief</span>}
+                  {r.daily_summary&&<span style={{fontSize:10,color:t.blue}}>📊 summary</span>}
+                  {r.pnl_today!==0&&<span style={{fontSize:10,color:r.pnl_today>0?t.green:t.red,fontWeight:700}}>{r.pnl_today>0?'+':''}₹{Math.abs(r.pnl_today||0).toFixed(0)}</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{display:'flex',flexDirection:'column',gap:14}}>
+            {!detail ? (
+              <div style={{background:t.card,borderRadius:14,padding:30,border:`1px solid ${t.border}`,textAlign:'center'}}>
+                <div style={{width:24,height:24,border:`3px solid ${t.border}`,borderTopColor:'#ff6600',borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'0 auto'}}/>
+              </div>
+            ) : (
+              <>
+                <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10}}>
+                  {[
+                    {l:'TRADES',v:detail.trades_today||0,c:t.text},
+                    {l:'P&L',v:`${(detail.pnl_today||0)>=0?'+':''}₹${Math.abs(detail.pnl_today||0).toFixed(2)}`,c:(detail.pnl_today||0)>=0?t.green:t.red},
+                    {l:'DATE',v:fmtD(detail.report_date),c:t.blue},
+                  ].map(x=>(
+                    <div key={x.l} style={{background:t.card,borderRadius:12,padding:14,border:`1px solid ${t.border}`,textAlign:'center'}}>
+                      <p style={{color:t.muted,fontSize:10,fontWeight:700,letterSpacing:'0.08em',marginBottom:4}}>{x.l}</p>
+                      <p style={{color:x.c,fontSize:14,fontWeight:800,fontFamily:'JetBrains Mono,monospace'}}>{x.v}</p>
+                    </div>
+                  ))}
+                </div>
+                {detail.morning_brief&&(
+                  <div style={{background:t.card,borderRadius:14,padding:20,border:`1px solid ${t.border}`}}>
+                    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}>
+                      <span style={{fontSize:18}}>☀️</span>
+                      <p style={{fontWeight:700,color:t.text,fontSize:15,flex:1}}>Morning Brief</p>
+                      <span style={{background:'#ff660018',color:'#ff6600',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20,border:'1px solid #ff660033'}}>CACHED</span>
+                    </div>
+                    <p style={{color:t.text2,fontSize:13,lineHeight:1.8,whiteSpace:'pre-wrap'}}>{detail.morning_brief}</p>
+                  </div>
+                )}
+                {detail.daily_summary&&(
+                  <div style={{background:t.card,borderRadius:14,padding:20,border:`1px solid ${t.border}`}}>
+                    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}>
+                      <span style={{fontSize:18}}>📊</span>
+                      <p style={{fontWeight:700,color:t.text,fontSize:15,flex:1}}>Daily Summary</p>
+                      <span style={{background:t.blue+'18',color:t.blue,fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20,border:`1px solid ${t.blue}33`}}>CACHED</span>
+                    </div>
+                    <p style={{color:t.text2,fontSize:13,lineHeight:1.8,whiteSpace:'pre-wrap'}}>{detail.daily_summary}</p>
+                  </div>
+                )}
+                {!detail.morning_brief&&!detail.daily_summary&&(
+                  <div style={{background:t.card,borderRadius:14,padding:24,border:`1px solid ${t.border}`,textAlign:'center'}}>
+                    <p style={{color:t.muted,fontSize:13}}>No AI reports saved for this date yet.</p>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Signal Log Tab ─────────────────────────────────────────────
+function SignalLogTab({t}) {
+  const [signals, setSignals] = useState([])
+  const [stats,   setStats]   = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [filter,  setFilter]  = useState('all')  // all | india | crypto
+  const [days,    setDays]    = useState(7)
+
+  useEffect(() => { load() }, [filter, days])
+
+  async function load() {
+    setLoading(true)
+    try {
+      const mkt = filter === 'all' ? '' : `&market=${filter}`
+      const r   = await fetch(`/api/signal-history?days=${days}&limit=100${mkt}`)
+      const d   = await r.json()
+      setSignals(d.signals || [])
+      setStats(d.stats || null)
+    } catch {}
+    setLoading(false)
+  }
+
+  const fmtTime = (d) => new Date(d).toLocaleString('en-IN', {
+    day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit', timeZone:'Asia/Kolkata'
+  })
+
+  const byStrategy = signals.reduce((acc, s) => {
+    acc[s.strategy] = acc[s.strategy] || { count:0, buy:0, sell:0, avgConf:0 }
+    acc[s.strategy].count++
+    acc[s.strategy][s.signal==='BUY'?'buy':'sell']++
+    acc[s.strategy].avgConf += s.confidence||0
+    return acc
+  }, {})
+
+  return (
+    <div>
+      <div style={{marginBottom:20}}>
+        <h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Signal Log</h2>
+        <p style={{color:t.muted,fontSize:13,marginTop:4}}>Every BUY/SELL signal that fires — your strategy track record</p>
+      </div>
+
+      {/* Filters */}
+      <div style={{display:'flex',gap:10,marginBottom:20,flexWrap:'wrap',alignItems:'center'}}>
+        <div style={{display:'flex',background:t.surface,border:`1px solid ${t.border}`,borderRadius:20,padding:'2px 3px',gap:1}}>
+          {[['all','All'],['india','🇮🇳 India'],['crypto','🪙 Crypto']].map(([v,l])=>(
+            <button key={v} onClick={()=>setFilter(v)}
+              style={{padding:'4px 14px',borderRadius:16,border:'none',background:filter===v?'#ff660022':'transparent',
+                color:filter===v?'#ff6600':t.muted,fontWeight:filter===v?700:500,cursor:'pointer',fontSize:12,fontFamily:'Inter,sans-serif'}}>
+              {l}
+            </button>
+          ))}
+        </div>
+        <div style={{display:'flex',background:t.surface,border:`1px solid ${t.border}`,borderRadius:20,padding:'2px 3px',gap:1}}>
+          {[[1,'1D'],[7,'7D'],[14,'14D'],[30,'30D']].map(([v,l])=>(
+            <button key={v} onClick={()=>setDays(v)}
+              style={{padding:'4px 12px',borderRadius:16,border:'none',background:days===v?t.blue+'22':'transparent',
+                color:days===v?t.blue:t.muted,fontWeight:days===v?700:500,cursor:'pointer',fontSize:12,fontFamily:'Inter,sans-serif'}}>
+              {l}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Stats row */}
+      {stats && (
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(120px,1fr))',gap:10,marginBottom:20}}>
+          {[
+            {l:'TOTAL SIGNALS', v:stats.total,        c:t.text},
+            {l:'BUY',           v:stats.buy,           c:t.green},
+            {l:'SELL',          v:stats.sell,          c:t.red},
+            {l:'ACTED ON',      v:stats.acted,         c:t.blue},
+            {l:'AVG CONFIDENCE',v:`${stats.avgConfidence}%`, c:t.amber},
+          ].map(x=>(
+            <div key={x.l} style={{background:t.card,borderRadius:12,padding:'12px 14px',border:`1px solid ${t.border}`,textAlign:'center'}}>
+              <p style={{color:t.muted,fontSize:9,fontWeight:700,letterSpacing:'0.07em',marginBottom:4}}>{x.l}</p>
+              <p style={{color:x.c,fontSize:16,fontWeight:800,fontFamily:'JetBrains Mono,monospace'}}>{x.v}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* By strategy breakdown */}
+      {Object.keys(byStrategy).length > 0 && (
+        <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,marginBottom:20,overflow:'hidden'}}>
+          <div style={{padding:'10px 16px',borderBottom:`1px solid ${t.border}`,fontSize:11,fontWeight:700,color:t.muted,letterSpacing:'0.06em'}}>BY STRATEGY</div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))'}}>
+            {Object.entries(byStrategy).map(([strat, data]) => (
+              <div key={strat} style={{padding:'12px 16px',borderRight:`1px solid ${t.border}`,borderBottom:`1px solid ${t.border}`}}>
+                <p style={{color:t.text,fontWeight:700,fontSize:13,marginBottom:4}}>{strat}</p>
+                <div style={{display:'flex',gap:10,alignItems:'center'}}>
+                  <span style={{color:t.green,fontSize:12,fontWeight:600}}>↑{data.buy} BUY</span>
+                  <span style={{color:t.red,fontSize:12,fontWeight:600}}>↓{data.sell} SELL</span>
+                  <span style={{color:t.muted,fontSize:11}}>{(data.avgConf/data.count).toFixed(0)}% avg</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Signal list */}
+      {loading ? (
+        <div style={{textAlign:'center',padding:40}}>
+          <div style={{width:28,height:28,border:`3px solid ${t.border}`,borderTopColor:'#ff6600',borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'0 auto'}}/>
+        </div>
+      ) : signals.length === 0 ? (
+        <div style={{background:t.card,borderRadius:16,padding:40,border:`1px solid ${t.border}`,textAlign:'center'}}>
+          <p style={{fontSize:40,marginBottom:12}}>📊</p>
+          <p style={{color:t.text,fontWeight:700,marginBottom:8}}>No signals logged yet</p>
+          <p style={{color:t.muted,fontSize:13}}>Signals auto-log when they fire. Open the Signals or Crypto tab to start building your track record.</p>
+        </div>
+      ) : (
+        <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,overflow:'hidden'}}>
+          <div style={{overflowX:'auto',WebkitOverflowScrolling:'touch'}}>
+          <table style={{width:'100%',minWidth:600,borderCollapse:'collapse'}}>
+            <thead>
+              <tr style={{background:t.surface}}>
+                {['TIME','SYMBOL','STRATEGY','SIGNAL','CONFIDENCE','PRICE','R:R','MARKET'].map(h=>(
+                  <th key={h} style={{padding:'10px 14px',textAlign:'left',fontSize:10,fontWeight:700,color:t.muted,letterSpacing:'0.08em',borderBottom:`1px solid ${t.border}`}}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {signals.map((s,i) => (
+                <tr key={s.id} style={{borderBottom:`1px solid ${t.border}22`,background:i%2===0?'transparent':t.surface+'44'}}>
+                  <td style={{padding:'10px 14px',color:t.muted,fontSize:11,whiteSpace:'nowrap'}}>{fmtTime(s.fired_at)}</td>
+                  <td style={{padding:'10px 14px',fontWeight:800,color:t.text,fontFamily:'JetBrains Mono,monospace'}}>{s.symbol}</td>
+                  <td style={{padding:'10px 14px',color:t.text2,fontSize:12,maxWidth:140,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.strategy}</td>
+                  <td style={{padding:'10px 14px'}}>
+                    <span style={{background:s.signal==='BUY'?t.green+'22':t.red+'22',color:s.signal==='BUY'?t.green:t.red,
+                      padding:'3px 10px',borderRadius:20,fontSize:11,fontWeight:700,border:`1px solid ${s.signal==='BUY'?t.green:t.red}44`}}>
+                      {s.signal}
+                    </span>
+                  </td>
+                  <td style={{padding:'10px 14px',fontFamily:'JetBrains Mono,monospace',fontSize:12,
+                    color:s.confidence>=70?t.green:s.confidence>=50?t.amber:t.red,fontWeight:600}}>
+                    {s.confidence}%
+                  </td>
+                  <td style={{padding:'10px 14px',fontFamily:'JetBrains Mono,monospace',color:t.text,fontSize:12}}>
+                    {s.market==='crypto'?'$':'₹'}{s.price?.toLocaleString('en-IN',{maximumFractionDigits:2})}
+                  </td>
+                  <td style={{padding:'10px 14px',fontFamily:'JetBrains Mono,monospace',color:t.text2,fontSize:12}}>
+                    {s.rr?`1:${s.rr}`:'—'}
+                  </td>
+                  <td style={{padding:'10px 14px'}}>
+                    <span style={{fontSize:11,color:t.muted}}>{s.market==='crypto'?'🪙':'🇮🇳'}</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table></div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+
+// ── Backtest Tab ───────────────────────────────────────────────
+function BacktestTab({t}) {
+  const STRATEGIES = [
+    { id:'ema-cross',    name:'EMA 9/21 Crossover',         desc:'Fast/slow EMA crossover with ATR stop' },
+    { id:'rsi-reversal', name:'RSI Reversal + Bollinger',    desc:'Oversold/overbought reversals at BB bands' },
+    { id:'bb-breakout',  name:'Bollinger Breakout',          desc:'Price breaking out of BB bands with volume' },
+    { id:'macd-cross',   name:'MACD Crossover',              desc:'MACD line crossing signal line' },
+  ]
+  const INSTRUMENTS = {
+    india:  ['NIFTY','BANKNIFTY','FINNIFTY'],
+    crypto: ['BTC','ETH','SOL','XRP'],
+  }
+
+  const [market,    setMarket]    = useState('india')
+  const [symbol,    setSymbol]    = useState('NIFTY')
+  const [strategy,  setStrategy]  = useState('ema-cross')
+  const [timeframe, setTimeframe] = useState('15min')
+  const [days,      setDays]      = useState(60)
+  const [result,    setResult]    = useState(null)
+  const [loading,   setLoading]   = useState(false)
+  const [error,     setError]     = useState('')
+  const [dataStatus, setDataStatus] = useState(null)
+  const [backfilling, setBackfilling] = useState(false)
+
+  useEffect(() => { checkDataStatus() }, [])
+
+  async function checkDataStatus() {
+    try {
+      const r = await fetch('/api/historical-data?action=status')
+      const d = await r.json()
+      setDataStatus(d)
+    } catch {}
+  }
+
+  async function runBackfill() {
+    setBackfilling(true)
+    try {
+      const r = await fetch(`/api/historical-data?action=backfill&days=${days}`)
+      const d = await r.json()
+      if (d.status === 'success') {
+        await checkDataStatus()
+        alert('Data loaded successfully!')
+      }
+    } catch(e) { alert('Backfill failed: ' + e.message) }
+    setBackfilling(false)
+  }
+
+  async function runBacktest() {
+    setLoading(true); setError(''); setResult(null)
+    try {
+      const r = await fetch(`/api/backtest?symbol=${symbol}&strategy=${strategy}&market=${market}&timeframe=${timeframe}&days=${days}`)
+      const d = await r.json()
+      if (d.status === 'success') setResult(d)
+      else if (d.status === 'insufficient_data') setError(d.message)
+      else setError(d.error || 'Backtest failed')
+    } catch(e) { setError(e.message) }
+    setLoading(false)
+  }
+
+  const pnlColor = v => parseFloat(v) > 0 ? t.green : parseFloat(v) < 0 ? t.red : t.muted
+  const fmt2 = v => parseFloat(v||0).toFixed(2)
+
+  return (
+    <div>
+      <div style={{marginBottom:20}}>
+        <h2 style={{fontSize:22,fontWeight:900,color:t.text}}>🔬 Backtest Engine</h2>
+        <p style={{color:t.muted,fontSize:13,marginTop:4}}>
+          Test strategies against historical data · ₹10,000 base · 1% risk per trade
+        </p>
+      </div>
+
+      {/* Data status */}
+      <div style={{background:t.card,borderRadius:12,padding:'12px 16px',border:`1px solid ${t.border}`,marginBottom:16}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:8}}>
+          <div>
+            <p style={{fontSize:11,fontWeight:700,color:t.muted,letterSpacing:'0.06em',marginBottom:4}}>HISTORICAL DATA STATUS</p>
+            {dataStatus ? (
+              <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>
+                {Object.entries({...dataStatus.intraday_15min||{}, ...dataStatus.daily||{}})
+                  .filter(([,v]) => v.count > 0)
+                  .slice(0,6)
+                  .map(([sym,v]) => (
+                    <span key={sym} style={{fontSize:11,color:t.green}}>
+                      ✅ {sym}: {v.count} candles
+                    </span>
+                  ))}
+                {Object.keys(dataStatus.intraday_15min||{}).length === 0 &&
+                  <span style={{fontSize:11,color:t.amber}}>⚠️ No data yet — click Load Data</span>}
+              </div>
+            ) : <span style={{fontSize:11,color:t.muted}}>Checking...</span>}
+          </div>
+          <button onClick={runBackfill} disabled={backfilling}
+            style={{padding:'8px 16px',background:t.accentC,border:'none',borderRadius:10,
+              color:'#fff',fontWeight:700,cursor:'pointer',fontSize:12,fontFamily:'Inter,sans-serif',
+              opacity:backfilling?0.6:1}}>
+            {backfilling ? '⏳ Loading...' : '📥 Load Data'}
+          </button>
+        </div>
+      </div>
+
+      {/* Controls */}
+      <div style={{background:t.card,borderRadius:14,padding:16,border:`1px solid ${t.border}`,marginBottom:16}}>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(160px,1fr))',gap:12,marginBottom:16}}>
+
+          {/* Market */}
+          <div>
+            <p style={{fontSize:10,fontWeight:700,color:t.muted,letterSpacing:'0.06em',marginBottom:6}}>MARKET</p>
+            <div style={{display:'flex',gap:4}}>
+              {['india','crypto'].map(m => (
+                <button key={m} onClick={()=>{setMarket(m);setSymbol(m==='india'?'NIFTY':'BTC')}}
+                  style={{flex:1,padding:'7px',borderRadius:8,border:`1px solid ${market===m?t.accentC:t.border}`,
+                    background:market===m?t.accentC+'22':t.surface,color:market===m?t.accentC:t.muted,
+                    fontWeight:700,cursor:'pointer',fontSize:11,fontFamily:'Inter,sans-serif'}}>
+                  {m==='india'?'🇮🇳 India':'🪙 Crypto'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Symbol */}
+          <div>
+            <p style={{fontSize:10,fontWeight:700,color:t.muted,letterSpacing:'0.06em',marginBottom:6}}>SYMBOL</p>
+            <select value={symbol} onChange={e=>setSymbol(e.target.value)}
+              style={{width:'100%',padding:'8px',borderRadius:8,border:`1px solid ${t.border}`,
+                background:t.surface,color:t.text,fontSize:12,fontFamily:'Inter,sans-serif'}}>
+              {INSTRUMENTS[market].map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+
+          {/* Timeframe */}
+          <div>
+            <p style={{fontSize:10,fontWeight:700,color:t.muted,letterSpacing:'0.06em',marginBottom:6}}>TIMEFRAME</p>
+            <div style={{display:'flex',gap:4}}>
+              {['15min','daily'].map(tf => (
+                <button key={tf} onClick={()=>setTimeframe(tf)}
+                  style={{flex:1,padding:'7px',borderRadius:8,border:`1px solid ${timeframe===tf?t.accentC:t.border}`,
+                    background:timeframe===tf?t.accentC+'22':t.surface,color:timeframe===tf?t.accentC:t.muted,
+                    fontWeight:700,cursor:'pointer',fontSize:11,fontFamily:'Inter,sans-serif'}}>
+                  {tf}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Days */}
+          <div>
+            <p style={{fontSize:10,fontWeight:700,color:t.muted,letterSpacing:'0.06em',marginBottom:6}}>PERIOD</p>
+            <div style={{display:'flex',gap:4}}>
+              {[30,60,90].map(d => (
+                <button key={d} onClick={()=>setDays(d)}
+                  style={{flex:1,padding:'7px',borderRadius:8,border:`1px solid ${days===d?t.accentC:t.border}`,
+                    background:days===d?t.accentC+'22':t.surface,color:days===d?t.accentC:t.muted,
+                    fontWeight:700,cursor:'pointer',fontSize:11,fontFamily:'Inter,sans-serif'}}>
+                  {d}d
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Strategy selector */}
+        <div style={{marginBottom:16}}>
+          <p style={{fontSize:10,fontWeight:700,color:t.muted,letterSpacing:'0.06em',marginBottom:8}}>STRATEGY</p>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:8}}>
+            {STRATEGIES.map(s => (
+              <button key={s.id} onClick={()=>setStrategy(s.id)}
+                style={{padding:'10px 12px',borderRadius:10,textAlign:'left',cursor:'pointer',fontFamily:'Inter,sans-serif',
+                  border:`1px solid ${strategy===s.id?t.accentC:t.border}`,
+                  background:strategy===s.id?t.accentC+'22':t.surface}}>
+                <p style={{fontSize:12,fontWeight:700,color:strategy===s.id?t.accentC:t.text,marginBottom:2}}>{s.name}</p>
+                <p style={{fontSize:10,color:t.muted}}>{s.desc}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <button onClick={runBacktest} disabled={loading}
+          style={{width:'100%',padding:'12px',background:loading?t.surface:t.accentC,
+            border:'none',borderRadius:10,color:loading?t.muted:'#fff',
+            fontWeight:800,fontSize:14,cursor:loading?'not-allowed':'pointer',fontFamily:'Inter,sans-serif'}}>
+          {loading ? '⏳ Running backtest...' : '▶ Run Backtest'}
+        </button>
+
+        {error && <p style={{color:t.red,fontSize:12,marginTop:10,textAlign:'center'}}>{error}</p>}
+      </div>
+
+      {/* Results */}
+      {result && (
+        <div style={{display:'flex',flexDirection:'column',gap:16}}>
+
+          {/* Summary stats */}
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(130px,1fr))',gap:10}}>
+            {[
+              {l:'TOTAL TRADES', v:result.stats.totalTrades,              c:t.text},
+              {l:'WIN RATE',     v:result.stats.winRate+'%',               c:result.stats.winRate>=55?t.green:t.red},
+              {l:'NET P&L %',    v:(result.stats.totalPnlPct>=0?'+':'')+fmt2(result.stats.totalPnlPct)+'%', c:pnlColor(result.stats.totalPnlPct)},
+              {l:'NET P&L ₹/$',  v:(result.stats.totalPnlAbs>=0?'+':'')+fmt2(result.stats.totalPnlAbs),    c:pnlColor(result.stats.totalPnlAbs)},
+              {l:'EXPECTANCY',   v:(result.stats.expectancy>=0?'+':'')+fmt2(result.stats.expectancy)+'%',  c:pnlColor(result.stats.expectancy)},
+              {l:'AVG R:R',      v:'1:'+fmt2(result.stats.avgRR),          c:result.stats.avgRR>=1.5?t.green:t.amber},
+              {l:'MAX DRAWDOWN', v:'-'+fmt2(result.stats.maxDrawdownPct)+'%', c:t.red},
+              {l:'CANDLES USED', v:result.candlesUsed,                    c:t.muted},
+            ].map(x=>(
+              <div key={x.l} style={{background:t.card,borderRadius:12,padding:'12px 14px',border:`1px solid ${t.border}`,textAlign:'center'}}>
+                <p style={{color:t.muted,fontSize:9,fontWeight:700,letterSpacing:'0.07em',marginBottom:4}}>{x.l}</p>
+                <p style={{color:x.c,fontSize:15,fontWeight:800,fontFamily:'JetBrains Mono,monospace'}}>{x.v}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Equity curve */}
+          {result.equityCurve?.length > 1 && (
+            <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,padding:16}}>
+              <p style={{fontSize:11,fontWeight:700,color:t.muted,letterSpacing:'0.06em',marginBottom:12}}>
+                EQUITY CURVE — {result.strategy} on {symbol} ({days}d)
+              </p>
+              <div style={{display:'flex',alignItems:'flex-end',gap:2,height:80}}>
+                {result.equityCurve.map((v,i) => {
+                  const max = Math.max(...result.equityCurve.map(Math.abs), 0.1)
+                  const h   = Math.max(Math.abs(v)/max*72, 2)
+                  return <div key={i} title={`Trade ${i+1}: ${v>=0?'+':''}${v}%`}
+                    style={{flex:1,height:h+'px',background:v>=0?t.green:t.red,
+                      borderRadius:'2px 2px 0 0',opacity:0.8,minWidth:2}}/>
+                })}
+              </div>
+              <div style={{display:'flex',justifyContent:'space-between',marginTop:4}}>
+                <span style={{fontSize:10,color:t.muted}}>Trade 1</span>
+                <span style={{fontSize:11,fontWeight:700,color:pnlColor(result.stats.totalPnlPct)}}>
+                  Final: {result.stats.totalPnlPct>=0?'+':''}{fmt2(result.stats.totalPnlPct)}%
+                </span>
+                <span style={{fontSize:10,color:t.muted}}>Trade {result.stats.totalTrades}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Recent trades table */}
+          {result.recentTrades?.length > 0 && (
+            <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,overflow:'hidden'}}>
+              <div style={{padding:'12px 16px',borderBottom:`1px solid ${t.border}`}}>
+                <p style={{fontSize:11,fontWeight:700,color:t.muted,letterSpacing:'0.06em'}}>
+                  RECENT TRADES (last {result.recentTrades.length})
+                </p>
+              </div>
+              <div style={{overflowX:'auto'}}>
+                <table style={{width:'100%',minWidth:500,borderCollapse:'collapse',fontSize:12}}>
+                  <thead>
+                    <tr style={{background:t.surface}}>
+                      {['DATE','DIR','ENTRY','EXIT','P&L%','RESULT','R:R'].map(h=>(
+                        <th key={h} style={{padding:'8px 12px',textAlign:'left',fontSize:10,
+                          fontWeight:700,color:t.muted,letterSpacing:'0.05em',
+                          borderBottom:`1px solid ${t.border}`}}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {result.recentTrades.map((tr,i)=>(
+                      <tr key={i} style={{borderBottom:`1px solid ${t.border}22`,
+                        background:i%2===0?'transparent':t.surface+'44'}}>
+                        <td style={{padding:'8px 12px',color:t.muted,fontSize:11}}>{tr.entryDate}</td>
+                        <td style={{padding:'8px 12px',fontWeight:700,color:tr.direction==='BUY'?t.green:t.red}}>{tr.direction}</td>
+                        <td style={{padding:'8px 12px',fontFamily:'JetBrains Mono,monospace',color:t.text,fontSize:11}}>{parseFloat(tr.entry).toFixed(0)}</td>
+                        <td style={{padding:'8px 12px',fontFamily:'JetBrains Mono,monospace',color:t.text,fontSize:11}}>{parseFloat(tr.exit).toFixed(0)}</td>
+                        <td style={{padding:'8px 12px',fontFamily:'JetBrains Mono,monospace',fontWeight:700,color:pnlColor(tr.pnlPct)}}>
+                          {tr.pnlPct>=0?'+':''}{fmt2(tr.pnlPct)}%
+                        </td>
+                        <td style={{padding:'8px 12px'}}>
+                          <span style={{padding:'2px 7px',borderRadius:6,fontSize:10,fontWeight:700,
+                            background:(tr.exitReason==='TARGET_HIT'?t.green:tr.exitReason==='SL_HIT'?t.red:t.amber)+'22',
+                            color:tr.exitReason==='TARGET_HIT'?t.green:tr.exitReason==='SL_HIT'?t.red:t.amber}}>
+                            {tr.exitReason==='TARGET_HIT'?'✅ WIN':tr.exitReason==='SL_HIT'?'❌ SL':'⏱ EXP'}
+                          </span>
+                        </td>
+                        <td style={{padding:'8px 12px',color:t.muted,fontFamily:'JetBrains Mono,monospace',fontSize:11}}>1:{fmt2(tr.rr)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+
+// ── Paper Trades Tab ───────────────────────────────────────────
+
+
 function PaperTradesTab({t}) {
   const [data,    setData]    = useState(null)
   const [loading, setLoading] = useState(true)
