@@ -22,12 +22,12 @@ function sign(secret, method, timestamp, path, body = '') {
   return crypto.createHmac('sha256', secret).update(msg).digest('hex')
 }
 
-// Authenticated request — routes through Railway (fixed IP) for Delta whitelist
-const RAILWAY_PROXY = process.env.RAILWAY_PROXY_URL || 'https://projectzero-production.up.railway.app'
+// Authenticated request — routes through Hetzner (fixed IP 178.105.45.73) for Delta whitelist
+const HETZNER_PROXY = process.env.DELTA_PROXY_URL || 'http://178.105.45.73'
 
 async function deltaRequest(apiKey, apiSecret, method, path, bodyObj = null) {
-  // Use Railway proxy so requests come from a fixed whitelisted IP
-  const r = await fetch(`${RAILWAY_PROXY}/delta-proxy`, {
+  // Use Hetzner proxy so requests come from fixed whitelisted IP 178.105.45.73
+  const r = await fetch(`${HETZNER_PROXY}/delta-proxy`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ path, method, payload: bodyObj || undefined }),
