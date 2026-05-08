@@ -103,27 +103,45 @@ export default async function handler(req, res) {
 
     // ── PUBLIC: Candlestick/OHLCV data ───────────────────────────
     if (action === 'candles') {
-      const { symbol = 'BTCUSD', resolution = '60', limit = 200 } = req.query
-      // resolution: 1=1m, 5=5m, 15=15m, 60=1h, 1D=1day
+      const { symbol = 'BTCUSD', resolution = '15m', limit = 300 } = req.query
+
+      // Valid Delta resolutions: 1m,3m,5m,15m,30m,1h,2h,4h,6h,12h,1d,1w
+      // Map common aliases to Delta format
+      const resMap = {
+        '1':'1m','3':'3m','5':'5m','15':'15m','30':'30m',
+        '60':'1h','1h':'1h','2h':'2h','4h':'4h',
+        '1d':'1d','1D':'1d','D':'1d','1w':'1w','W':'1w',
+      }
+      const deltaRes = resMap[resolution] || resolution
+
+      // Calculate start time based on resolution and limit
+      const resSeconds = {
+        '1m':60,'3m':180,'5m':300,'15m':900,'30m':1800,
+        '1h':3600,'2h':7200,'4h':14400,'6h':21600,'12h':43200,
+        '1d':86400,'1w':604800,
+      }
       const end   = Math.floor(Date.now() / 1000)
-      const resSeconds = { '1':60,'5':300,'15':900,'60':3600,'1D':86400 }
-      const resSec = resSeconds[resolution] || 3600
+      const resSec = resSeconds[deltaRes] || 900
       const start = end - (parseInt(limit) * resSec)
 
       const r = await fetch(
-        `${BASE}/v2/history/candles?symbol=${symbol}&resolution=${resolution}&start=${start}&end=${end}`,
+        `${BASE}/v2/history/candles?symbol=${symbol}&resolution=${deltaRes}&start=${start}&end=${end}`,
         { headers: { 'User-Agent': 'projectzero/1.0' } }
       )
       const d = await r.json()
-      const candles = (d.result || []).map(c => ({
-        time:   c.time,
-        open:   parseFloat(c.open),
-        high:   parseFloat(c.high),
-        low:    parseFloat(c.low),
-        close:  parseFloat(c.close),
-        volume: parseFloat(c.volume),
-      }))
-      return res.status(200).json({ status: 'success', candles, symbol })
+      // Delta returns newest first — sort to oldest first for charts
+      const candles = (d.result || [])
+        .map(c => ({
+          time:   c.time,
+          open:   parseFloat(c.open),
+          high:   parseFloat(c.high),
+          low:    parseFloat(c.low),
+          close:  parseFloat(c.close),
+          volume: parseFloat(c.volume || 0),
+        }))
+        .sort((a, b) => a.time - b.time)
+
+      return res.status(200).json({ status: 'success', candles, symbol, resolution: deltaRes })
     }
 
     // Auth required below this point

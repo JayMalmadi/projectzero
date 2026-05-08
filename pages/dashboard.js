@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import Head from 'next/head'
 import { useRouter } from 'next/router'
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 
 const fmt = (n,d=2) => n!=null ? Number(n).toLocaleString('en-IN',{maximumFractionDigits:d}) : '—'
 const clr = (v,t) => v>0?t.green:v<0?t.red:t.muted
@@ -57,147 +56,326 @@ function SCard({label,value,color,sub,icon,t}) {
 }
 
 function PZChart({symbol, t, h=420, accessToken, market='india'}) {
-  const INTERVALS = [
-    {v:'minute',   l:'1m',  days:1,   refresh:2},
-    {v:'3minute',  l:'3m',  days:2,   refresh:3},
-    {v:'5minute',  l:'5m',  days:3,   refresh:3},
-    {v:'10minute', l:'10m', days:5,   refresh:5},
-    {v:'15minute', l:'15m', days:5,   refresh:5},
-    {v:'30minute', l:'30m', days:10,  refresh:10},
-    {v:'60minute', l:'1h',  days:30,  refresh:30},
-    {v:'day',      l:'1D',  days:365, refresh:60},
-    {v:'week',     l:'1W',  days:730, refresh:300},
-  ]
-  const [candles, setCandles] = useState([])
-  const [loading, setLoading] = useState(false)
-  const [source,  setSource]  = useState('')
-  const [intv,    setIntv]    = useState('15minute')
-  const [last,    setLast]    = useState(null)
-  const [live,    setLive]    = useState(true)
-  const [updated, setUpdated] = useState(null)
-  const chartRef = useRef(null)
-  const tvRef    = useRef(null)
-  const serRef   = useRef(null)
-  const volRef   = useRef(null)
-  const timerRef = useRef(null)
-  const cfg = INTERVALS.find(i=>i.v===intv)||INTERVALS[4]
+  // ── Interval config ─────────────────────────────────────────
+  // Each interval knows: Kite name, Delta resolution, days back, refresh seconds
+  const isCrypto = market === 'crypto' || ['BTC','ETH','SOL','XRP'].includes(symbol)
 
-  async function loadData(silent=false) {
-    if (!silent) setLoading(true)
+  const INTERVALS = isCrypto ? [
+    {v:'1m',   l:'1m',  res:'1m',  secs:60,    limit:300,  refresh:5},
+    {v:'5m',   l:'5m',  res:'5m',  secs:300,   limit:300,  refresh:10},
+    {v:'15m',  l:'15m', res:'15m', secs:900,   limit:300,  refresh:15},
+    {v:'30m',  l:'30m', res:'30m', secs:1800,  limit:300,  refresh:30},
+    {v:'1h',   l:'1h',  res:'1h',  secs:3600,  limit:300,  refresh:60},
+    {v:'4h',   l:'4h',  res:'4h',  secs:14400, limit:200,  refresh:120},
+    {v:'1d',   l:'1D',  res:'1d',  secs:86400, limit:365,  refresh:300},
+  ] : [
+    {v:'minute',   l:'1m',  days:1,   refresh:5},
+    {v:'5minute',  l:'5m',  days:3,   refresh:10},
+    {v:'15minute', l:'15m', days:10,  refresh:15},
+    {v:'30minute', l:'30m', days:20,  refresh:30},
+    {v:'60minute', l:'1h',  days:60,  refresh:60},
+    {v:'day',      l:'1D',  days:365, refresh:300},
+    {v:'week',     l:'1W',  days:730, refresh:600},
+  ]
+
+  const DEFAULT_INTV = isCrypto ? '15m' : '15minute'
+
+  const [intv,    setIntv]    = useState(DEFAULT_INTV)
+  const [loading, setLoading] = useState(false)
+  const [error,   setError]   = useState('')
+  const [last,    setLast]    = useState(null)
+  const [source,  setSource]  = useState('')
+  const [secAgo,  setSecAgo]  = useState(null)
+  const [live,    setLive]    = useState(true)
+
+  const chartRef  = useRef(null)
+  const lwChart   = useRef(null)  // Lightweight Charts instance
+  const candleSer = useRef(null)  // Candlestick series
+  const volSer    = useRef(null)  // Volume histogram
+  const timerRef  = useRef(null)
+  const lastLoad  = useRef(null)
+
+  const cfg = INTERVALS.find(i => i.v === intv) || INTERVALS[2]
+  const curr = isCrypto ? '$' : '₹'
+
+  // ── Fetch candles ────────────────────────────────────────────
+  async function fetchCandles() {
     try {
-      // Use Delta Exchange for crypto, Kite/Yahoo for India
-      const isCrypto = market === 'crypto' || ['BTC','ETH','SOL','XRP'].includes(symbol)
-      const cryptoIntervalMap = {
-        'minute':'1m','3minute':'5m','5minute':'5m','10minute':'15m',
-        '15minute':'15m','30minute':'30m','60minute':'60','day':'1d',
+      let url
+      if (isCrypto) {
+        url = `/api/delta?action=candles&symbol=${symbol}USD&resolution=${cfg.res}&limit=${cfg.limit}`
+      } else {
+        url = `/api/kite-chart?symbol=${symbol}&interval=${cfg.v}&days=${cfg.days}`
       }
-      const url = isCrypto
-        ? `/api/delta?action=candles&symbol=${symbol}USD&resolution=${cryptoIntervalMap[intv]||'15m'}&limit=300`
-        : `/api/kite-chart?symbol=${symbol}&interval=${intv}&days=${cfg.days}`
-      const r = await fetch(url, {headers:(!isCrypto&&accessToken)?{'x-kite-access-token':accessToken}:{}})
-      const d = await r.json()
-      if (d.candles?.length>0) {
-        setCandles(d.candles)
-        setSource(d.source)
-        setLast(d.last)
-        setUpdated(new Date())
-        if (silent && serRef.current) {
-          const s=[...d.candles].sort((a,b)=>a.time-b.time)
-          const u=s.filter((c,i)=>i===0||c.time!==s[i-1].time)
-          serRef.current.setData(u)
-          if (volRef.current) volRef.current.setData(u.map(c=>({time:c.time,value:c.volume||0,color:c.close>=c.open?'#10f59e33':'#ff446633'})))
-        }
-      }
-    } catch {}
-    if (!silent) setLoading(false)
+
+      const headers = (!isCrypto && accessToken) ? { 'x-kite-access-token': accessToken } : {}
+      const r  = await fetch(url, { headers })
+      const d  = await r.json()
+
+      if (!d.candles?.length) return null
+
+      // Sort oldest→newest, deduplicate by time
+      const sorted = [...d.candles]
+        .sort((a, b) => a.time - b.time)
+        .filter((c, i, arr) => i === 0 || c.time !== arr[i-1].time)
+        .filter(c => c.open > 0 && c.close > 0)
+
+      setSource(d.source || (isCrypto ? 'delta' : 'kite'))
+      setLast(sorted[sorted.length - 1])
+      setSecAgo(0)
+      lastLoad.current = Date.now()
+      return sorted
+    } catch(e) {
+      console.error('[PZChart] fetch error:', e.message)
+      return null
+    }
   }
 
-  useEffect(()=>{
-    loadData()
-    if (timerRef.current) clearInterval(timerRef.current)
-    if (live) timerRef.current=setInterval(()=>loadData(true), cfg.refresh*1000)
-    return ()=>{ if (timerRef.current) clearInterval(timerRef.current) }
-  },[symbol,intv,accessToken,live])
+  // ── Initial load ─────────────────────────────────────────────
+  async function loadFull() {
+    setLoading(true)
+    setError('')
+    const candles = await fetchCandles()
+    if (!candles) {
+      setError('No data available')
+      setLoading(false)
+      return
+    }
+    setLoading(false)
+    // Chart will render via useEffect watching loading→false
+    renderChart(candles)
+  }
 
-  useEffect(()=>{
-    if (!candles.length||!chartRef.current||loading) return
-    if (!window.LightweightCharts) {
-      const s=document.createElement('script')
-      s.src='https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js'
-      s.onload=()=>renderChart()
-      document.head.appendChild(s)
-    } else { renderChart() }
-  },[candles,t])
+  // ── Render chart ─────────────────────────────────────────────
+  function renderChart(candles) {
+    if (!chartRef.current || !candles?.length) return
+    if (!window.LightweightCharts) return
 
-  function renderChart() {
-    if (!window.LightweightCharts||!chartRef.current) return
-    if (tvRef.current) { try{tvRef.current.remove()}catch{} tvRef.current=null }
-    chartRef.current.innerHTML=''
-    const isDark=t.bg==='#07090f'
-    const chart=window.LightweightCharts.createChart(chartRef.current,{
-      width:chartRef.current.clientWidth||600, height:h-90,
-      layout:{background:{color:isDark?'#0d1117':'#ffffff'},textColor:isDark?'#9ca3af':'#6b7280',fontSize:11},
-      grid:{vertLines:{color:isDark?'#1f293755':'#f3f4f6'},horzLines:{color:isDark?'#1f293755':'#f3f4f6'}},
-      crosshair:{mode:1},
-      rightPriceScale:{borderColor:isDark?'#1f2937':'#e5e7eb',scaleMargins:{top:0.08,bottom:0.22}},
-      timeScale:{borderColor:isDark?'#1f2937':'#e5e7eb',timeVisible:true,secondsVisible:intv==='minute'},
+    // Destroy previous instance
+    if (lwChart.current) {
+      try { lwChart.current.remove() } catch {}
+      lwChart.current = null
+      candleSer.current = null
+      volSer.current = null
+    }
+    chartRef.current.innerHTML = ''
+
+    const isDark = t.bg === '#07090f' || t.bg === '#080c14'
+    const width  = chartRef.current.clientWidth || 360
+    const chartH = h - 110
+
+    const chart = window.LightweightCharts.createChart(chartRef.current, {
+      width,
+      height: chartH,
+      layout: {
+        background: { color: 'transparent' },
+        textColor:  isDark ? '#9ca3af' : '#6b7280',
+        fontSize:   11,
+        fontFamily: 'JetBrains Mono, monospace',
+      },
+      grid: {
+        vertLines: { color: isDark ? '#1f293720' : '#f1f5f920' },
+        horzLines: { color: isDark ? '#1f293720' : '#f1f5f920' },
+      },
+      crosshair: { mode: 1 },
+      rightPriceScale: {
+        borderColor: isDark ? '#1f2937' : '#e5e7eb',
+        scaleMargins: { top: 0.05, bottom: 0.25 },
+      },
+      timeScale: {
+        borderColor:    isDark ? '#1f2937' : '#e5e7eb',
+        timeVisible:    true,
+        secondsVisible: cfg.v === 'minute' || cfg.v === '1m',
+        fixLeftEdge:    false,
+        fixRightEdge:   false,
+      },
+      handleScroll:  true,
+      handleScale:   true,
     })
-    const series=chart.addCandlestickSeries({
-      upColor:'#10f59e',downColor:'#ff4466',
-      borderUpColor:'#10f59e',borderDownColor:'#ff4466',
-      wickUpColor:'#10f59e88',wickDownColor:'#ff446688',
+
+    // Candlestick series
+    const cSer = chart.addCandlestickSeries({
+      upColor:        '#10f59e',
+      downColor:      '#ff4466',
+      borderUpColor:  '#10f59e',
+      borderDownColor:'#ff4466',
+      wickUpColor:    '#10f59eaa',
+      wickDownColor:  '#ff4466aa',
     })
-    const vol=chart.addHistogramSeries({priceFormat:{type:'volume'},priceScaleId:'vol'})
-    chart.priceScale('vol').applyOptions({scaleMargins:{top:0.85,bottom:0}})
-    const sorted=[...candles].sort((a,b)=>a.time-b.time)
-    const deduped=sorted.filter((c,i)=>i===0||c.time!==sorted[i-1].time)
-    series.setData(deduped)
-    vol.setData(deduped.map(c=>({time:c.time,value:c.volume||0,color:c.close>=c.open?'#10f59e33':'#ff446633'})))
+    cSer.setData(candles)
+
+    // Volume histogram (bottom 20%)
+    const vSer = chart.addHistogramSeries({
+      priceFormat:   { type: 'volume' },
+      priceScaleId:  'volume',
+    })
+    chart.priceScale('volume').applyOptions({
+      scaleMargins: { top: 0.82, bottom: 0 },
+    })
+    vSer.setData(candles.map(c => ({
+      time:  c.time,
+      value: c.volume || 0,
+      color: c.close >= c.open ? '#10f59e28' : '#ff446628',
+    })))
+
     chart.timeScale().fitContent()
-    tvRef.current=chart; serRef.current=series; volRef.current=vol
-    const ro=new ResizeObserver(()=>{if(chartRef.current)chart.applyOptions({width:chartRef.current.clientWidth})})
+
+    lwChart.current   = chart
+    candleSer.current = cSer
+    volSer.current    = vSer
+
+    // Responsive resize
+    const ro = new ResizeObserver(() => {
+      if (chartRef.current && lwChart.current) {
+        lwChart.current.applyOptions({ width: chartRef.current.clientWidth })
+      }
+    })
     ro.observe(chartRef.current)
   }
 
-  const chg    = last ? ((last.close-last.open)/last.open*100) : 0
+  // ── Silent update (append/update last candle) ─────────────────
+  async function silentUpdate() {
+    if (!candleSer.current) return
+    const candles = await fetchCandles()
+    if (!candles?.length) return
+    // Update last 2 candles silently (current forming + previous)
+    candles.slice(-2).forEach(c => {
+      try { candleSer.current.update(c) } catch {}
+      try {
+        volSer.current?.update({
+          time: c.time, value: c.volume || 0,
+          color: c.close >= c.open ? '#10f59e28' : '#ff446628',
+        })
+      } catch {}
+    })
+  }
+
+  // ── Load Lightweight Charts library ──────────────────────────
+  function ensureLWC(cb) {
+    if (window.LightweightCharts) { cb(); return }
+    if (document.getElementById('lwc-script')) {
+      document.getElementById('lwc-script').addEventListener('load', cb)
+      return
+    }
+    const s = document.createElement('script')
+    s.id  = 'lwc-script'
+    s.src = 'https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js'
+    s.onload = cb
+    document.head.appendChild(s)
+  }
+
+  // ── Effects ───────────────────────────────────────────────────
+  // Load on symbol/interval/token change
+  useEffect(() => {
+    ensureLWC(() => loadFull())
+    if (timerRef.current) clearInterval(timerRef.current)
+    if (live) {
+      timerRef.current = setInterval(() => {
+        silentUpdate()
+        setSecAgo(v => v !== null ? Math.round((Date.now() - (lastLoad.current || Date.now())) / 1000) : null)
+      }, cfg.refresh * 1000)
+    }
+    return () => { if (timerRef.current) clearInterval(timerRef.current) }
+  }, [symbol, intv, accessToken, live])
+
+  // Rerender chart on theme change
+  useEffect(() => {
+    if (!lwChart.current) return
+    const isDark = t.bg === '#07090f' || t.bg === '#080c14'
+    lwChart.current.applyOptions({
+      layout: {
+        background: { color: 'transparent' },
+        textColor: isDark ? '#9ca3af' : '#6b7280',
+      },
+    })
+  }, [t])
+
+  // ── UI ────────────────────────────────────────────────────────
+  const chg    = last ? parseFloat(((last.close - last.open) / last.open * 100).toFixed(2)) : 0
   const isUp   = chg >= 0
-  const secAgo = updated ? Math.round((new Date()-updated)/1000) : null
 
   return (
     <div style={{borderRadius:16,overflow:'hidden',border:`1px solid ${t.border}`,background:t.card}}>
-      {/* Row 1: symbol + price + controls */}
-      <div style={{padding:'10px 14px',display:'flex',justifyContent:'space-between',alignItems:'center',borderBottom:`1px solid ${t.border}`}}>
+
+      {/* Header — symbol + price + status */}
+      <div style={{padding:'10px 14px',display:'flex',justifyContent:'space-between',
+        alignItems:'center',borderBottom:`1px solid ${t.border}`,flexWrap:'wrap',gap:8}}>
         <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
-          <span style={{width:8,height:8,borderRadius:'50%',background:live?t.green:t.amber,display:'inline-block',animation:live?'pulse 1.5s infinite':'none'}} />
-          <span style={{color:t.text,fontWeight:800,fontSize:15}}>{symbol}</span>
-          {last && <>
-            <span style={{color:t.text,fontSize:14,fontFamily:'JetBrains Mono,monospace',fontWeight:700}}>{market==='crypto'||['BTC','ETH','SOL','XRP'].includes(symbol)?'$':'₹'}{fmt(last.close)}</span>
-            <span style={{fontSize:11,fontWeight:700,color:isUp?t.green:t.red,background:(isUp?t.green:t.red)+'18',borderRadius:5,padding:'2px 7px'}}>{isUp?'+':''}{fmt(chg,2)}{'%'}</span>
-          </>}
-          <span style={{color:t.muted,fontSize:10}}>{(market==='crypto'||['BTC','ETH','SOL','XRP'].includes(symbol))?'🟢 Delta Exchange':(source==='kite'?'🟢 Live · Kite':'⚪ Yahoo Finance')}{secAgo!==null?` · ${secAgo}s ago`:''}</span>
+          <span style={{width:7,height:7,borderRadius:'50%',display:'inline-block',
+            background:live ? t.green : t.amber,
+            animation:live ? 'pulse 1.5s infinite' : 'none'}} />
+          <span style={{fontWeight:800,fontSize:15,color:t.text}}>{symbol}</span>
+          {last && (
+            <>
+              <span style={{fontFamily:'JetBrains Mono,monospace',fontSize:14,
+                fontWeight:700,color:t.text}}>
+                {curr}{parseFloat(last.close).toLocaleString('en-IN', {maximumFractionDigits: isCrypto ? 2 : 0})}
+              </span>
+              <span style={{fontSize:11,fontWeight:700,padding:'2px 7px',borderRadius:5,
+                color:isUp ? t.green : t.red,
+                background:(isUp ? t.green : t.red) + '18'}}>
+                {isUp ? '+' : ''}{chg}%
+              </span>
+            </>
+          )}
+          <span style={{color:t.muted,fontSize:10}}>
+            {isCrypto ? '🟢 Delta Exchange' : source === 'kite' ? '🟢 Kite Live' : '⚪ Yahoo Finance'}
+            {secAgo !== null && secAgo > 0 ? ` · ${secAgo}s ago` : ''}
+          </span>
         </div>
         <div style={{display:'flex',gap:6}}>
-          <button onClick={()=>setLive(v=>!v)} style={{padding:'3px 10px',borderRadius:6,fontSize:11,fontWeight:700,background:live?t.green+'22':t.surface,border:`1px solid ${live?t.green:t.border}`,color:live?t.green:t.muted,cursor:'pointer',fontFamily:'Inter,sans-serif'}}>
-            {live?`⚡ Auto (${cfg.refresh}s)`:'⏸ Paused'}
+          <button onClick={() => setLive(v => !v)}
+            style={{padding:'3px 10px',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',
+              fontFamily:'Inter,sans-serif',
+              background: live ? t.green + '22' : t.surface,
+              border: `1px solid ${live ? t.green : t.border}`,
+              color: live ? t.green : t.muted}}>
+            {live ? `⚡ Auto ${cfg.refresh}s` : '⏸ Paused'}
           </button>
-          <button onClick={()=>loadData()} style={{padding:'3px 8px',borderRadius:6,fontSize:13,background:'none',border:`1px solid ${t.border}`,color:t.muted,cursor:'pointer'}}>↻</button>
-          {KITE_SEARCH[symbol]&&<button onClick={()=>window.open(`/chart?symbol=${symbol}&market=crypto`,'_blank','width=1440,height=860')} style={{padding:'3px 10px',borderRadius:6,fontSize:11,background:'none',border:`1px solid ${t.border}`,color:t.blue,cursor:'pointer',fontFamily:'Inter,sans-serif',fontWeight:600}}>Kite ↗</button>}
+          <button onClick={() => ensureLWC(() => loadFull())}
+            style={{padding:'3px 8px',borderRadius:6,fontSize:13,cursor:'pointer',
+              background:'none',border:`1px solid ${t.border}`,color:t.muted}}>
+            ↻
+          </button>
         </div>
       </div>
-      {/* Row 2: interval selector */}
-      <div style={{padding:'8px 14px',display:'flex',gap:4,flexWrap:'wrap',borderBottom:`1px solid ${t.border}`,background:t.surface+'55'}}>
-        {INTERVALS.map(i=>(
-          <button key={i.v} onClick={()=>setIntv(i.v)} style={{padding:'4px 10px',borderRadius:6,fontSize:12,fontWeight:700,background:intv===i.v?t.accentC:t.surface,border:`1px solid ${intv===i.v?t.accentC:t.border}`,color:intv===i.v?'#fff':t.muted,cursor:'pointer',fontFamily:'Inter,sans-serif',transition:'all 0.1s'}}>{i.l}</button>
+
+      {/* Interval selector */}
+      <div style={{padding:'6px 14px',display:'flex',gap:4,flexWrap:'wrap',
+        borderBottom:`1px solid ${t.border}`,background:t.surface + '55'}}>
+        {INTERVALS.map(i => (
+          <button key={i.v} onClick={() => setIntv(i.v)}
+            style={{padding:'4px 10px',borderRadius:6,fontSize:12,fontWeight:700,
+              cursor:'pointer',fontFamily:'Inter,sans-serif',transition:'all 0.1s',
+              background: intv === i.v ? t.accentC : t.surface,
+              border: `1px solid ${intv === i.v ? t.accentC : t.border}`,
+              color: intv === i.v ? '#fff' : t.muted}}>
+            {i.l}
+          </button>
         ))}
       </div>
-      {/* Chart */}
-      {loading
-        ? <div style={{height:h-90,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:12}}>
-            <div style={{width:36,height:36,border:`3px solid ${t.border}`,borderTopColor:t.accentC,borderRadius:'50%',animation:'spin 0.8s linear infinite'}} />
-            <p style={{color:t.muted,fontSize:12}}>Loading {cfg.l} candles...</p>
-          </div>
-        : <div ref={chartRef} style={{width:'100%',height:h-90}} />
-      }
+
+      {/* Chart area */}
+      {loading ? (
+        <div style={{height: h - 110, display:'flex',alignItems:'center',
+          justifyContent:'center',flexDirection:'column',gap:12}}>
+          <div style={{width:32,height:32,border:`3px solid ${t.border}`,
+            borderTopColor:t.accentC,borderRadius:'50%',animation:'spin 0.8s linear infinite'}} />
+          <p style={{color:t.muted,fontSize:12}}>Loading {cfg.l} candles...</p>
+        </div>
+      ) : error ? (
+        <div style={{height: h - 110, display:'flex',alignItems:'center',
+          justifyContent:'center',flexDirection:'column',gap:10}}>
+          <p style={{color:t.red,fontSize:13}}>{error}</p>
+          <button onClick={() => ensureLWC(() => loadFull())}
+            style={{padding:'6px 16px',background:t.surface,border:`1px solid ${t.border}`,
+              borderRadius:8,color:t.muted,cursor:'pointer',fontSize:12}}>
+            Try Again
+          </button>
+        </div>
+      ) : (
+        <div ref={chartRef} style={{width:'100%',height: h - 110}} />
+      )}
     </div>
   )
 }
