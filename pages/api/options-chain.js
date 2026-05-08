@@ -96,7 +96,7 @@ async function getCachedInstruments(symbol, accessToken) {
     if (!line.trim()) continue
     const cols  = line.split(',')
     if (cols.length < 8) continue
-    const iName = (cols[ci.name] || '').trim()
+    const iName = (cols[ci.name] || '').trim().replace(/^"|"$/g, '')
     const iType = (cols[ci.type] || '').trim()
     if (iName !== symbol) continue
     if (iType !== 'CE' && iType !== 'PE') continue

@@ -612,7 +612,7 @@ async function refreshNFOCache() {
       if (!line.trim()) continue
       const cols = line.split(',')
       if (cols.length < 8) continue
-      const iName = (cols[ci.name] || '').trim()
+      const iName = (cols[ci.name] || '').trim().replace(/^"|"$/g, '')  // strip CSV quotes
       const iType = (cols[ci.type] || '').trim()
       if (!symbols.includes(iName)) continue
       if (iType !== 'CE' && iType !== 'PE') continue
