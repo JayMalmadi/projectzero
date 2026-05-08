@@ -56,166 +56,146 @@ function SCard({label,value,color,sub,icon,t}) {
 }
 
 function PZChart({symbol, t, h=420, accessToken, market='india'}) {
-  // ── Interval config ─────────────────────────────────────────
-  // Each interval knows: Kite name, Delta resolution, days back, refresh seconds
   const isCrypto = market === 'crypto' || ['BTC','ETH','SOL','XRP'].includes(symbol)
 
   const INTERVALS = isCrypto ? [
-    {v:'1m',   l:'1m',  res:'1m',  secs:60,    limit:300,  refresh:5},
-    {v:'5m',   l:'5m',  res:'5m',  secs:300,   limit:300,  refresh:10},
-    {v:'15m',  l:'15m', res:'15m', secs:900,   limit:300,  refresh:15},
-    {v:'30m',  l:'30m', res:'30m', secs:1800,  limit:300,  refresh:30},
-    {v:'1h',   l:'1h',  res:'1h',  secs:3600,  limit:300,  refresh:60},
-    {v:'4h',   l:'4h',  res:'4h',  secs:14400, limit:200,  refresh:120},
-    {v:'1d',   l:'1D',  res:'1d',  secs:86400, limit:365,  refresh:300},
+    {v:'1m',  l:'1m',  res:'1m',  limit:120, refresh:5},
+    {v:'5m',  l:'5m',  res:'5m',  limit:200, refresh:10},
+    {v:'15m', l:'15m', res:'15m', limit:200, refresh:15},
+    {v:'30m', l:'30m', res:'30m', limit:200, refresh:30},
+    {v:'1h',  l:'1h',  res:'1h',  limit:200, refresh:60},
+    {v:'4h',  l:'4h',  res:'4h',  limit:200, refresh:120},
+    {v:'1d',  l:'1D',  res:'1d',  limit:365, refresh:300},
   ] : [
-    {v:'minute',   l:'1m',  days:1,   refresh:5},
-    {v:'5minute',  l:'5m',  days:3,   refresh:10},
-    {v:'15minute', l:'15m', days:10,  refresh:15},
-    {v:'30minute', l:'30m', days:20,  refresh:30},
-    {v:'60minute', l:'1h',  days:60,  refresh:60},
-    {v:'day',      l:'1D',  days:365, refresh:300},
-    {v:'week',     l:'1W',  days:730, refresh:600},
+    {v:'minute',  l:'1m',  days:1,   refresh:5},
+    {v:'5minute', l:'5m',  days:3,   refresh:10},
+    {v:'15minute',l:'15m', days:10,  refresh:15},
+    {v:'30minute',l:'30m', days:20,  refresh:30},
+    {v:'60minute',l:'1h',  days:60,  refresh:60},
+    {v:'day',     l:'1D',  days:365, refresh:300},
+    {v:'week',    l:'1W',  days:730, refresh:600},
   ]
 
-  const DEFAULT_INTV = isCrypto ? '15m' : '15minute'
-
-  const [intv,    setIntv]    = useState(DEFAULT_INTV)
-  const [loading, setLoading] = useState(false)
-  const [error,   setError]   = useState('')
+  const [intv,    setIntv]    = useState(isCrypto ? '15m' : '15minute')
+  const [status,  setStatus]  = useState('idle') // idle | loading | ready | error
+  const [errMsg,  setErrMsg]  = useState('')
   const [last,    setLast]    = useState(null)
   const [source,  setSource]  = useState('')
   const [secAgo,  setSecAgo]  = useState(null)
   const [live,    setLive]    = useState(true)
 
   const chartRef  = useRef(null)
-  const lwChart   = useRef(null)  // Lightweight Charts instance
-  const candleSer = useRef(null)  // Candlestick series
-  const volSer    = useRef(null)  // Volume histogram
+  const lwChart   = useRef(null)
+  const candleSer = useRef(null)
+  const volSer    = useRef(null)
   const timerRef  = useRef(null)
-  const lastLoad  = useRef(null)
+  const lastFetch = useRef(0)
+  const canvasData= useRef([])  // keep last data for theme re-renders
 
   const cfg = INTERVALS.find(i => i.v === intv) || INTERVALS[2]
   const curr = isCrypto ? '$' : '₹'
+  const isDark = () => t.bg === '#07090f' || t.bg === '#080c14' || t.bg === '#0a0e1a'
 
-  // ── Fetch candles ────────────────────────────────────────────
-  async function fetchCandles() {
-    try {
-      let url
-      if (isCrypto) {
-        url = `/api/delta?action=candles&symbol=${symbol}USD&resolution=${cfg.res}&limit=${cfg.limit}`
-      } else {
-        url = `/api/kite-chart?symbol=${symbol}&interval=${cfg.v}&days=${cfg.days}`
+  // ── Load LWC library (once) ──────────────────────────────────
+  function loadLWC() {
+    return new Promise((resolve) => {
+      if (window.LightweightCharts) { resolve(); return }
+      const existing = document.getElementById('lwc-script')
+      if (existing) {
+        existing.addEventListener('load', resolve)
+        return
       }
-
-      const headers = (!isCrypto && accessToken) ? { 'x-kite-access-token': accessToken } : {}
-      const r  = await fetch(url, { headers })
-      const d  = await r.json()
-
-      if (!d.candles?.length) return null
-
-      // Sort oldest→newest, deduplicate by time
-      const sorted = [...d.candles]
-        .sort((a, b) => a.time - b.time)
-        .filter((c, i, arr) => i === 0 || c.time !== arr[i-1].time)
-        .filter(c => c.open > 0 && c.close > 0)
-
-      setSource(d.source || (isCrypto ? 'delta' : 'kite'))
-      setLast(sorted[sorted.length - 1])
-      setSecAgo(0)
-      lastLoad.current = Date.now()
-      return sorted
-    } catch(e) {
-      console.error('[PZChart] fetch error:', e.message)
-      return null
-    }
+      const s = document.createElement('script')
+      s.id  = 'lwc-script'
+      s.src = 'https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js'
+      s.onload  = resolve
+      s.onerror = resolve  // resolve anyway, renderChart will handle missing LWC
+      document.head.appendChild(s)
+    })
   }
 
-  // ── Initial load ─────────────────────────────────────────────
-  async function loadFull() {
-    setLoading(true)
-    setError('')
-    const candles = await fetchCandles()
-    if (!candles) {
-      setError('No data available')
-      setLoading(false)
-      return
-    }
-    setLoading(false)
-    // Chart will render via useEffect watching loading→false
-    renderChart(candles)
+  // ── Fetch candles from API ───────────────────────────────────
+  async function fetchCandles() {
+    const url = isCrypto
+      ? `/api/delta?action=candles&symbol=${symbol}USD&resolution=${cfg.res}&limit=${cfg.limit}`
+      : `/api/kite-chart?symbol=${symbol}&interval=${cfg.v}&days=${cfg.days}`
+    const headers = (!isCrypto && accessToken) ? { 'x-kite-access-token': accessToken } : {}
+    const r = await fetch(url, { headers })
+    const d = await r.json()
+    if (!d.candles?.length) throw new Error('No candle data returned')
+    // Sort oldest→newest, remove duplicates, filter bad candles
+    const clean = [...d.candles]
+      .sort((a, b) => a.time - b.time)
+      .filter((c, i, arr) => i === 0 || c.time !== arr[i-1].time)
+      .filter(c => c.open > 0 && c.close > 0 && c.high >= c.low)
+    setSource(d.source || (isCrypto ? 'delta' : 'kite'))
+    setLast(clean[clean.length - 1])
+    lastFetch.current = Date.now()
+    canvasData.current = clean
+    return clean
   }
 
-  // ── Render chart ─────────────────────────────────────────────
-  function renderChart(candles) {
-    if (!chartRef.current || !candles?.length) return
-    if (!window.LightweightCharts) return
+  // ── Build chart ──────────────────────────────────────────────
+  function buildChart(candles) {
+    if (!chartRef.current) return
+    if (!window.LightweightCharts) { setErrMsg('Chart library failed to load. Refresh page.'); setStatus('error'); return }
 
-    // Destroy previous instance
-    if (lwChart.current) {
-      try { lwChart.current.remove() } catch {}
-      lwChart.current = null
-      candleSer.current = null
-      volSer.current = null
-    }
+    // Destroy previous
+    if (lwChart.current) { try { lwChart.current.remove() } catch {} lwChart.current = null }
     chartRef.current.innerHTML = ''
 
-    const isDark = t.bg === '#07090f' || t.bg === '#080c14'
-    const width  = chartRef.current.clientWidth || 360
-    const chartH = h - 110
+    const dark = isDark()
+    const bgColor = dark ? '#0d1117' : '#ffffff'
+    const chartH  = h - 110
 
     const chart = window.LightweightCharts.createChart(chartRef.current, {
-      width,
+      width:  chartRef.current.clientWidth || 360,
       height: chartH,
       layout: {
-        background: { color: 'transparent' },
-        textColor:  isDark ? '#9ca3af' : '#6b7280',
+        background: { type: 'solid', color: bgColor },
+        textColor:  dark ? '#9ca3af' : '#6b7280',
         fontSize:   11,
         fontFamily: 'JetBrains Mono, monospace',
       },
       grid: {
-        vertLines: { color: isDark ? '#1f293720' : '#f1f5f920' },
-        horzLines: { color: isDark ? '#1f293720' : '#f1f5f920' },
+        vertLines: { color: dark ? '#1f293718' : '#f1f5f918' },
+        horzLines: { color: dark ? '#1f293718' : '#f1f5f918' },
       },
       crosshair: { mode: 1 },
       rightPriceScale: {
-        borderColor: isDark ? '#1f2937' : '#e5e7eb',
+        borderColor: dark ? '#1f2937' : '#e5e7eb',
         scaleMargins: { top: 0.05, bottom: 0.25 },
       },
       timeScale: {
-        borderColor:    isDark ? '#1f2937' : '#e5e7eb',
+        borderColor:    dark ? '#1f2937' : '#e5e7eb',
         timeVisible:    true,
         secondsVisible: cfg.v === 'minute' || cfg.v === '1m',
-        fixLeftEdge:    false,
-        fixRightEdge:   false,
       },
-      handleScroll:  true,
-      handleScale:   true,
+      handleScroll: true,
+      handleScale:  true,
     })
 
     // Candlestick series
     const cSer = chart.addCandlestickSeries({
-      upColor:        '#10f59e',
-      downColor:      '#ff4466',
-      borderUpColor:  '#10f59e',
-      borderDownColor:'#ff4466',
-      wickUpColor:    '#10f59eaa',
-      wickDownColor:  '#ff4466aa',
+      upColor:         '#10f59e',
+      downColor:       '#ff4466',
+      borderUpColor:   '#10f59e',
+      borderDownColor: '#ff4466',
+      wickUpColor:     '#10f59e99',
+      wickDownColor:   '#ff446699',
     })
     cSer.setData(candles)
 
-    // Volume histogram (bottom 20%)
+    // Volume series
     const vSer = chart.addHistogramSeries({
-      priceFormat:   { type: 'volume' },
-      priceScaleId:  'volume',
+      priceFormat:  { type: 'volume' },
+      priceScaleId: 'vol',
     })
-    chart.priceScale('volume').applyOptions({
-      scaleMargins: { top: 0.82, bottom: 0 },
-    })
+    chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } })
     vSer.setData(candles.map(c => ({
       time:  c.time,
       value: c.volume || 0,
-      color: c.close >= c.open ? '#10f59e28' : '#ff446628',
+      color: c.close >= c.open ? '#10f59e25' : '#ff446625',
     })))
 
     chart.timeScale().fitContent()
@@ -224,7 +204,7 @@ function PZChart({symbol, t, h=420, accessToken, market='india'}) {
     candleSer.current = cSer
     volSer.current    = vSer
 
-    // Responsive resize
+    // Responsive
     const ro = new ResizeObserver(() => {
       if (chartRef.current && lwChart.current) {
         lwChart.current.applyOptions({ width: chartRef.current.clientWidth })
@@ -233,154 +213,152 @@ function PZChart({symbol, t, h=420, accessToken, market='india'}) {
     ro.observe(chartRef.current)
   }
 
-  // ── Silent update (append/update last candle) ─────────────────
-  async function silentUpdate() {
-    if (!candleSer.current) return
-    const candles = await fetchCandles()
-    if (!candles?.length) return
-    // Update last 2 candles silently (current forming + previous)
-    candles.slice(-2).forEach(c => {
-      try { candleSer.current.update(c) } catch {}
-      try {
-        volSer.current?.update({
-          time: c.time, value: c.volume || 0,
-          color: c.close >= c.open ? '#10f59e28' : '#ff446628',
-        })
-      } catch {}
-    })
-  }
-
-  // ── Load Lightweight Charts library ──────────────────────────
-  function ensureLWC(cb) {
-    if (window.LightweightCharts) { cb(); return }
-    if (document.getElementById('lwc-script')) {
-      document.getElementById('lwc-script').addEventListener('load', cb)
-      return
+  // ── Full load (fetch + build) ────────────────────────────────
+  async function loadFull() {
+    setStatus('loading')
+    setErrMsg('')
+    try {
+      await loadLWC()          // ensure library is ready FIRST
+      const candles = await fetchCandles()
+      buildChart(candles)      // now safe to build
+      setStatus('ready')
+    } catch(e) {
+      console.error('[PZChart]', e.message)
+      setErrMsg(e.message || 'Failed to load chart')
+      setStatus('error')
     }
-    const s = document.createElement('script')
-    s.id  = 'lwc-script'
-    s.src = 'https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js'
-    s.onload = cb
-    document.head.appendChild(s)
   }
 
-  // ── Effects ───────────────────────────────────────────────────
-  // Load on symbol/interval/token change
+  // ── Silent update (last 2 candles only) ──────────────────────
+  async function silentUpdate() {
+    if (status !== 'ready' || !candleSer.current) return
+    try {
+      const candles = await fetchCandles()
+      candles.slice(-2).forEach(c => {
+        try { candleSer.current.update(c) } catch {}
+        try {
+          volSer.current?.update({
+            time: c.time, value: c.volume || 0,
+            color: c.close >= c.open ? '#10f59e25' : '#ff446625',
+          })
+        } catch {}
+      })
+      setSecAgo(0)
+    } catch {}
+  }
+
+  // ── Main effect: reload on symbol/interval/token change ──────
   useEffect(() => {
-    ensureLWC(() => loadFull())
+    loadFull()
     if (timerRef.current) clearInterval(timerRef.current)
     if (live) {
       timerRef.current = setInterval(() => {
         silentUpdate()
-        setSecAgo(v => v !== null ? Math.round((Date.now() - (lastLoad.current || Date.now())) / 1000) : null)
+        if (lastFetch.current) setSecAgo(Math.round((Date.now() - lastFetch.current) / 1000))
       }, cfg.refresh * 1000)
     }
     return () => { if (timerRef.current) clearInterval(timerRef.current) }
   }, [symbol, intv, accessToken, live])
 
-  // Rerender chart on theme change
+  // ── Theme change: rebuild chart with same data ────────────────
   useEffect(() => {
-    if (!lwChart.current) return
-    const isDark = t.bg === '#07090f' || t.bg === '#080c14'
-    lwChart.current.applyOptions({
-      layout: {
-        background: { color: 'transparent' },
-        textColor: isDark ? '#9ca3af' : '#6b7280',
-      },
-    })
+    if (status === 'ready' && canvasData.current.length) {
+      buildChart(canvasData.current)
+    }
   }, [t])
 
-  // ── UI ────────────────────────────────────────────────────────
-  const chg    = last ? parseFloat(((last.close - last.open) / last.open * 100).toFixed(2)) : 0
-  const isUp   = chg >= 0
+  // ── Render ───────────────────────────────────────────────────
+  const chg  = last ? parseFloat(((last.close - last.open) / last.open * 100).toFixed(2)) : 0
+  const isUp = chg >= 0
 
   return (
     <div style={{borderRadius:16,overflow:'hidden',border:`1px solid ${t.border}`,background:t.card}}>
 
-      {/* Header — symbol + price + status */}
+      {/* Header */}
       <div style={{padding:'10px 14px',display:'flex',justifyContent:'space-between',
         alignItems:'center',borderBottom:`1px solid ${t.border}`,flexWrap:'wrap',gap:8}}>
         <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
           <span style={{width:7,height:7,borderRadius:'50%',display:'inline-block',
-            background:live ? t.green : t.amber,
-            animation:live ? 'pulse 1.5s infinite' : 'none'}} />
+            background: status==='ready' ? (live ? t.green : t.amber) : t.muted,
+            animation: status==='ready' && live ? 'pulse 1.5s infinite' : 'none'}} />
           <span style={{fontWeight:800,fontSize:15,color:t.text}}>{symbol}</span>
           {last && (
             <>
-              <span style={{fontFamily:'JetBrains Mono,monospace',fontSize:14,
-                fontWeight:700,color:t.text}}>
-                {curr}{parseFloat(last.close).toLocaleString('en-IN', {maximumFractionDigits: isCrypto ? 2 : 0})}
+              <span style={{fontFamily:'JetBrains Mono,monospace',fontSize:14,fontWeight:700,color:t.text}}>
+                {curr}{parseFloat(last.close).toLocaleString('en-IN',
+                  {maximumFractionDigits: isCrypto && last.close > 100 ? 0 : 2})}
               </span>
               <span style={{fontSize:11,fontWeight:700,padding:'2px 7px',borderRadius:5,
-                color:isUp ? t.green : t.red,
-                background:(isUp ? t.green : t.red) + '18'}}>
-                {isUp ? '+' : ''}{chg}%
+                color: isUp ? t.green : t.red,
+                background: (isUp ? t.green : t.red) + '18'}}>
+                {isUp?'+':''}{chg}%
               </span>
             </>
           )}
           <span style={{color:t.muted,fontSize:10}}>
-            {isCrypto ? '🟢 Delta Exchange' : source === 'kite' ? '🟢 Kite Live' : '⚪ Yahoo Finance'}
-            {secAgo !== null && secAgo > 0 ? ` · ${secAgo}s ago` : ''}
+            {isCrypto ? '🟢 Delta' : source==='kite' ? '🟢 Kite' : '⚪ Yahoo'}
+            {secAgo !== null && secAgo > 0 ? ` · ${secAgo}s` : ''}
           </span>
         </div>
         <div style={{display:'flex',gap:6}}>
           <button onClick={() => setLive(v => !v)}
             style={{padding:'3px 10px',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',
               fontFamily:'Inter,sans-serif',
-              background: live ? t.green + '22' : t.surface,
+              background: live ? t.green+'22' : t.surface,
               border: `1px solid ${live ? t.green : t.border}`,
               color: live ? t.green : t.muted}}>
-            {live ? `⚡ Auto ${cfg.refresh}s` : '⏸ Paused'}
+            {live ? `⚡ ${cfg.refresh}s` : '⏸'}
           </button>
-          <button onClick={() => ensureLWC(() => loadFull())}
+          <button onClick={loadFull}
             style={{padding:'3px 8px',borderRadius:6,fontSize:13,cursor:'pointer',
-              background:'none',border:`1px solid ${t.border}`,color:t.muted}}>
-            ↻
-          </button>
+              background:'none',border:`1px solid ${t.border}`,color:t.muted}}>↻</button>
         </div>
       </div>
 
-      {/* Interval selector */}
+      {/* Interval buttons */}
       <div style={{padding:'6px 14px',display:'flex',gap:4,flexWrap:'wrap',
-        borderBottom:`1px solid ${t.border}`,background:t.surface + '55'}}>
+        borderBottom:`1px solid ${t.border}`,background:t.surface+'55'}}>
         {INTERVALS.map(i => (
           <button key={i.v} onClick={() => setIntv(i.v)}
             style={{padding:'4px 10px',borderRadius:6,fontSize:12,fontWeight:700,
               cursor:'pointer',fontFamily:'Inter,sans-serif',transition:'all 0.1s',
-              background: intv === i.v ? t.accentC : t.surface,
-              border: `1px solid ${intv === i.v ? t.accentC : t.border}`,
-              color: intv === i.v ? '#fff' : t.muted}}>
+              background: intv===i.v ? t.accentC : t.surface,
+              border: `1px solid ${intv===i.v ? t.accentC : t.border}`,
+              color: intv===i.v ? '#fff' : t.muted}}>
             {i.l}
           </button>
         ))}
       </div>
 
-      {/* Chart area */}
-      {loading ? (
-        <div style={{height: h - 110, display:'flex',alignItems:'center',
-          justifyContent:'center',flexDirection:'column',gap:12}}>
-          <div style={{width:32,height:32,border:`3px solid ${t.border}`,
-            borderTopColor:t.accentC,borderRadius:'50%',animation:'spin 0.8s linear infinite'}} />
-          <p style={{color:t.muted,fontSize:12}}>Loading {cfg.l} candles...</p>
-        </div>
-      ) : error ? (
-        <div style={{height: h - 110, display:'flex',alignItems:'center',
-          justifyContent:'center',flexDirection:'column',gap:10}}>
-          <p style={{color:t.red,fontSize:13}}>{error}</p>
-          <button onClick={() => ensureLWC(() => loadFull())}
-            style={{padding:'6px 16px',background:t.surface,border:`1px solid ${t.border}`,
-              borderRadius:8,color:t.muted,cursor:'pointer',fontSize:12}}>
-            Try Again
-          </button>
-        </div>
-      ) : (
-        <div ref={chartRef} style={{width:'100%',height: h - 110}} />
-      )}
+      {/* Chart / Loading / Error */}
+      <div style={{position:'relative',width:'100%',height: h - 110}}>
+        {status === 'loading' && (
+          <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',
+            justifyContent:'center',flexDirection:'column',gap:12,zIndex:2,
+            background: isDark() ? '#0d1117' : '#ffffff'}}>
+            <div style={{width:32,height:32,border:`3px solid ${t.border}`,
+              borderTopColor:t.accentC,borderRadius:'50%',animation:'spin 0.8s linear infinite'}}/>
+            <p style={{color:t.muted,fontSize:12}}>Loading {cfg.l} candles...</p>
+          </div>
+        )}
+        {status === 'error' && (
+          <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',
+            justifyContent:'center',flexDirection:'column',gap:10,
+            background: isDark() ? '#0d1117' : '#ffffff'}}>
+            <p style={{color:t.red,fontSize:13,textAlign:'center',padding:'0 20px'}}>{errMsg}</p>
+            <button onClick={loadFull}
+              style={{padding:'6px 16px',background:t.surface,border:`1px solid ${t.border}`,
+                borderRadius:8,color:t.muted,cursor:'pointer',fontSize:12,fontFamily:'Inter,sans-serif'}}>
+              Try Again
+            </button>
+          </div>
+        )}
+        <div ref={chartRef} style={{width:'100%',height:'100%'}} />
+      </div>
     </div>
   )
 }
 
-// ── Kite Trades Panel ──────────────────────────────────────────
 function KiteTradesPanel({at, t}) {
   const [data,    setData]    = useState(null)
   const [loading, setLoading] = useState(false)
