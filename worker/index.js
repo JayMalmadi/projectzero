@@ -1015,7 +1015,7 @@ const server = http.createServer((req, res) => {
             stop_loss:   stopLoss ? parseFloat(stopLoss) : null,
             target:      target   ? parseFloat(target)   : null,
             confidence:  conf,
-            quantity:    1,
+            quantity:    stopLoss ? calcPositionSize(parseFloat(price), parseFloat(stopLoss), market) : 1,
             notes: `TradingView signal · ${timeframe || '15m'} · ${strategy || 'Pine Script'}`,
           })
         })
