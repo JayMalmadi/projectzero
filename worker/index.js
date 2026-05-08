@@ -486,30 +486,24 @@ async function monitorPaperTrades() {
           // Use pre-fetched price
           let currentPrice = allPrices[trade.symbol]?.price || trade.entry_price
 
-          const pnlPoints = trade.direction === 'BUY'
+          const qty       = trade.quantity || 1
+          const pnlPoints = (trade.direction === 'BUY'
             ? currentPrice - trade.entry_price
-            : trade.entry_price - currentPrice
-          const pnlPct = (pnlPoints / trade.entry_price) * 100
+            : trade.entry_price - currentPrice) * qty
+          // pnl_pct = P&L as % of fixed base capital (₹10k or $1k) — not % of entry price
+          const base    = (trade.market === 'crypto' || trade.market === 'delta') ? CONFIG.PAPER_BASE_USD : CONFIG.PAPER_BASE_INR
+          const pnlPct  = parseFloat(((pnlPoints / base) * 100).toFixed(4))
 
-          await postJSON(`${CONFIG.DASHBOARD_URL}/api/paper-trades`, {
-            _method: 'PATCH', id: trade.id,
-            status:     pnlPoints >= 0 ? 'WIN' : 'LOSS',
-            exit_price:  currentPrice,
-            exit_reason: 'MARKET_CLOSE',
-            pnl_points:  parseFloat(pnlPoints.toFixed(2)),
-            pnl_pct:     parseFloat(pnlPct.toFixed(4)),
-          })
-          // PATCH via fetch directly
           await fetch(`${CONFIG.DASHBOARD_URL}/api/paper-trades`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               id: trade.id,
-              status:     pnlPoints >= 0 ? 'WIN' : 'LOSS',
+              status:      pnlPoints >= 0 ? 'WIN' : 'LOSS',
               exit_price:  currentPrice,
               exit_reason: 'MARKET_CLOSE',
               pnl_points:  parseFloat(pnlPoints.toFixed(2)),
-              pnl_pct:     parseFloat(pnlPct.toFixed(4)),
+              pnl_pct:     pnlPct,
             })
           })
           console.log(`[PaperMonitor] Closed at market: ${trade.symbol} P&L: ${pnlPoints.toFixed(0)} pts`)
@@ -523,13 +517,15 @@ async function monitorPaperTrades() {
         if ((trade.market === 'crypto' || trade.market === 'delta') && trade.opened_at) {
           const ageHours = (Date.now() - new Date(trade.opened_at).getTime()) / 3600000
           if (ageHours > 24) {
-            const exitP = allPrices[trade.symbol]?.price || trade.entry_price
-            const pnlPts = trade.direction === 'BUY' ? exitP - trade.entry_price : trade.entry_price - exitP
-            const pnlPct = (pnlPts / trade.entry_price) * 100
+            const exitP   = allPrices[trade.symbol]?.price || trade.entry_price
+            const qty24   = trade.quantity || 1
+            const pnlPts  = (trade.direction === 'BUY' ? exitP - trade.entry_price : trade.entry_price - exitP) * qty24
+            const base24  = (trade.market === 'crypto' || trade.market === 'delta') ? CONFIG.PAPER_BASE_USD : CONFIG.PAPER_BASE_INR
+            const pnlPct24 = parseFloat(((pnlPts / base24) * 100).toFixed(4))
             await fetch(`${CONFIG.DASHBOARD_URL}/api/paper-trades`, {
               method: 'PATCH', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ id: trade.id, status: pnlPts >= 0 ? 'WIN' : 'LOSS',
-                exit_price: exitP, exit_reason: '24H_EXPIRED', pnl_points: parseFloat(pnlPts.toFixed(4)), pnl_pct: parseFloat(pnlPct.toFixed(4)) })
+                exit_price: exitP, exit_reason: '24H_EXPIRED', pnl_points: parseFloat(pnlPts.toFixed(4)), pnl_pct: pnlPct24 })
             })
             console.log(`[PaperMonitor] Crypto 24h close: ${trade.symbol} ${pnlPts.toFixed(2)} pts`)
             continue
@@ -580,34 +576,45 @@ async function monitorPaperTrades() {
         )
 
         if (slHit || tgtHit) {
-          const exitPrice = slHit ? trade.stop_loss : trade.target
-          const pnlPoints = trade.direction === 'BUY'
+          const exitPrice  = slHit ? trade.stop_loss : trade.target
+          const qty        = trade.quantity || 1
+          const pnlPoints  = (trade.direction === 'BUY'
             ? exitPrice - trade.entry_price
-            : trade.entry_price - exitPrice
-          const pnlPct = (pnlPoints / trade.entry_price) * 100
+            : trade.entry_price - exitPrice) * qty
+          // P&L as % of fixed base capital — the key metric for strategy comparison
+          const base       = (trade.market === 'crypto' || trade.market === 'delta') ? CONFIG.PAPER_BASE_USD : CONFIG.PAPER_BASE_INR
+          const pnlPct     = parseFloat(((pnlPoints / base) * 100).toFixed(4))
+          // Risk % of base (how much this trade risked)
+          const riskPoints = Math.abs(trade.entry_price - trade.stop_loss) * qty
+          const riskPct    = parseFloat(((riskPoints / base) * 100).toFixed(4))
+          // Actual R:R achieved
+          const actualRR   = riskPoints > 0 ? parseFloat((Math.abs(pnlPoints) / riskPoints).toFixed(2)) : 0
 
           await fetch(`${CONFIG.DASHBOARD_URL}/api/paper-trades`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               id: trade.id,
-              status:     tgtHit ? 'WIN' : 'LOSS',
+              status:      tgtHit ? 'WIN' : 'LOSS',
               exit_price:  exitPrice,
               exit_reason: tgtHit ? 'TARGET_HIT' : 'SL_HIT',
               pnl_points:  parseFloat(pnlPoints.toFixed(2)),
-              pnl_pct:     parseFloat(pnlPct.toFixed(4)),
+              pnl_pct:     pnlPct,
+              rr:          actualRR,
             })
           })
 
-          // Send Telegram notification
+          const curr  = (trade.market === 'crypto' || trade.market === 'delta') ? '$' : '₹'
           const emoji = tgtHit ? '🎯' : '🛑'
-          const msg = `${emoji} <b>PAPER TRADE ${tgtHit?'WIN':'LOSS'}</b>
-${trade.direction} ${trade.symbol} (${trade.strategy})
-Entry: ₹${trade.entry_price} → Exit: ₹${exitPrice}
-P&L: ${pnlPoints >= 0?'+':''}${pnlPoints.toFixed(0)} pts (${pnlPct >= 0?'+':''}${pnlPct.toFixed(2)}%)
-Reason: ${tgtHit ? 'Target hit ✅' : 'Stop loss hit ❌'}`
+          const msg   = emoji + ' <b>PAPER TRADE ' + (tgtHit?'WIN':'LOSS') + '</b>\n' +
+            trade.direction + ' ' + trade.symbol + ' · ' + trade.strategy + '\n' +
+            'Entry: ' + curr + trade.entry_price + ' → Exit: ' + curr + exitPrice + '\n' +
+            'Qty: ' + qty + ' · Risk: ' + (riskPct >= 0?'+':'') + riskPct.toFixed(2) + '% of base\n' +
+            'P&L: ' + (pnlPoints >= 0?'+':'') + pnlPoints.toFixed(2) + ' (' + (pnlPct >= 0?'+':'') + pnlPct.toFixed(2) + '% of base)\n' +
+            'R:R achieved: 1:' + actualRR + '\n' +
+            'Reason: ' + (tgtHit ? 'Target hit ✅' : 'Stop loss hit ❌')
           await sendTelegram(msg)
-          console.log(`[PaperMonitor] ${tgtHit?'WIN':'LOSS'}: ${trade.symbol} ${pnlPoints.toFixed(0)} pts`)
+          console.log('[PaperMonitor] ' + (tgtHit?'WIN':'LOSS') + ': ' + trade.symbol + ' ' + pnlPct.toFixed(2) + '% of base')
         }
       } catch(e) {
         console.error(`[PaperMonitor] Error on trade ${trade.id}:`, e.message)

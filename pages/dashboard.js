@@ -3534,112 +3534,70 @@ function DeltaTab({t, at}) {
 function PaperTradesTab({t}) {
   const [data,    setData]    = useState(null)
   const [loading, setLoading] = useState(true)
-  const [filter,  setFilter]  = useState('all')  // all | open | closed
+  const [filter,  setFilter]  = useState('all')
   const [days,    setDays]    = useState(30)
+  const [view,    setView]    = useState('performance') // performance | trades
 
   useEffect(() => { load() }, [filter, days])
-  
+
   async function load() {
     setLoading(true)
     try {
       const status = filter === 'open' ? '&status=OPEN' : filter === 'closed' ? '&status=WIN,LOSS,EXPIRED' : ''
-      const r = await fetch(`/api/paper-trades?days=${days}&limit=100${status}`)
+      const r = await fetch(`/api/paper-trades?days=${days}&limit=200${status}`)
       const d = await r.json()
       setData(d)
     } catch(e) { console.warn('Paper trades:', e) }
     setLoading(false)
   }
 
-  const fmtTime = d => new Date(d).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',timeZone:'Asia/Kolkata'})
+  const fmtTime  = d => new Date(d).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',timeZone:'Asia/Kolkata'})
   const pnlColor = v => v > 0 ? t.green : v < 0 ? t.red : t.muted
+  const fmtPct   = v => (v >= 0 ? '+' : '') + parseFloat(v).toFixed(2) + '%'
 
-  // Equity curve — cumulative P&L over closed trades
-  const closed = (data?.trades||[]).filter(tr=>['WIN','LOSS','EXPIRED','CLOSED'].includes(tr.status))
-    .sort((a,b)=>new Date(a.closed_at)-new Date(b.closed_at))
-  let cumPnL = 0
-  const equityCurve = closed.map(tr => { cumPnL += (tr.pnl_pct||0); return cumPnL.toFixed(2) })
+  // Monthly summary from API
+  const monthly  = data?.monthly
+  const ranked   = monthly?.strategies_ranked || []
+
+  // Equity curve — cumulative % of base over closed trades sorted by date
+  const closed = (data?.trades||[])
+    .filter(tr => ['WIN','LOSS','EXPIRED','CLOSED'].includes(tr.status))
+    .sort((a,b) => new Date(a.closed_at) - new Date(b.closed_at))
+  let cum = 0
+  const equityCurve = closed.map(tr => { cum += (tr.pnl_pct||0); return parseFloat(cum.toFixed(2)) })
 
   return (
     <div>
       {/* Header */}
-      <div style={{marginBottom:20}}>
-        <h2 style={{fontSize:22,fontWeight:900,color:t.text}}>🧪 Paper Trades</h2>
-        <p style={{color:t.muted,fontSize:13,marginTop:4}}>
-          Auto-paper-trading — every signal with ≥65% confidence is automatically tracked.
-          Shows if the strategy would have won or lost.
-        </p>
-      </div>
-
-      {/* Stats */}
-      {data?.stats && (
-        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(130px,1fr))',gap:10,marginBottom:20}}>
-          {[
-            {l:'TOTAL',        v:data.stats.total,                            c:t.text},
-            {l:'OPEN',         v:data.stats.open,                             c:t.amber},
-            {l:'WIN RATE',     v:data.stats.winRate ? `${data.stats.winRate}%` : '—',    c:parseFloat(data.stats.winRate||0)>=55?t.green:t.red},
-            {l:'AVG WIN',      v:data.stats.avgWin  ? `+${data.stats.avgWin}%`  : '—',  c:t.green},
-            {l:'AVG LOSS',     v:data.stats.avgLoss ? `${data.stats.avgLoss}%` : '—',   c:t.red},
-            {l:'EXPECTANCY',   v:data.stats.expectancy ? `${parseFloat(data.stats.expectancy)>0?'+':''}${data.stats.expectancy}%` : '—',
-              c:parseFloat(data.stats.expectancy||0)>0?t.green:t.red},
-          ].map(x=>(
-            <div key={x.l} style={{background:t.card,borderRadius:12,padding:'12px 14px',border:`1px solid ${t.border}`,textAlign:'center'}}>
-              <p style={{color:t.muted,fontSize:9,fontWeight:700,letterSpacing:'0.07em',marginBottom:4}}>{x.l}</p>
-              <p style={{color:x.c,fontSize:16,fontWeight:800,fontFamily:'JetBrains Mono,monospace'}}>{x.v}</p>
-            </div>
-          ))}
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:20,flexWrap:'wrap',gap:10}}>
+        <div>
+          <h2 style={{fontSize:22,fontWeight:900,color:t.text}}>🧪 Paper Trading Performance</h2>
+          <p style={{color:t.muted,fontSize:13,marginTop:4}}>
+            Fixed base: ₹10,000 (India) · $1,000 (Crypto/Delta) · All P&L% relative to base
+          </p>
         </div>
-      )}
-
-      {/* Strategy scoreboard */}
-      {data?.byStrategy && Object.keys(data.byStrategy).length > 0 && (
-        <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,marginBottom:20,overflow:'hidden'}}>
-          <div style={{padding:'10px 16px',borderBottom:`1px solid ${t.border}`,fontSize:11,fontWeight:700,color:t.muted,letterSpacing:'0.06em'}}>
-            STRATEGY SCOREBOARD
-          </div>
-          <div style={{overflowX:'auto',WebkitOverflowScrolling:'touch'}}><table style={{width:'100%',minWidth:550,borderCollapse:'collapse'}}>
-            <thead><tr style={{background:t.surface}}>
-              {['STRATEGY','TRADES','WINS','LOSSES','WIN RATE','AVG P&L%','VERDICT'].map(h=>(
-                <th key={h} style={{padding:'8px 14px',textAlign:'left',fontSize:10,fontWeight:700,color:t.muted,letterSpacing:'0.06em',borderBottom:`1px solid ${t.border}`}}>{h}</th>
-              ))}
-            </tr></thead>
-            <tbody>
-              {Object.entries(data.byStrategy).map(([strat, s]) => {
-                const wr = s.total > 0 ? (s.wins/s.total*100).toFixed(0) : 0
-                const avgPnl = s.total > 0 ? (s.pnl/s.total).toFixed(2) : 0
-                const verdict = parseFloat(wr) >= 55 && parseFloat(avgPnl) > 0 ? '✅ TRADE' : parseFloat(wr) < 40 ? '❌ AVOID' : '⚠️ MARGINAL'
-                return (
-                  <tr key={strat} style={{borderBottom:`1px solid ${t.border}22`}}>
-                    <td style={{padding:'10px 14px',fontWeight:700,color:t.text,fontSize:13}}>{strat}</td>
-                    <td style={{padding:'10px 14px',color:t.muted,fontSize:12}}>{s.total}</td>
-                    <td style={{padding:'10px 14px',color:t.green,fontSize:12,fontWeight:600}}>{s.wins}</td>
-                    <td style={{padding:'10px 14px',color:t.red,fontSize:12,fontWeight:600}}>{s.losses}</td>
-                    <td style={{padding:'10px 14px',color:parseFloat(wr)>=55?t.green:parseFloat(wr)<40?t.red:t.amber,fontWeight:700,fontFamily:'JetBrains Mono,monospace'}}>{wr}%</td>
-                    <td style={{padding:'10px 14px',color:parseFloat(avgPnl)>=0?t.green:t.red,fontFamily:'JetBrains Mono,monospace',fontWeight:600}}>{parseFloat(avgPnl)>=0?'+':''}{avgPnl}%</td>
-                    <td style={{padding:'10px 14px',fontSize:12,fontWeight:700}}>{verdict}</td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table></div>
-        </div>
-      )}
-
-      {/* Filters */}
-      <div style={{display:'flex',gap:10,marginBottom:16,flexWrap:'wrap',alignItems:'center'}}>
         <div style={{display:'flex',background:t.surface,border:`1px solid ${t.border}`,borderRadius:20,padding:'2px 3px',gap:1}}>
-          {[['all','All'],['open','Open'],['closed','Closed']].map(([v,l])=>(
-            <button key={v} onClick={()=>setFilter(v)}
-              style={{padding:'4px 14px',borderRadius:16,border:'none',background:filter===v?'#ff660022':'transparent',
-                color:filter===v?'#ff6600':t.muted,fontWeight:filter===v?700:400,cursor:'pointer',fontSize:12,fontFamily:'Inter,sans-serif'}}>
+          {[['performance','📊 Performance'],['trades','📋 Trades']].map(([v,l])=>(
+            <button key={v} onClick={()=>setView(v)}
+              style={{padding:'5px 14px',borderRadius:16,border:'none',
+                background:view===v?'#ff660022':'transparent',
+                color:view===v?'#ff6600':t.muted,fontWeight:view===v?700:400,
+                cursor:'pointer',fontSize:12,fontFamily:'Inter,sans-serif'}}>
               {l}
             </button>
           ))}
         </div>
+      </div>
+
+      {/* Day/filter controls */}
+      <div style={{display:'flex',gap:10,marginBottom:20,flexWrap:'wrap',alignItems:'center'}}>
         <div style={{display:'flex',background:t.surface,border:`1px solid ${t.border}`,borderRadius:20,padding:'2px 3px',gap:1}}>
           {[[7,'7D'],[30,'30D'],[90,'90D']].map(([v,l])=>(
             <button key={v} onClick={()=>setDays(v)}
-              style={{padding:'4px 12px',borderRadius:16,border:'none',background:days===v?t.blue+'22':'transparent',
-                color:days===v?t.blue:t.muted,fontWeight:days===v?700:400,cursor:'pointer',fontSize:12,fontFamily:'Inter,sans-serif'}}>
+              style={{padding:'4px 12px',borderRadius:16,border:'none',
+                background:days===v?t.blue+'22':'transparent',
+                color:days===v?t.blue:t.muted,fontWeight:days===v?700:400,
+                cursor:'pointer',fontSize:12,fontFamily:'Inter,sans-serif'}}>
               {l}
             </button>
           ))}
@@ -3647,61 +3605,187 @@ function PaperTradesTab({t}) {
         <button onClick={load} style={{padding:'4px 12px',background:'none',border:`1px solid ${t.border}`,borderRadius:20,color:t.muted,cursor:'pointer',fontSize:12}}>↻ Refresh</button>
       </div>
 
-      {/* Trades table */}
       {loading ? (
         <div style={{textAlign:'center',padding:40}}>
           <div style={{width:28,height:28,border:`3px solid ${t.border}`,borderTopColor:'#ff6600',borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'0 auto'}}/>
         </div>
-      ) : !data?.trades?.length ? (
-        <div style={{background:t.card,borderRadius:16,padding:40,border:`1px solid ${t.border}`,textAlign:'center'}}>
-          <p style={{fontSize:40,marginBottom:12}}>🧪</p>
-          <p style={{color:t.text,fontWeight:700,marginBottom:8}}>No paper trades yet</p>
-          <p style={{color:t.muted,fontSize:13}}>
-            Paper trades auto-create when signals fire with ≥65% confidence during market hours.
-            The Railway worker monitors them and records WIN/LOSS automatically.
-          </p>
+      ) : view === 'performance' ? (
+        <div>
+
+          {/* ── Monthly Summary Cards ── */}
+          {monthly && (
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(140px,1fr))',gap:10,marginBottom:20}}>
+              {[
+                {l:'BASE CAPITAL',  v:'₹10,000',                                         c:t.muted},
+                {l:'TOTAL TRADES',  v:data.stats?.total || 0,                             c:t.text},
+                {l:'WIN RATE',      v:data.stats?.winRate ? data.stats.winRate+'%' : '—', c:parseFloat(data.stats?.winRate||0)>=55?t.green:t.red},
+                {l:'NET P&L %',     v:fmtPct(monthly.total_pnl_pct||0),                  c:pnlColor(monthly.total_pnl_pct)},
+                {l:'NET P&L ₹',     v:'₹'+parseFloat(monthly.total_pnl_inr||0).toFixed(0), c:pnlColor(monthly.total_pnl_inr)},
+                {l:'EXPECTANCY',    v:data.stats?.expectancy ? fmtPct(data.stats.expectancy) : '—', c:parseFloat(data.stats?.expectancy||0)>0?t.green:t.red},
+              ].map(x=>(
+                <div key={x.l} style={{background:t.card,borderRadius:12,padding:'12px 14px',border:`1px solid ${t.border}`,textAlign:'center'}}>
+                  <p style={{color:t.muted,fontSize:9,fontWeight:700,letterSpacing:'0.07em',marginBottom:4}}>{x.l}</p>
+                  <p style={{color:x.c,fontSize:15,fontWeight:800,fontFamily:'JetBrains Mono,monospace'}}>{x.v}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* ── Strategy Leaderboard ── */}
+          {ranked.length > 0 && (
+            <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,marginBottom:20,overflow:'hidden'}}>
+              <div style={{padding:'12px 16px',borderBottom:`1px solid ${t.border}`,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                <span style={{fontSize:11,fontWeight:700,color:t.muted,letterSpacing:'0.06em'}}>STRATEGY LEADERBOARD — {days}D</span>
+                <span style={{fontSize:11,color:t.muted}}>Ranked by P&L% of ₹10k base</span>
+              </div>
+              <div style={{overflowX:'auto'}}>
+                <table style={{width:'100%',minWidth:650,borderCollapse:'collapse'}}>
+                  <thead>
+                    <tr style={{background:t.surface}}>
+                      {['#','STRATEGY','MARKET','TRADES','WIN%','RISK%/TRADE','P&L%','P&L ₹','AVG R:R','VERDICT'].map(h=>(
+                        <th key={h} style={{padding:'8px 12px',textAlign:'left',fontSize:10,fontWeight:700,color:t.muted,letterSpacing:'0.06em',borderBottom:`1px solid ${t.border}`}}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ranked.map((s, i) => {
+                      const base    = (s.market==='crypto'||s.market==='delta') ? 1000 : 10000
+                      const curr    = (s.market==='crypto'||s.market==='delta') ? '$'  : '₹'
+                      const pnlInr  = parseFloat(((s.pnl_pct/100)*base).toFixed(0))
+                      const verdict = s.winRate >= 55 && s.pnl_pct > 0 ? '✅ KEEP'
+                                    : s.winRate < 40 || s.pnl_pct < -3 ? '❌ REMOVE'
+                                    : '⚠️ WATCH'
+                      const riskPct = s.total > 0 ? (1.0).toFixed(1) : '—' // fixed 1% risk per trade
+                      return (
+                        <tr key={s.name} style={{borderBottom:`1px solid ${t.border}22`,background:i%2===0?'transparent':t.surface+'44'}}>
+                          <td style={{padding:'10px 12px',color:t.muted,fontSize:12,fontWeight:700}}>#{i+1}</td>
+                          <td style={{padding:'10px 12px',fontWeight:700,color:t.text,fontSize:13}}>{s.name}</td>
+                          <td style={{padding:'10px 12px',fontSize:11,color:t.muted}}>{s.market||'india'}</td>
+                          <td style={{padding:'10px 12px',color:t.muted,fontSize:12}}>{s.total} ({s.wins}W/{s.losses}L)</td>
+                          <td style={{padding:'10px 12px',color:s.winRate>=55?t.green:s.winRate<40?t.red:t.amber,fontWeight:700,fontFamily:'JetBrains Mono,monospace'}}>{s.winRate}%</td>
+                          <td style={{padding:'10px 12px',color:t.muted,fontFamily:'JetBrains Mono,monospace',fontSize:12}}>1.0%</td>
+                          <td style={{padding:'10px 12px',color:pnlColor(s.pnl_pct),fontFamily:'JetBrains Mono,monospace',fontWeight:700}}>{fmtPct(s.pnl_pct)}</td>
+                          <td style={{padding:'10px 12px',color:pnlColor(pnlInr),fontFamily:'JetBrains Mono,monospace',fontWeight:600}}>{curr}{Math.abs(pnlInr)}</td>
+                          <td style={{padding:'10px 12px',color:t.muted,fontFamily:'JetBrains Mono,monospace',fontSize:12}}>1:{s.avgRR||'—'}</td>
+                          <td style={{padding:'10px 12px',fontSize:12,fontWeight:700}}>{verdict}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                  {/* Totals row */}
+                  <tfoot>
+                    <tr style={{background:t.surface,borderTop:`2px solid ${t.border}`}}>
+                      <td colSpan={6} style={{padding:'10px 12px',fontWeight:700,color:t.text,fontSize:12}}>TOTAL</td>
+                      <td style={{padding:'10px 12px',color:pnlColor(monthly?.total_pnl_pct),fontFamily:'JetBrains Mono,monospace',fontWeight:800}}>{fmtPct(monthly?.total_pnl_pct||0)}</td>
+                      <td style={{padding:'10px 12px',color:pnlColor(monthly?.total_pnl_inr),fontFamily:'JetBrains Mono,monospace',fontWeight:800}}>₹{parseFloat(monthly?.total_pnl_inr||0).toFixed(0)}</td>
+                      <td colSpan={2}/>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* ── Equity Curve (simple bar visualization) ── */}
+          {equityCurve.length > 1 && (
+            <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,padding:16,marginBottom:20}}>
+              <p style={{fontSize:11,fontWeight:700,color:t.muted,letterSpacing:'0.06em',marginBottom:12}}>EQUITY CURVE — CUMULATIVE P&L % OF BASE</p>
+              <div style={{display:'flex',alignItems:'flex-end',gap:2,height:80,paddingBottom:4}}>
+                {equityCurve.map((v,i) => {
+                  const max    = Math.max(...equityCurve.map(Math.abs), 1)
+                  const height = Math.max(Math.abs(v)/max*70, 2)
+                  return (
+                    <div key={i} title={`Trade ${i+1}: ${v>=0?'+':''}${v}%`}
+                      style={{flex:1,height:height+'px',background:v>=0?t.green:t.red,
+                        borderRadius:'2px 2px 0 0',opacity:0.8,minWidth:3,cursor:'pointer'}}/>
+                  )
+                })}
+              </div>
+              <div style={{display:'flex',justifyContent:'space-between',marginTop:4}}>
+                <span style={{fontSize:10,color:t.muted}}>Trade 1</span>
+                <span style={{fontSize:11,fontWeight:700,color:pnlColor(cum)}}>
+                  Total: {fmtPct(cum)}
+                </span>
+                <span style={{fontSize:10,color:t.muted}}>Trade {closed.length}</span>
+              </div>
+            </div>
+          )}
+
+          {/* No data state */}
+          {!data?.trades?.length && (
+            <div style={{background:t.card,borderRadius:16,padding:40,border:`1px solid ${t.border}`,textAlign:'center'}}>
+              <p style={{fontSize:40,marginBottom:12}}>🧪</p>
+              <p style={{color:t.text,fontWeight:700,marginBottom:8}}>No paper trades yet</p>
+              <p style={{color:t.muted,fontSize:13}}>
+                Signals with ≥65% confidence auto-create paper trades.<br/>
+                The worker monitors SL/target every 5 seconds and records WIN/LOSS automatically.
+              </p>
+            </div>
+          )}
+
         </div>
       ) : (
-        <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,overflow:'hidden'}}>
-          <div style={{overflowX:'auto',WebkitOverflowScrolling:'touch'}}>
-          <table style={{width:'100%',minWidth:700,borderCollapse:'collapse'}}>
-            <thead>
-              <tr style={{background:t.surface}}>
-                {['OPENED','SYMBOL','STRATEGY','DIR','ENTRY','SL','TARGET','EXIT','P&L','STATUS'].map(h=>(
-                  <th key={h} style={{padding:'9px 12px',textAlign:'left',fontSize:10,fontWeight:700,color:t.muted,letterSpacing:'0.06em',borderBottom:`1px solid ${t.border}`}}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {(data.trades||[]).map((tr,i)=>{
-                const statusColor = tr.status==='WIN'?t.green:tr.status==='LOSS'?t.red:tr.status==='OPEN'?t.amber:t.muted
-                const statusEmoji = tr.status==='WIN'?'✅':tr.status==='LOSS'?'❌':tr.status==='OPEN'?'⏳':'—'
-                return (
-                  <tr key={tr.id} style={{borderBottom:`1px solid ${t.border}22`,background:i%2===0?'transparent':t.surface+'44'}}>
-                    <td style={{padding:'9px 12px',color:t.muted,fontSize:11,whiteSpace:'nowrap'}}>{fmtTime(tr.opened_at)}</td>
-                    <td style={{padding:'9px 12px',fontWeight:800,color:t.text,fontFamily:'JetBrains Mono,monospace'}}>{tr.symbol}</td>
-                    <td style={{padding:'9px 12px',color:t.text2,fontSize:11,maxWidth:120,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{tr.strategy}</td>
-                    <td style={{padding:'9px 12px'}}>
-                      <span style={{color:tr.direction==='BUY'?t.green:t.red,fontWeight:700,fontSize:11}}>
-                        {tr.direction==='BUY'?'▲ BUY':'▼ SELL'}
-                      </span>
-                    </td>
-                    <td style={{padding:'9px 12px',fontFamily:'JetBrains Mono,monospace',fontSize:12,color:t.text}}>₹{tr.entry_price?.toLocaleString('en-IN',{maximumFractionDigits:2})}</td>
-                    <td style={{padding:'9px 12px',fontFamily:'JetBrains Mono,monospace',fontSize:11,color:t.red}}>{tr.stop_loss?`₹${tr.stop_loss?.toLocaleString('en-IN',{maximumFractionDigits:0})}`:'—'}</td>
-                    <td style={{padding:'9px 12px',fontFamily:'JetBrains Mono,monospace',fontSize:11,color:t.green}}>{tr.target?`₹${tr.target?.toLocaleString('en-IN',{maximumFractionDigits:0})}`:'—'}</td>
-                    <td style={{padding:'9px 12px',fontFamily:'JetBrains Mono,monospace',fontSize:11,color:t.text2}}>{tr.exit_price?`₹${tr.exit_price?.toLocaleString('en-IN',{maximumFractionDigits:0})}`:'—'}</td>
-                    <td style={{padding:'9px 12px',fontFamily:'JetBrains Mono,monospace',fontWeight:700,fontSize:12,color:pnlColor(tr.pnl_pct||0)}}>
-                      {tr.pnl_pct!=null?`${tr.pnl_pct>=0?'+':''}${tr.pnl_pct?.toFixed(2)}%`:'—'}
-                    </td>
-                    <td style={{padding:'9px 12px'}}>
-                      <span style={{color:statusColor,fontWeight:700,fontSize:11}}>{statusEmoji} {tr.status}</span>
-                      {tr.exit_reason && <span style={{color:t.muted,fontSize:10,display:'block'}}>{tr.exit_reason}</span>}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table></div>
+        /* ── Trades List View ── */
+        <div>
+          <div style={{display:'flex',background:t.surface,border:`1px solid ${t.border}`,borderRadius:20,padding:'2px 3px',gap:1,marginBottom:16,width:'fit-content'}}>
+            {[['all','All'],['open','Open'],['closed','Closed']].map(([v,l])=>(
+              <button key={v} onClick={()=>setFilter(v)}
+                style={{padding:'4px 14px',borderRadius:16,border:'none',
+                  background:filter===v?'#ff660022':'transparent',
+                  color:filter===v?'#ff6600':t.muted,fontWeight:filter===v?700:400,
+                  cursor:'pointer',fontSize:12,fontFamily:'Inter,sans-serif'}}>
+                {l}
+              </button>
+            ))}
+          </div>
+
+          {!data?.trades?.length ? (
+            <div style={{background:t.card,borderRadius:16,padding:40,border:`1px solid ${t.border}`,textAlign:'center'}}>
+              <p style={{color:t.muted}}>No trades found</p>
+            </div>
+          ) : (
+            <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,overflow:'hidden'}}>
+              <div style={{overflowX:'auto',WebkitOverflowScrolling:'touch'}}>
+                <table style={{width:'100%',minWidth:750,borderCollapse:'collapse'}}>
+                  <thead>
+                    <tr style={{background:t.surface}}>
+                      {['OPENED','SYMBOL','STRATEGY','DIR','ENTRY','SL','TARGET','QTY','RISK%','EXIT','P&L%','STATUS'].map(h=>(
+                        <th key={h} style={{padding:'9px 10px',textAlign:'left',fontSize:10,fontWeight:700,color:t.muted,letterSpacing:'0.06em',borderBottom:`1px solid ${t.border}`}}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(data.trades||[]).map((tr,i) => {
+                      const statusColor = tr.status==='WIN'?t.green:tr.status==='LOSS'?t.red:tr.status==='OPEN'?t.amber:t.muted
+                      const base   = (tr.market==='crypto'||tr.market==='delta') ? 1000 : 10000
+                      const riskPts = tr.stop_loss ? Math.abs(tr.entry_price - tr.stop_loss) * (tr.quantity||1) : null
+                      const riskPct = riskPts ? ((riskPts/base)*100).toFixed(2) : '—'
+                      return (
+                        <tr key={tr.id} style={{borderBottom:`1px solid ${t.border}22`,background:i%2===0?'transparent':t.surface+'44'}}>
+                          <td style={{padding:'8px 10px',color:t.muted,fontSize:11,whiteSpace:'nowrap'}}>{fmtTime(tr.opened_at)}</td>
+                          <td style={{padding:'8px 10px',fontWeight:700,color:t.text,fontSize:13}}>{tr.symbol}</td>
+                          <td style={{padding:'8px 10px',color:t.muted,fontSize:11}}>{tr.strategy}</td>
+                          <td style={{padding:'8px 10px',color:tr.direction==='BUY'?t.green:t.red,fontWeight:700,fontSize:12}}>{tr.direction}</td>
+                          <td style={{padding:'8px 10px',fontFamily:'JetBrains Mono,monospace',fontSize:12,color:t.text}}>{tr.entry_price}</td>
+                          <td style={{padding:'8px 10px',fontFamily:'JetBrains Mono,monospace',fontSize:11,color:t.red}}>{tr.stop_loss||'—'}</td>
+                          <td style={{padding:'8px 10px',fontFamily:'JetBrains Mono,monospace',fontSize:11,color:t.green}}>{tr.target||'—'}</td>
+                          <td style={{padding:'8px 10px',color:t.muted,fontSize:12}}>{tr.quantity||1}</td>
+                          <td style={{padding:'8px 10px',fontFamily:'JetBrains Mono,monospace',fontSize:11,color:t.amber}}>{riskPct !== '—' ? riskPct+'%' : '—'}</td>
+                          <td style={{padding:'8px 10px',fontFamily:'JetBrains Mono,monospace',fontSize:11,color:t.muted}}>{tr.exit_price||'—'}</td>
+                          <td style={{padding:'8px 10px',fontFamily:'JetBrains Mono,monospace',fontWeight:700,color:pnlColor(tr.pnl_pct)}}>{tr.pnl_pct != null ? fmtPct(tr.pnl_pct) : '—'}</td>
+                          <td style={{padding:'8px 10px'}}>
+                            <span style={{background:statusColor+'22',color:statusColor,padding:'2px 8px',borderRadius:8,fontSize:10,fontWeight:700}}>
+                              {tr.status==='WIN'?'✅ WIN':tr.status==='LOSS'?'❌ LOSS':tr.status==='OPEN'?'⏳ OPEN':'—'}
+                            </span>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
