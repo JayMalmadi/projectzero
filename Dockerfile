@@ -2,9 +2,8 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-COPY package*.json ./
-RUN npm install
-
+# Worker uses only built-in Node.js modules (https, http)
+# No npm install needed
 COPY worker/ ./worker/
 
 EXPOSE 3001
