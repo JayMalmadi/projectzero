@@ -3002,7 +3002,6 @@ export default function Dashboard() {
     { id:'paper',    l:'🧪 Paper'    },
     { id:'portfolio',l:'💼 Portfolio'},
     { id:'trades',   l:'📋 History'  },
-    { id:'backtest', l:'🔬 Backtest' },
   ]
 
   return (
@@ -3133,7 +3132,6 @@ export default function Dashboard() {
               <History refresh={tr} t={t} />
             </div>
           )}
-          {tab==='backtest'  && <BacktestTab t={t} />}
         </main>
       </div>
 
