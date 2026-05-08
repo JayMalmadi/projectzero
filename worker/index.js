@@ -1040,6 +1040,99 @@ const server = http.createServer((req, res) => {
     return
   }
 
+  // ── TradingView Webhook ──────────────────────────────────────
+  // TradingView Pine Script alerts POST here when signal fires
+  // Payload: {"symbol":"NIFTY","signal":"BUY","price":24200,"strategy":"EMA Trend","timeframe":"15m","confidence":72}
+  if (req.url === '/webhook/tradingview' && req.method === 'POST') {
+    let body = ''
+    req.on('data', chunk => body += chunk)
+    req.on('end', async () => {
+      try {
+        const data = JSON.parse(body)
+        console.log('[TVWebhook] Received:', JSON.stringify(data))
+
+        const { symbol, signal, price, strategy, timeframe, confidence, stopLoss, target, reason } = data
+
+        // Validate
+        if (!symbol || !signal || !['BUY','SELL'].includes(signal?.toUpperCase())) {
+          res.writeHead(400, {'Content-Type':'application/json'})
+          res.end(JSON.stringify({ error: 'Invalid payload. Need: symbol, signal (BUY/SELL), price' }))
+          return
+        }
+
+        const market = ['BTC','ETH','SOL','XRP'].includes(symbol) ? 'delta' : 'india'
+        const conf   = parseInt(confidence) || 70
+        const sig    = signal.toUpperCase()
+
+        // Send Telegram alert
+        const curr  = market === 'delta' ? '$' : '₹'
+        const emoji = sig === 'BUY' ? '🟢' : '🔴'
+        const msg   = `${emoji} <b>TRADINGVIEW SIGNAL</b>
+` +
+          `<b>${sig} ${symbol}</b> · ${strategy || 'Pine Script'} · ${timeframe || '15m'}
+` +
+          `Price: ${curr}${parseFloat(price).toLocaleString('en-IN')}
+` +
+          (stopLoss ? `Stop Loss: ${curr}${parseFloat(stopLoss).toLocaleString('en-IN')}
+` : '') +
+          (target   ? `Target: ${curr}${parseFloat(target).toLocaleString('en-IN')}
+` : '') +
+          `Confidence: ${conf}%
+` +
+          (reason   ? `Reason: ${reason.slice(0,120)}` : '') +
+          `
+
+<a href="${CONFIG.DASHBOARD_URL}/dashboard">⚡ View Dashboard →</a>`
+
+        await sendTelegram(msg)
+
+        // Auto create paper trade
+        const ptRes = await fetch(`${CONFIG.DASHBOARD_URL}/api/paper-trades`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            symbol,
+            strategy:    strategy || 'tv-pine-script',
+            market,
+            direction:   sig,
+            signal_type: 'tradingview',
+            entry_price: parseFloat(price),
+            stop_loss:   stopLoss ? parseFloat(stopLoss) : null,
+            target:      target   ? parseFloat(target)   : null,
+            confidence:  conf,
+            quantity:    1,
+            notes: `TradingView signal · ${timeframe || '15m'} · ${strategy || 'Pine Script'}`,
+          })
+        })
+        const pt = await ptRes.json()
+
+        // Log to signal history
+        await fetch(`${CONFIG.DASHBOARD_URL}/api/signal-history`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            symbol, strategy: strategy || 'tv-pine-script',
+            signal: sig, confidence: conf, price: parseFloat(price),
+            stopLoss: stopLoss ? parseFloat(stopLoss) : null,
+            target:   target   ? parseFloat(target)   : null,
+            market,   reason: reason?.slice(0, 200),
+            source:   'tradingview',
+          })
+        }).catch(() => {})
+
+        console.log(`[TVWebhook] ${sig} ${symbol} @ ${price} → paper trade created`)
+        res.writeHead(200, {'Content-Type':'application/json'})
+        res.end(JSON.stringify({ ok: true, signal: sig, symbol, paperTradeId: pt.id }))
+
+      } catch(e) {
+        console.error('[TVWebhook] Error:', e.message)
+        res.writeHead(400, {'Content-Type':'application/json'})
+        res.end(JSON.stringify({ error: e.message }))
+      }
+    })
+    return
+  }
+
   if (req.url === '/health') {
     res.writeHead(200, {'Content-Type':'application/json'})
     res.end(JSON.stringify({
