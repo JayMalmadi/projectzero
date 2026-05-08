@@ -2153,11 +2153,13 @@ function OptionsTab({t}) {
     try {
       const r = await fetch(`/api/options-chain?symbol=${symbol}`)
       const d = await r.json()
-      if (d.status==='success') {
+      if (d.status === 'success') {
         setData(d)
-      } else if (d.status==='unavailable' || d.status==='partial') {
-        setError(d.message || 'Options chain unavailable. Try during market hours (9:15 AM - 3:30 PM IST).')
-        if (d.spotPrice) setData({...d, chain: []}) // still show spot price if available
+      } else if (d.status === 'no_session' || d.action === 'login_required') {
+        setError('login_required')
+      } else if (d.status === 'unavailable' || d.status === 'partial') {
+        setError(d.message || 'Options chain unavailable during market hours.')
+        if (d.spotPrice) setData({...d, chain: []})
       } else {
         setError(d.error || d.message || 'Failed to load options chain')
       }
@@ -2186,15 +2188,29 @@ function OptionsTab({t}) {
         </div>
       </div>
 
-      {loading&&<div style={{textAlign:'center',padding:40}}><div style={{width:32,height:32,border:`3px solid ${t.border}`,borderTopColor:t.blue,borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'0 auto 12px'}}/><p style={{color:t.muted}}>Loading NSE options chain...</p></div>}
+      {loading&&<div style={{textAlign:'center',padding:40}}><div style={{width:32,height:32,border:`3px solid ${t.border}`,borderTopColor:t.blue,borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'0 auto 12px'}}/><p style={{color:t.muted}}>Loading Zerodha options chain...</p></div>}
 
-      {error&&(
+      {error && error === 'login_required' && (
+        <div style={{background:t.amber+'11',border:`1px solid ${t.amber}33`,borderRadius:14,padding:32,textAlign:'center'}}>
+          <p style={{fontSize:36,marginBottom:8}}>🔐</p>
+          <p style={{color:t.amber,fontWeight:700,fontSize:16,marginBottom:8}}>Zerodha Login Required</p>
+          <p style={{color:t.muted,fontSize:13,marginBottom:20}}>
+            Options chain uses your live Zerodha account for real-time data.<br/>
+            Login once per day — session lasts until midnight.
+          </p>
+          <button onClick={()=>window.location.href='/api/kite-login'}
+            style={{padding:'12px 32px',background:'#ff6600',border:'none',borderRadius:12,
+              color:'#fff',cursor:'pointer',fontWeight:700,fontSize:14,fontFamily:'Inter,sans-serif'}}>
+            Login with Zerodha →
+          </button>
+        </div>
+      )}
+      {error && error !== 'login_required' && (
         <div style={{background:t.red+'11',border:`1px solid ${t.red}33`,borderRadius:14,padding:24,textAlign:'center'}}>
           <p style={{fontSize:28,marginBottom:8}}>⚠️</p>
-          <p style={{color:t.red,fontWeight:700,marginBottom:6}}>NSE Connection Issue</p>
-          <p style={{color:t.muted,fontSize:13,marginBottom:16}}>{error}</p>
-          <p style={{color:t.muted,fontSize:12}}>NSE blocks automated requests during market hours. Try again after 3:30 PM or outside market hours. The data is available on the NSE website directly.</p>
-          <button onClick={()=>window.open(`https://www.nseindia.com/option-chain`,'_blank')} style={{marginTop:12,padding:'10px 24px',background:t.blue+'22',border:`1px solid ${t.blue}44`,borderRadius:10,color:t.blue,cursor:'pointer',fontWeight:700,fontFamily:'Inter,sans-serif'}}>Open NSE Options Chain ↗</button>
+          <p style={{color:t.red,fontWeight:700,marginBottom:6}}>Options Chain Error</p>
+          <p style={{color:t.muted,fontSize:13}}>{error}</p>
+          <button onClick={load} style={{marginTop:12,padding:'8px 20px',background:t.surface,border:`1px solid ${t.border}`,borderRadius:10,color:t.muted,cursor:'pointer',fontFamily:'Inter,sans-serif'}}>Try Again</button>
         </div>
       )}
 

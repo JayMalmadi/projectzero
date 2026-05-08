@@ -20,12 +20,7 @@ async function getAccessToken(headerToken) {
 }
 
 // Get all instruments for a segment (cached)
-async function getInstruments(exchange, segment) {
-  const r = await fetch(`${KITE_BASE}/instruments/${exchange}`, {
-    headers: { 'X-Kite-Version':'3', 'Authorization':`token ${API_KEY}:${segment}` }
-  })
-  return r.text()
-}
+// (unused helper — instruments fetched inline with correct auth)
 
 // Get nearest weekly expiry Thursday
 function getNearestExpiry() {
@@ -46,7 +41,8 @@ export default async function handler(req, res) {
     return res.status(200).json({
       status: 'no_session',
       symbol,
-      message: 'Login with Zerodha to see live options chain',
+      message: 'Zerodha session expired or not logged in. Please login via the dashboard to see live options chain.',
+      action: 'login_required',
       chain: [], expiries: [], spotPrice: 0
     })
   }
@@ -70,7 +66,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ status: 'no_data', symbol, spotPrice: 0, chain: [], expiries: [] })
     }
 
-    // Step 2: Get options instruments (NFO segment)
+    // Step 2: Get options instruments (NFO segment) — uses correct auth
     const instrR = await fetch(`${KITE_BASE}/instruments/NFO`, { headers: HDRS })
     const instrText = await instrR.text()
     const lines = instrText.split('\n').slice(1) // skip header
