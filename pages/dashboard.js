@@ -88,8 +88,8 @@ function PZChart({symbol, t, h=420, accessToken, market='india'}) {
       // Use Delta Exchange for crypto, Kite/Yahoo for India
       const isCrypto = market === 'crypto' || ['BTC','ETH','SOL','XRP'].includes(symbol)
       const cryptoIntervalMap = {
-        'minute':'1m','3minute':'3m','5minute':'5m','10minute':'15m',
-        '15minute':'15m','30minute':'30m','60minute':'60','day':'1d',
+        'minute':'1','3minute':'5','5minute':'5','10minute':'15',
+        '15minute':'15','30minute':'30','60minute':'60','day':'1d',
       }
       const url = isCrypto
         ? `/api/delta?action=candles&symbol=${symbol}USD&resolution=${cryptoIntervalMap[intv]||'15m'}&limit=300`
@@ -171,10 +171,10 @@ function PZChart({symbol, t, h=420, accessToken, market='india'}) {
           <span style={{width:8,height:8,borderRadius:'50%',background:live?t.green:t.amber,display:'inline-block',animation:live?'pulse 1.5s infinite':'none'}} />
           <span style={{color:t.text,fontWeight:800,fontSize:15}}>{symbol}</span>
           {last && <>
-            <span style={{color:t.text,fontSize:14,fontFamily:'JetBrains Mono,monospace',fontWeight:700}}>₹{fmt(last.close)}</span>
+            <span style={{color:t.text,fontSize:14,fontFamily:'JetBrains Mono,monospace',fontWeight:700}}>{market==='crypto'||['BTC','ETH','SOL','XRP'].includes(symbol)?'$':'₹'}{fmt(last.close)}</span>
             <span style={{fontSize:11,fontWeight:700,color:isUp?t.green:t.red,background:(isUp?t.green:t.red)+'18',borderRadius:5,padding:'2px 7px'}}>{isUp?'+':''}{fmt(chg,2)}{'%'}</span>
           </>}
-          <span style={{color:t.muted,fontSize:10}}>{source==='kite'?'🟢 Live':'⚪ Yahoo'}{secAgo!==null?` · ${secAgo}s ago`:''}</span>
+          <span style={{color:t.muted,fontSize:10}}>{(market==='crypto'||['BTC','ETH','SOL','XRP'].includes(symbol))?'🟢 Delta Exchange':(source==='kite'?'🟢 Live · Kite':'⚪ Yahoo Finance')}{secAgo!==null?` · ${secAgo}s ago`:''}</span>
         </div>
         <div style={{display:'flex',gap:6}}>
           <button onClick={()=>setLive(v=>!v)} style={{padding:'3px 10px',borderRadius:6,fontSize:11,fontWeight:700,background:live?t.green+'22':t.surface,border:`1px solid ${live?t.green:t.border}`,color:live?t.green:t.muted,cursor:'pointer',fontFamily:'Inter,sans-serif'}}>
@@ -1377,7 +1377,7 @@ function PaperTradesTab({t}) {
   const [loading, setLoading] = useState(true)
   const [filter,  setFilter]  = useState('all')
   const [days,    setDays]    = useState(30)
-  const [view,    setView]    = useState('performance') // performance | trades
+  const [view,    setView]    = useState('performance') // performance | trades | reports | signals
 
   useEffect(() => { load() }, [filter, days])
 
@@ -1418,7 +1418,7 @@ function PaperTradesTab({t}) {
           </p>
         </div>
         <div style={{display:'flex',background:t.surface,border:`1px solid ${t.border}`,borderRadius:20,padding:'2px 3px',gap:1}}>
-          {[['performance','📊 Performance'],['trades','📋 Trades']].map(([v,l])=>(
+          {[['performance','📊 Performance'],['trades','📋 Trades'],['reports','📅 Reports'],['signals','📊 Signals']].map(([v,l])=>(
             <button key={v} onClick={()=>setView(v)}
               style={{padding:'5px 14px',borderRadius:16,border:'none',
                 background:view===v?'#ff660022':'transparent',
@@ -1565,6 +1565,10 @@ function PaperTradesTab({t}) {
           )}
 
         </div>
+      ) : view === 'reports' ? (
+        <ReportsTab t={t} />
+      ) : view === 'signals' ? (
+        <SignalLogTab t={t} />
       ) : (
         /* ── Trades List View ── */
         <div>
@@ -1821,31 +1825,7 @@ function DeltaPortfolioPanel({t}) {
 }
 
 
-function TickerBar({mkt, t, setTab, isConn}) {
-  const syms = ['NIFTY','BANKNIFTY','SENSEX','BTC','ETH','SOL']
-  return (
-    <div style={{background:t.tickBg,borderBottom:`1px solid ${t.border}`,padding:'9px 28px',display:'flex',gap:28,overflowX:'auto',alignItems:'center'}}>
-      {syms.map(sym => {
-        const d = mkt[sym]
-        const up = (d?.pct||0) >= 0
-        const pctStr = d && d.pct!=null ? (up ? '+' : '') + fmt(d.pct, 2) + '%' : ''
-        return (
-          <div key={sym} onClick={() => setTab('charts')} style={{display:'flex',gap:8,alignItems:'center',flexShrink:0,cursor:'pointer',padding:'4px 10px',borderRadius:8,transition:'background 0.15s'}}
-            onMouseEnter={e=>e.currentTarget.style.background=t.surface}
-            onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
-            <span style={{color:t.muted,fontSize:10,fontWeight:600,letterSpacing:'0.04em'}}>{sym}</span>
-            <span style={{fontFamily:'JetBrains Mono,monospace',fontSize:13,color:t.text,fontWeight:700}}>{d ? fmt(d.price) : '—'}</span>
-            {d && <span style={{fontSize:11,fontWeight:700,color:up?t.green:t.red,background:(up?t.green:t.red)+'18',borderRadius:6,padding:'1px 6px'}}>{pctStr}</span>}
-          </div>
-        )
-      })}
-      <span style={{marginLeft:'auto',fontSize:10,color:t.muted,flexShrink:0,display:'flex',alignItems:'center',gap:4}}>
-        <span style={{width:5,height:5,borderRadius:'50%',background:isConn?t.green:t.amber,display:'inline-block'}} />
-        {isConn ? 'Live · Kite' : 'Yahoo (connect Zerodha for live)'}
-      </span>
-    </div>
-  )
-}
+// TickerBar replaced by LiveTicker above
 
 
 // ── Options Chain Tab ──────────────────────────────────────────
@@ -2404,10 +2384,10 @@ function IndiaTab({t, at, prices}) {
         <div style={{display:'flex',gap:8}}>
           {indiaSyms.map(s => (
             <button key={s} onClick={() => setSym(s)}
-              style={{padding:'8px 16px',borderRadius:10,border:`1px solid ${sym===s?t.accentC:t.border}`,
+              style={{padding:'7px 12px',borderRadius:10,border:`1px solid ${sym===s?t.accentC:t.border}`,
                 background:sym===s?t.accentC+'22':t.surface,
                 color:sym===s?t.accentC:t.muted,
-                fontWeight:700,cursor:'pointer',fontSize:13,fontFamily:'Inter,sans-serif'}}>
+                fontWeight:700,cursor:'pointer',fontSize:12,fontFamily:'Inter,sans-serif'}}>
               {s}
             </button>
           ))}
@@ -2620,8 +2600,6 @@ export default function Dashboard() {
     { id:'watchlist',l:'👁 Watchlist'},
     { id:'alerts',   l:'🔔 Alerts'   },
     { id:'backtest', l:'🔬 Backtest' },
-    { id:'reports',  l:'📅 Reports'  },
-    { id:'siglog',   l:'📊 Signals'  },
   ]
 
   return (
@@ -2689,7 +2667,7 @@ export default function Dashboard() {
           padding:'0 20px',display:'flex',gap:0,overflowX:'auto',WebkitOverflowScrolling:'touch'}}>
           {tabs.map(tb => (
             <button key={tb.id} onClick={() => setTab(tb.id)}
-              style={{padding:'12px 14px',background:'none',border:'none',
+              style={{padding:'10px 10px',background:'none',border:'none',
                 borderBottom:tab===tb.id?`2px solid ${t.accentC}`:'2px solid transparent',
                 color:tab===tb.id?t.accentC:t.muted,
                 fontWeight:tab===tb.id?700:500,fontSize:12,
@@ -2701,7 +2679,7 @@ export default function Dashboard() {
         </div>
 
         {/* Content */}
-        <main style={{maxWidth:1400,margin:'0 auto',padding:'24px 20px',position:'relative',zIndex:1}}>
+        <main style={{maxWidth:1400,margin:'0 auto',padding:'16px 12px',position:'relative',zIndex:1}}>
           {tab==='morning'   && <MorningBriefTab t={t} />}
           {tab==='india'     && <IndiaTab t={t} at={at} prices={prices} />}
           {tab==='crypto'    && <CryptoLiveTab t={t} prices={prices} />}
@@ -2738,8 +2716,6 @@ export default function Dashboard() {
           {tab==='watchlist' && <WatchlistTab t={t} at={at} />}
           {tab==='alerts'    && <AlertsTab t={t} />}
           {tab==='backtest'  && <BacktestTab t={t} />}
-          {tab==='reports'   && <ReportsTab t={t} />}
-          {tab==='siglog'    && <SignalLogTab t={t} />}
         </main>
       </div>
 
