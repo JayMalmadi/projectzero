@@ -1642,9 +1642,11 @@ function PaperTradesTab({t}) {
 function DeltaPortfolioPanel({t}) {
   const [wallet,    setWallet]    = useState(null)
   const [positions, setPositions] = useState([])
+  const [fills,     setFills]     = useState([])
   const [prices,    setPrices]    = useState({})
   const [loading,   setLoading]   = useState(true)
   const [error,     setError]     = useState('')
+  const [showFills, setShowFills] = useState(false)
 
   useEffect(() => { load() }, [])
 
@@ -1672,6 +1674,13 @@ function DeltaPortfolioPanel({t}) {
       if (posR.ok) {
         const posD = await posR.json()
         if (posD.positions) setPositions(posD.positions)
+      }
+
+      // Fetch trade history (fills)
+      const fillsR = await fetch('/api/delta-fills?page_size=50')
+      if (fillsR.ok) {
+        const fillsD = await fillsR.json()
+        if (fillsD.fills) setFills(fillsD.fills)
       }
     } catch(e) { setError(e.message) }
     setLoading(false)
@@ -1820,6 +1829,61 @@ function DeltaPortfolioPanel({t}) {
           <div style={{width:20,height:20,border:`3px solid ${t.border}`,borderTopColor:'#ff6600',borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'0 auto'}}/>
         </div>
       )}
+
+      {/* Trade History (Fills) */}
+      {fills.length > 0 && (
+        <div style={{marginTop:20,borderTop:`1px solid ${t.border}`,paddingTop:16}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+            <p style={{fontWeight:700,fontSize:13,color:t.text}}>📋 Trade History ({fills.length} fills)</p>
+            <button onClick={()=>setShowFills(v=>!v)}
+              style={{padding:'4px 12px',background:t.surface,border:`1px solid ${t.border}`,
+                borderRadius:8,color:t.muted,cursor:'pointer',fontSize:11,fontFamily:'Inter,sans-serif'}}>
+              {showFills ? 'Hide ▲' : 'Show ▼'}
+            </button>
+          </div>
+          {showFills && (
+            <div style={{overflowX:'auto'}}>
+              <table style={{width:'100%',minWidth:450,borderCollapse:'collapse',fontSize:12}}>
+                <thead>
+                  <tr style={{background:t.surface}}>
+                    {['DATE','SYMBOL','SIDE','QTY','PRICE','VALUE'].map(h=>(
+                      <th key={h} style={{padding:'8px 10px',textAlign:'left',color:t.muted,
+                        fontSize:10,fontWeight:700,letterSpacing:'0.05em',
+                        borderBottom:`1px solid ${t.border}`}}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {fills.map((f,i)=>(
+                    <tr key={f.id||i} style={{borderBottom:`1px solid ${t.border}22`,
+                      background:i%2===0?'transparent':t.surface+'44'}}>
+                      <td style={{padding:'8px 10px',color:t.muted,fontSize:11}}>
+                        {f.date}
+                      </td>
+                      <td style={{padding:'8px 10px',fontWeight:700,color:t.text}}>
+                        {f.symbol}
+                      </td>
+                      <td style={{padding:'8px 10px',fontWeight:700,
+                        color:f.side==='buy'?t.green:t.red}}>
+                        {f.side?.toUpperCase()}
+                      </td>
+                      <td style={{padding:'8px 10px',fontFamily:'JetBrains Mono,monospace',color:t.text}}>
+                        {f.size}
+                      </td>
+                      <td style={{padding:'8px 10px',fontFamily:'JetBrains Mono,monospace',color:t.text}}>
+                        ${parseFloat(f.price).toLocaleString('en-US',{maximumFractionDigits:2})}
+                      </td>
+                      <td style={{padding:'8px 10px',fontFamily:'JetBrains Mono,monospace',color:t.muted}}>
+                        ${parseFloat(f.value||0).toLocaleString('en-US',{maximumFractionDigits:0})}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -1831,16 +1895,18 @@ function DeltaPortfolioPanel({t}) {
 // ── Options Chain Tab ──────────────────────────────────────────
 function OptionsTab({t, defaultSymbol}) {
   const [symbol,  setSymbol]  = useState(defaultSymbol || 'NIFTY')
+  const [expiry,  setExpiry]  = useState('')
   const [data,    setData]    = useState(null)
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState('')
 
-  useEffect(()=>{ load() }, [symbol])
+  useEffect(()=>{ setExpiry(''); load('') }, [symbol])
 
-  async function load() {
+  async function load(exp) {
     setLoading(true); setError(''); setData(null)
     try {
-      const r = await fetch(`/api/options-chain?symbol=${symbol}`)
+      const expParam = exp ? `&expiry=${exp}` : ''
+      const r = await fetch(`/api/options-chain?symbol=${symbol}${expParam}`)
       const d = await r.json()
       if (d.status === 'success') {
         setData(d)
@@ -1920,6 +1986,36 @@ function OptionsTab({t, defaultSymbol}) {
               </div>
             ))}
           </div>
+
+          {/* Expiry selector */}
+          {data?.expiries && data.expiries.length > 1 && (
+            <div style={{marginBottom:16}}>
+              <p style={{color:t.muted,fontSize:10,fontWeight:700,letterSpacing:'0.06em',marginBottom:8}}>EXPIRY</p>
+              <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                {data.expiries.map(e => {
+                  const dt = new Date(e)
+                  const day = dt.toLocaleDateString('en-IN',{weekday:'short'})
+                  const date = dt.toLocaleDateString('en-IN',{day:'2-digit',month:'short'})
+                  const isSelected = expiry === e
+                  const isWeekly = data.expiries.indexOf(e) < 4 && symbol === 'NIFTY'
+                  return (
+                    <button key={e} onClick={()=>{ setExpiry(e); load(e) }}
+                      style={{padding:'6px 12px',borderRadius:8,
+                        border:`1px solid ${isSelected?t.accentC:t.border}`,
+                        background:isSelected?t.accentC+'22':t.surface,
+                        color:isSelected?t.accentC:t.muted,
+                        fontWeight:isSelected?700:400,
+                        cursor:'pointer',fontSize:11,fontFamily:'Inter,sans-serif',
+                        textAlign:'center',lineHeight:1.4}}>
+                      <span style={{display:'block',fontSize:9,opacity:0.7}}>{day}</span>
+                      {date}
+                      {isWeekly && <span style={{display:'block',fontSize:9,color:t.green}}>weekly</span>}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Options table */}
           <div style={{background:t.card,borderRadius:16,border:`1px solid ${t.border}`,overflow:'auto'}}>
