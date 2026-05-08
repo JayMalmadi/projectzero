@@ -2,9 +2,8 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Only copy what the worker needs
 COPY package*.json ./
-RUN npm install --omit=dev
+RUN npm install
 
 COPY worker/ ./worker/
 
