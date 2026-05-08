@@ -34,14 +34,57 @@ export default async function handler(req, res) {
     const avgLoss = losses.length ? (losses.reduce((a,t)=>a+(t.pnl_pct||0),0)/losses.length).toFixed(2) : 0
     const expectancy = winRate ? (((winRate/100)*avgWin) + (((100-winRate)/100)*avgLoss)).toFixed(2) : null
 
-    // Group by strategy
+    // ── Per-strategy breakdown (fixed base: ₹10k INR / $1k USD) ──
+    const BASE_INR = 10000
+    const BASE_USD = 1000
     const byStrategy = {}
     for (const t of closed) {
-      if (!byStrategy[t.strategy]) byStrategy[t.strategy] = { total:0, wins:0, losses:0, pnl:0 }
-      byStrategy[t.strategy].total++
-      if (t.status==='WIN') byStrategy[t.strategy].wins++
-      else byStrategy[t.strategy].losses++
-      byStrategy[t.strategy].pnl += t.pnl_pct || 0
+      const s = t.strategy
+      if (!byStrategy[s]) byStrategy[s] = {
+        total:0, wins:0, losses:0,
+        pnl_pts: 0, pnl_pct: 0,
+        market: t.market || 'india',
+        avgRR: 0, rrList: [],
+        bestTrade: null, worstTrade: null,
+      }
+      byStrategy[s].total++
+      if (t.status==='WIN') byStrategy[s].wins++
+      else byStrategy[s].losses++
+
+      // P&L as % of fixed base capital
+      const base = (t.market === 'crypto' || t.market === 'delta') ? BASE_USD : BASE_INR
+      const pnlPts = t.pnl_points || 0
+      const pnlPct = parseFloat(((pnlPts / base) * 100).toFixed(4))
+      byStrategy[s].pnl_pts  += pnlPts
+      byStrategy[s].pnl_pct  += pnlPct
+
+      if (t.rr) byStrategy[s].rrList.push(parseFloat(t.rr))
+
+      // Track best/worst
+      if (!byStrategy[s].bestTrade  || pnlPct > byStrategy[s].bestTrade.pnl_pct)  byStrategy[s].bestTrade  = { symbol:t.symbol, pnl_pct: pnlPct, date: t.closed_at }
+      if (!byStrategy[s].worstTrade || pnlPct < byStrategy[s].worstTrade.pnl_pct) byStrategy[s].worstTrade = { symbol:t.symbol, pnl_pct: pnlPct, date: t.closed_at }
+    }
+
+    // Finalize per-strategy stats
+    for (const s of Object.keys(byStrategy)) {
+      const st = byStrategy[s]
+      st.winRate    = st.total > 0 ? parseFloat(((st.wins/st.total)*100).toFixed(1)) : 0
+      st.pnl_pct    = parseFloat(st.pnl_pct.toFixed(2))
+      st.avgRR      = st.rrList.length ? parseFloat((st.rrList.reduce((a,b)=>a+b,0)/st.rrList.length).toFixed(2)) : 0
+      st.expectancy = parseFloat(((st.winRate/100)*(st.pnl_pct/Math.max(st.wins,1))) + (((100-st.winRate)/100)*(st.pnl_pct/Math.max(st.losses,1)))).toFixed(2)
+      delete st.rrList
+    }
+
+    // ── Monthly summary ─────────────────────────────────────
+    const totalPnlPct = Object.values(byStrategy).reduce((a,s) => a + s.pnl_pct, 0)
+    const monthly = {
+      base_capital: { INR: BASE_INR, USD: BASE_USD },
+      risk_per_trade_pct: 1.0,
+      total_pnl_pct: parseFloat(totalPnlPct.toFixed(2)),
+      total_pnl_inr: parseFloat(((totalPnlPct / 100) * BASE_INR).toFixed(2)),
+      strategies_ranked: Object.entries(byStrategy)
+        .sort((a,b) => b[1].pnl_pct - a[1].pnl_pct)
+        .map(([name, st]) => ({ name, ...st })),
     }
 
     return res.status(200).json({
@@ -53,6 +96,7 @@ export default async function handler(req, res) {
         winRate, avgWin, avgLoss, expectancy,
       },
       byStrategy,
+      monthly,
     })
   }
 
@@ -108,12 +152,14 @@ export default async function handler(req, res) {
     const { id, status, exit_price, exit_reason, pnl_points, pnl_pct } = req.body
     if (!id) return res.status(400).json({ error: 'id required' })
 
+    const { stop_loss: newSL } = req.body
     const updates = { monitored_at: new Date().toISOString() }
     if (status)      updates.status      = status
     if (exit_price)  updates.exit_price  = parseFloat(exit_price)
     if (exit_reason) updates.exit_reason = exit_reason
     if (pnl_points !== undefined) updates.pnl_points = parseFloat(pnl_points)
     if (pnl_pct !== undefined)    updates.pnl_pct    = parseFloat(pnl_pct)
+    if (newSL !== undefined)      updates.stop_loss   = parseFloat(newSL)  // trailing SL update
     if (['WIN','LOSS','EXPIRED','CLOSED'].includes(status)) {
       updates.closed_at = new Date().toISOString()
     }

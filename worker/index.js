@@ -16,12 +16,13 @@ const CONFIG = {
   PAPER_TRADE_MIN_CONFIDENCE: 65,  // Only paper trade signals >= 65% confidence
   PAPER_TRADE_ENABLED: true,
 
-  // ── Position Sizing ────────────────────────────────────────
-  // Paper trading capital (simulated) — used for position sizing
-  PAPER_CAPITAL_USD:        1000,   // Crypto paper capital in USD
-  PAPER_CAPITAL_INR:        50000,  // India paper capital in INR
-  RISK_PER_TRADE_PCT:       1.5,    // Risk 1.5% of capital per trade
-  MAX_POSITION_PCT:         10,     // Never more than 10% of capital in one trade
+  // ── Paper Trade Capital (FIXED — never changes, for fair comparison) ──
+  // All strategies use same base. Month-end % tells you exactly what ₹10k would return.
+  PAPER_BASE_INR:           10000,  // Fixed base for India strategies (₹10,000)
+  PAPER_BASE_USD:           1000,   // Fixed base for Crypto/Delta strategies ($1,000)
+  RISK_PER_TRADE_PCT:       1.0,    // Risk exactly 1% per trade = ₹100 / $10
+  // Position size = (base × 1%) / SL distance
+  // e.g. ₹10,000 × 1% = ₹100 risk. SL is ₹50 away → qty = 2 units
 
   // ── Trailing Stop Loss ─────────────────────────────────────
   TRAILING_SL_ENABLED:      true,
@@ -127,23 +128,27 @@ function getTimeStr() {
 // ── Position Sizing ───────────────────────────────────────────
 // Calculates quantity based on risk % of capital
 // Risk-based sizing: quantity = (capital × riskPct) / (entry - stopLoss)
+// Position sizing using FIXED base capital
+// Risk = 1% of fixed base (₹100 for India, $10 for crypto)
+// qty = riskAmount / SL_distance
+// Keeps all strategies comparable on same ₹10,000 / $1,000 base
 function calcPositionSize(entryPrice, stopLoss, market) {
   try {
-    const capital    = market === 'india' ? CONFIG.PAPER_CAPITAL_INR : CONFIG.PAPER_CAPITAL_USD
-    const riskAmt    = capital * (CONFIG.RISK_PER_TRADE_PCT / 100)  // e.g. ₹750
+    const base       = market === 'india' ? CONFIG.PAPER_BASE_INR : CONFIG.PAPER_BASE_USD
+    const riskAmt    = base * (CONFIG.RISK_PER_TRADE_PCT / 100)  // ₹100 or $10
     const slDistance = Math.abs(entryPrice - stopLoss)
     if (!slDistance || slDistance <= 0) return 1
-
-    let qty = Math.floor(riskAmt / slDistance)
-
-    // Cap at MAX_POSITION_PCT of capital
-    const maxQty = Math.floor((capital * CONFIG.MAX_POSITION_PCT / 100) / entryPrice)
-    qty = Math.min(qty, maxQty)
-
-    return Math.max(qty, 1)  // always at least 1
+    const qty = Math.floor(riskAmt / slDistance)
+    return Math.max(qty, 1)
   } catch {
     return 1
   }
+}
+
+// P&L as % of fixed base capital — for strategy comparison
+function calcPnlPct(pnlPoints, market) {
+  const base = market === 'india' ? CONFIG.PAPER_BASE_INR : CONFIG.PAPER_BASE_USD
+  return parseFloat(((pnlPoints / base) * 100).toFixed(4))
 }
 
 // ── Signal monitoring ─────────────────────────────────────────
