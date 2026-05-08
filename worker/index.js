@@ -940,6 +940,16 @@ async function tick() {
     backfillHistoricalData(false).catch(e => console.error('[HistData] 4PM error:', e.message))
   }
 
+  // Daily OHLCV update — 4:00 PM IST weekdays (after market close)
+  if (isWkday && h===16 && m===0 && !firedToday.has('ohlcv_update')) {
+    firedToday.add('ohlcv_update')
+    console.log('[OHLCVUpdate] Running daily data update...')
+    fetch(`${CONFIG.DASHBOARD_URL}/api/backfill?target=all&daysBack=2`)
+      .then(r => r.json())
+      .then(d => console.log('[OHLCVUpdate] Done:', JSON.stringify(d.results)))
+      .catch(e => console.error('[OHLCVUpdate] Error:', e.message))
+  }
+
   // Square-off alert — 3:19 PM IST weekdays
   if (isWkday && h===15 && m===19 && lastSquareDate!==dateStr) {
     lastSquareDate = dateStr
