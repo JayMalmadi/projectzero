@@ -353,7 +353,7 @@ function PZChart({symbol, t, h=420, accessToken, market='india'}) {
             </button>
           </div>
         )}
-        <div ref={chartRef} style={{width:'100%',height:'100%'}} />
+        <div ref={chartRef} style={{width:'100%',height:'100%',touchAction:'none'}} />
       </div>
     </div>
   )
@@ -1757,7 +1757,7 @@ function PaperTradesTab({t}) {
                       const riskPct = s.total > 0 ? (1.0).toFixed(1) : '—' // fixed 1% risk per trade
                       return (
                         <tr key={s.name} style={{borderBottom:`1px solid ${t.border}22`,background:i%2===0?'transparent':t.surface+'44'}}>
-                          <td style={{padding:'10px 12px',color:t.muted,fontSize:12,fontWeight:700}}>#{i+1}</td>
+                          <td style={{padding:'8px 8px',color:t.muted,fontSize:11,fontWeight:700}}>#{i+1}</td>
                           <td style={{padding:'10px 12px',fontWeight:700,color:t.text,fontSize:13}}>{s.name}</td>
                           <td style={{padding:'10px 12px',fontSize:11,color:t.muted}}>{s.market||'india'}</td>
                           <td style={{padding:'10px 12px',color:t.muted,fontSize:12}}>{s.total} ({s.wins}W/{s.losses}L)</td>
@@ -1853,7 +1853,7 @@ function PaperTradesTab({t}) {
                   <thead>
                     <tr style={{background:t.surface}}>
                       {['OPENED','SYMBOL','STRATEGY','DIR','ENTRY','SL','TARGET','QTY','RISK%','EXIT','P&L%','STATUS'].map(h=>(
-                        <th key={h} style={{padding:'9px 10px',textAlign:'left',fontSize:10,fontWeight:700,color:t.muted,letterSpacing:'0.06em',borderBottom:`1px solid ${t.border}`}}>{h}</th>
+                        <th key={h} style={{padding:'7px 8px',textAlign:'left',fontSize:9,fontWeight:700,color:t.muted,letterSpacing:'0.04em',borderBottom:`1px solid ${t.border}`}}>{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -2543,73 +2543,113 @@ function MorningBriefTab({t}) {
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState('')
 
-  useEffect(() => { load() }, [])
+  // Load on mount - will return cached version instantly if available
+  useEffect(() => { load(false) }, [])
 
-  async function load() {
+  async function load(force=false) {
     setLoading(true); setError('')
     try {
-      const r = await fetch('/api/morning-intelligence')
+      const url = force ? '/api/morning-intelligence?force=1' : '/api/morning-intelligence'
+      const r = await fetch(url)
       const d = await r.json()
       if (d.status === 'success') setData(d)
-      else setError(d.error || 'Failed to load morning brief')
+      else setError(d.error || 'Failed to load brief')
     } catch(e) { setError(e.message) }
     setLoading(false)
   }
 
-  const fmtNum = (x, curr='') => x ? `${curr}${parseFloat(x.price).toLocaleString('en-IN', {maximumFractionDigits:2})} (${x.pct >= 0 ? '+' : ''}${x.pct}%)` : 'N/A'
+  const fmtNum = (x, curr='') => x?.price != null
+    ? `${curr}${parseFloat(x.price).toLocaleString('en-IN',{maximumFractionDigits:2})} (${x.pct>=0?'+':''}${x.pct}%)`
+    : 'N/A'
 
   return (
     <div>
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:20,flexWrap:'wrap',gap:10}}>
+      {/* Header */}
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',
+        marginBottom:20,flexWrap:'wrap',gap:10}}>
         <div>
           <h2 style={{fontSize:22,fontWeight:900,color:t.text}}>☀️ Morning Brief</h2>
           <p style={{color:t.muted,fontSize:13,marginTop:4}}>
-            {data ? `${data.day}, ${data.date} · Generated ${new Date(data.generatedAt).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Kolkata'})} IST` : 'AI-powered daily market intelligence'}
+            {data ? (
+              data.cached
+                ? `Today's brief · Generated ${new Date(data.generatedAt).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Kolkata'})} IST · Cached`
+                : `${data.day}, ${data.date} · Generated ${new Date(data.generatedAt).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Kolkata'})} IST · Fresh`
+            ) : 'AI-powered daily market intelligence'}
           </p>
         </div>
-        <button onClick={load} disabled={loading}
-          style={{padding:'8px 18px',background:t.accentC,border:'none',borderRadius:10,color:'#fff',fontWeight:700,cursor:'pointer',fontSize:13,fontFamily:'Inter,sans-serif',opacity:loading?0.6:1}}>
-          {loading ? '⏳ Loading...' : '↻ Refresh Brief'}
-        </button>
+        <div style={{display:'flex',gap:8}}>
+          {/* Only show regenerate button - not auto-refresh */}
+          <button onClick={() => load(false)} disabled={loading}
+            style={{padding:'7px 14px',background:t.surface,border:`1px solid ${t.border}`,
+              borderRadius:10,color:t.muted,cursor:'pointer',fontSize:12,fontFamily:'Inter,sans-serif',
+              opacity:loading?0.6:1}}>
+            {loading ? '⏳' : '↻ Reload'}
+          </button>
+          <button onClick={() => load(true)} disabled={loading}
+            style={{padding:'7px 14px',background:t.accentC,border:'none',
+              borderRadius:10,color:'#fff',fontWeight:700,cursor:'pointer',fontSize:12,
+              fontFamily:'Inter,sans-serif',opacity:loading?0.6:1}}>
+            {loading ? '⏳ Generating...' : '⚡ New Brief'}
+          </button>
+        </div>
       </div>
 
-      {loading && (
+      {/* Note about caching */}
+      {data?.cached && (
+        <div style={{background:t.green+'11',border:`1px solid ${t.green}22`,borderRadius:10,
+          padding:'8px 14px',marginBottom:16,display:'flex',alignItems:'center',gap:8}}>
+          <span style={{fontSize:16}}>✅</span>
+          <p style={{color:t.green,fontSize:12,fontWeight:600}}>
+            Cached brief — no API call made. Tap "New Brief" to regenerate (uses Claude API).
+          </p>
+        </div>
+      )}
+
+      {loading && !data && (
         <div style={{textAlign:'center',padding:60}}>
-          <div style={{width:36,height:36,border:`3px solid ${t.border}`,borderTopColor:t.accentC,borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'0 auto 16px'}}/>
+          <div style={{width:36,height:36,border:`3px solid ${t.border}`,borderTopColor:t.accentC,
+            borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'0 auto 16px'}}/>
           <p style={{color:t.muted,fontSize:14}}>Analysing global markets with Claude AI...</p>
-          <p style={{color:t.muted,fontSize:12,marginTop:6}}>Fetching US markets, Asian session, crude, gold, VIX, news...</p>
+          <p style={{color:t.muted,fontSize:12,marginTop:6}}>This may take 15-20 seconds</p>
         </div>
       )}
 
       {error && (
-        <div style={{background:t.red+'11',border:`1px solid ${t.red}33`,borderRadius:14,padding:24,textAlign:'center'}}>
-          <p style={{color:t.red,fontWeight:700,marginBottom:8}}>Failed to load morning brief</p>
+        <div style={{background:t.red+'11',border:`1px solid ${t.red}33`,borderRadius:14,
+          padding:24,textAlign:'center'}}>
+          <p style={{color:t.red,fontWeight:700,marginBottom:8}}>Failed to load</p>
           <p style={{color:t.muted,fontSize:13}}>{error}</p>
-          <button onClick={load} style={{marginTop:12,padding:'8px 20px',background:t.surface,border:`1px solid ${t.border}`,borderRadius:10,color:t.muted,cursor:'pointer',fontFamily:'Inter,sans-serif'}}>Try Again</button>
+          <button onClick={() => load(false)} style={{marginTop:12,padding:'8px 20px',
+            background:t.surface,border:`1px solid ${t.border}`,borderRadius:10,
+            color:t.muted,cursor:'pointer',fontFamily:'Inter,sans-serif'}}>Try Again</button>
         </div>
       )}
 
       {!loading && data && (
         <div style={{display:'flex',flexDirection:'column',gap:16}}>
 
-          {/* Global data snapshot */}
+          {/* Global snapshot cards */}
           {data.rawData && (
-            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(140px,1fr))',gap:8,marginBottom:4}}>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(130px,1fr))',gap:8,marginBottom:4}}>
               {[
-                {l:'S&P 500',   v:fmtNum(data.rawData.us?.sp500)},
-                {l:'NASDAQ',    v:fmtNum(data.rawData.us?.nasdaq)},
-                {l:'VIX',       v:data.rawData.us?.vix?.price || 'N/A', c: data.rawData.us?.vix?.price > 25 ? t.red : data.rawData.us?.vix?.price > 20 ? t.amber : t.green},
-                {l:'NIFTY',     v:fmtNum(data.rawData.india?.nifty, '₹')},
-                {l:'BANKNIFTY', v:fmtNum(data.rawData.india?.banknifty, '₹')},
-                {l:'CRUDE WTI', v:fmtNum(data.rawData.commodities?.crude, '$')},
-                {l:'GOLD',      v:fmtNum(data.rawData.commodities?.gold, '$')},
-                {l:'USD/INR',   v:fmtNum(data.rawData.india?.usdinr)},
-                {l:'BTC',       v:fmtNum(data.rawData.crypto?.btc, '$')},
-                {l:'FEAR/GREED',v:`${data.rawData.fearGreed?.value || 'N/A'}/100`, c: data.rawData.fearGreed?.value < 30 ? t.red : data.rawData.fearGreed?.value > 70 ? t.green : t.amber},
-              ].map(x => (
-                <div key={x.l} style={{background:t.card,borderRadius:10,padding:'10px 12px',border:`1px solid ${t.border}`}}>
+                {l:'S&P 500',    v:fmtNum(data.rawData.us?.sp500)},
+                {l:'NASDAQ',     v:fmtNum(data.rawData.us?.nasdaq)},
+                {l:'VIX',        v:data.rawData.us?.vix?.price||'N/A',
+                  c:data.rawData.us?.vix?.price>25?t.red:data.rawData.us?.vix?.price>20?t.amber:t.green},
+                {l:'NIFTY',      v:fmtNum(data.rawData.india?.nifty,'₹')},
+                {l:'BANKNIFTY',  v:fmtNum(data.rawData.india?.banknifty,'₹')},
+                {l:'CRUDE WTI',  v:fmtNum(data.rawData.commodities?.crude,'$')},
+                {l:'GOLD',       v:fmtNum(data.rawData.commodities?.gold,'$')},
+                {l:'USD/INR',    v:fmtNum(data.rawData.india?.usdinr)},
+                {l:'BTC',        v:fmtNum(data.rawData.crypto?.btc,'$')},
+                {l:'FEAR/GREED', v:`${data.rawData.fearGreed?.value||'N/A'}/100`,
+                  c:data.rawData.fearGreed?.value<30?t.red:data.rawData.fearGreed?.value>70?t.green:t.amber},
+              ].map(x=>(
+                <div key={x.l} style={{background:t.card,borderRadius:10,padding:'10px 12px',
+                  border:`1px solid ${t.border}`}}>
                   <p style={{color:t.muted,fontSize:9,fontWeight:700,letterSpacing:'0.06em',marginBottom:3}}>{x.l}</p>
-                  <p style={{color:x.c||t.text,fontSize:11,fontWeight:700,fontFamily:'JetBrains Mono,monospace',lineHeight:1.2}}>{x.v}</p>
+                  <p style={{color:x.c||t.text,fontSize:11,fontWeight:700,
+                    fontFamily:'JetBrains Mono,monospace',lineHeight:1.2}}>{x.v}</p>
                 </div>
               ))}
             </div>
@@ -2617,22 +2657,30 @@ function MorningBriefTab({t}) {
 
           {/* India Brief */}
           <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,overflow:'hidden'}}>
-            <div style={{padding:'12px 16px',borderBottom:`1px solid ${t.border}`,display:'flex',alignItems:'center',gap:10}}>
+            <div style={{padding:'12px 16px',borderBottom:`1px solid ${t.border}`,
+              display:'flex',alignItems:'center',gap:10}}>
               <span style={{fontSize:18}}>🇮🇳</span>
-              <span style={{fontWeight:700,color:t.text,fontSize:14}}>Indian Markets — NIFTY · BANKNIFTY · FINNIFTY</span>
+              <span style={{fontWeight:700,color:t.text,fontSize:14}}>
+                Indian Markets — NIFTY · BANKNIFTY · FINNIFTY
+              </span>
             </div>
-            <div style={{padding:'16px',whiteSpace:'pre-wrap',color:t.text2,fontSize:13,lineHeight:1.8,fontFamily:'Inter,sans-serif'}}>
+            <div style={{padding:'16px',whiteSpace:'pre-wrap',color:t.text2,
+              fontSize:13,lineHeight:1.8,fontFamily:'Inter,sans-serif'}}>
               {data.indiaBrief}
             </div>
           </div>
 
           {/* Crypto Brief */}
           <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,overflow:'hidden'}}>
-            <div style={{padding:'12px 16px',borderBottom:`1px solid ${t.border}`,display:'flex',alignItems:'center',gap:10}}>
+            <div style={{padding:'12px 16px',borderBottom:`1px solid ${t.border}`,
+              display:'flex',alignItems:'center',gap:10}}>
               <span style={{fontSize:18}}>🪙</span>
-              <span style={{fontWeight:700,color:t.text,fontSize:14}}>Crypto — BTC · ETH · SOL · XRP</span>
+              <span style={{fontWeight:700,color:t.text,fontSize:14}}>
+                Crypto — BTC · ETH · SOL · XRP
+              </span>
             </div>
-            <div style={{padding:'16px',whiteSpace:'pre-wrap',color:t.text2,fontSize:13,lineHeight:1.8,fontFamily:'Inter,sans-serif'}}>
+            <div style={{padding:'16px',whiteSpace:'pre-wrap',color:t.text2,
+              fontSize:13,lineHeight:1.8,fontFamily:'Inter,sans-serif'}}>
               {data.cryptoBrief}
             </div>
           </div>
@@ -2641,12 +2689,15 @@ function MorningBriefTab({t}) {
           {data.topNews?.length > 0 && (
             <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,overflow:'hidden'}}>
               <div style={{padding:'12px 16px',borderBottom:`1px solid ${t.border}`}}>
-                <span style={{fontWeight:700,color:t.text,fontSize:13,letterSpacing:'0.04em'}}>📰 MARKET NEWS</span>
+                <span style={{fontWeight:700,color:t.text,fontSize:13}}>📰 MARKET NEWS</span>
               </div>
-              <div style={{padding:'8px 0'}}>
-                {data.topNews.map((n,i) => (
-                  <div key={i} style={{padding:'8px 16px',borderBottom:i<data.topNews.length-1?`1px solid ${t.border}22`:'none',display:'flex',gap:10,alignItems:'flex-start'}}>
-                    <span style={{color:t.muted,fontSize:10,flexShrink:0,marginTop:2}}>{n.timeAgo}</span>
+              <div style={{padding:'4px 0'}}>
+                {data.topNews.map((n,i)=>(
+                  <div key={i} style={{padding:'8px 16px',
+                    borderBottom:i<data.topNews.length-1?`1px solid ${t.border}22`:'none',
+                    display:'flex',gap:10,alignItems:'flex-start'}}>
+                    <span style={{color:t.muted,fontSize:10,flexShrink:0,marginTop:2,
+                      minWidth:36}}>{n.timeAgo}</span>
                     <p style={{color:t.text2,fontSize:12,lineHeight:1.5}}>{n.title}</p>
                   </div>
                 ))}
@@ -2688,7 +2739,7 @@ function LiveTicker({prices, kiteLoggedIn, market, t, setTab}) {
 
   return (
     <div style={{background:t.tickBg,borderBottom:`1px solid ${t.border}`,padding:'4px 16px',
-      display:'flex',gap:4,overflowX:'auto',alignItems:'center',WebkitOverflowScrolling:'touch'}}>
+      display:'flex',gap:2,overflowX:'auto',alignItems:'center',WebkitOverflowScrolling:'touch',scrollbarWidth:'none'}}>
       {/* Divider */}
       <span style={{color:t.muted,fontSize:10,fontWeight:600,marginRight:4,flexShrink:0}}>🇮🇳</span>
       {INDIA.map(sym => (
@@ -2976,7 +3027,7 @@ export default function Dashboard() {
         <header style={{background:dark?'rgba(8,12,20,0.95)':'rgba(255,255,255,0.97)',
           borderBottom:`1px solid ${t.border}`,padding:'0 20px',
           display:'flex',alignItems:'center',justifyContent:'space-between',
-          height:52,position:'sticky',top:0,zIndex:100,
+          minHeight:52,position:'sticky',top:0,zIndex:100,
           backdropFilter:'blur(12px)',WebkitBackdropFilter:'blur(12px)'}}>
           <div style={{display:'flex',alignItems:'center',gap:12}}>
             <div style={{width:28,height:28,borderRadius:8,background:'linear-gradient(135deg,#ff7a00,#ffaa00)',
@@ -3093,10 +3144,16 @@ export default function Dashboard() {
       <style jsx global>{`
         @keyframes spin { to { transform: rotate(360deg) } }
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
-        ::-webkit-scrollbar { width: 6px; height: 6px }
+        ::-webkit-scrollbar { width: 4px; height: 4px }
         ::-webkit-scrollbar-track { background: transparent }
         ::-webkit-scrollbar-thumb { background: #2a3545; border-radius: 3px }
         * { box-sizing: border-box; margin: 0; padding: 0 }
+        body { -webkit-text-size-adjust: 100%; }
+        button { -webkit-tap-highlight-color: transparent; }
+        @media (max-width: 480px) {
+          .pz-hide-mobile { display: none !important; }
+          .pz-stack-mobile { flex-direction: column !important; }
+        }
       `}</style>
     </>
   )

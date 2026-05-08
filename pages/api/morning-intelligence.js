@@ -1,9 +1,47 @@
 // /api/morning-intelligence
+// Generated ONCE per day - cached in Supabase
+// Returns cached version on subsequent calls same day
+// Only regenerates if: new day OR ?force=1
 // Morning brief — Claude analyses global market data
 // and generates a specific trading plan for NIFTY, BANKNIFTY, FINNIFTY + BTC/ETH/SOL/XRP
 // Called once at market open, cached for the session
 
+import { createClient } from '@supabase/supabase-js'
+const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY)
+
 export default async function handler(req, res) {
+  const force = req.query.force === '1'
+  const today = new Date(new Date().toLocaleString('en-US',{timeZone:'Asia/Kolkata'})).toISOString().split('T')[0]
+
+  // ── Check cache first ─────────────────────────────────────────
+  if (!force) {
+    try {
+      const { data: cached } = await sb
+        .from('morning_brief_cache')
+        .select('*')
+        .eq('id', 'current')
+        .single()
+
+      if (cached && cached.date === today) {
+        console.log('[MorningBrief] Serving from cache for', today)
+        return res.status(200).json({
+          status:          'success',
+          date:            cached.date,
+          cached:          true,
+          indiaBrief:      cached.india_brief,
+          cryptoBrief:     cached.crypto_brief,
+          rawData:         cached.raw_data || {},
+          topNews:         cached.top_news || [],
+          generatedAt:     cached.generated_at,
+        })
+      }
+    } catch(e) {
+      console.warn('[MorningBrief] Cache read failed:', e.message)
+    }
+  }
+
+  console.log('[MorningBrief] Generating fresh brief for', today)
+
   const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY
 
   try {
@@ -127,25 +165,40 @@ Max 120 words. Specific.`
       }).then(r => r.json()),
     ])
 
+    const indiaBrief  = indiaRes?.content?.[0]?.text  || 'India brief unavailable'
+    const cryptoBrief = cryptoRes?.content?.[0]?.text || 'Crypto brief unavailable'
+    const rawData = { us:p.us, india:p.india, commodities:p.commodities,
+                      currencies:p.currencies, asia:p.asia, crypto:p.crypto, fearGreed }
+    const topNews = pulseRes.news?.slice(0, 8) || []
+
+    // ── Save to cache ───────────────────────────────────────────
+    try {
+      await sb.from('morning_brief_cache').upsert({
+        id:           'current',
+        date:         today,
+        india_brief:  indiaBrief,
+        crypto_brief: cryptoBrief,
+        raw_data:     rawData,
+        top_news:     topNews,
+        generated_at: new Date().toISOString(),
+      }, { onConflict: 'id' })
+      console.log('[MorningBrief] Cached for', today)
+    } catch(e) {
+      console.warn('[MorningBrief] Cache save failed:', e.message)
+    }
+
     return res.status(200).json({
       status:          'success',
       date:            dateStr,
       day:             dow,
+      cached:          false,
       globalSentiment: pulseRes.globalSentiment,
       keySignals:      pulseRes.signals || [],
-      indiaBrief:      indiaRes?.content?.[0]?.text || 'India brief unavailable',
-      cryptoBrief:     cryptoRes?.content?.[0]?.text || 'Crypto brief unavailable',
-      rawData: {
-        us:          p.us,
-        india:       p.india,
-        commodities: p.commodities,
-        currencies:  p.currencies,
-        asia:        p.asia,
-        crypto:      p.crypto,
-        fearGreed,
-      },
-      topNews:     pulseRes.news?.slice(0, 8) || [],
-      generatedAt: new Date().toISOString(),
+      indiaBrief,
+      cryptoBrief,
+      rawData,
+      topNews,
+      generatedAt:     new Date().toISOString(),
     })
 
   } catch(err) {
