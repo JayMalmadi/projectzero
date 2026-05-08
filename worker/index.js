@@ -365,12 +365,35 @@ async function monitorPaperTrades() {
 
     // Fetch ALL prices in ONE call (much more efficient than per-trade fetching)
     let allPrices = {}
+    let optionPrices = {}  // symbol -> current LTP for option trades
     try {
-      // Indian market prices
+      // Indian market prices (index level)
       const indiaSymbols = [...new Set(openTrades.filter(t => t.market === 'india').map(t => t.symbol))]
       if (indiaSymbols.length > 0 && isMarketHours) {
-        const mktR = await fetchJSON(`${CONFIG.DASHBOARD_URL}/api/market?symbols=${indiaSymbols.join(',')}`)
-        Object.assign(allPrices, mktR.data || {})
+        const liveR = await fetchJSON(`${CONFIG.DASHBOARD_URL}/api/live-prices`)
+        for (const [sym, data] of Object.entries(liveR.india || {})) {
+          allPrices[sym] = { price: data.price }
+        }
+      }
+
+      // Option prices — fetch for any open option trades
+      const optionTrades = openTrades.filter(t => t.option_symbol && t.signal_type?.includes('option'))
+      if (optionTrades.length > 0 && isMarketHours) {
+        // Fetch option chain for each unique underlying
+        const underlyings = [...new Set(optionTrades.map(t => t.symbol))]
+        for (const sym of underlyings) {
+          try {
+            const chainR = await fetchJSON(`${CONFIG.DASHBOARD_URL}/api/options-chain?symbol=${sym}`)
+            if (chainR.status === 'success') {
+              for (const strike of (chainR.chain || [])) {
+                if (strike.call?.symbol) optionPrices[strike.call.symbol] = strike.call.ltp
+                if (strike.put?.symbol)  optionPrices[strike.put.symbol]  = strike.put.ltp
+              }
+            }
+          } catch(e) {
+            console.error('[PaperMonitor] Option price fetch error:', e.message)
+          }
+        }
       }
       // Crypto prices (always fetch — 24/7)
       const hasCrypto = openTrades.some(t => t.market === 'crypto' || t.market === 'delta')
@@ -449,7 +472,11 @@ async function monitorPaperTrades() {
         }
 
         // Use pre-fetched prices (no extra API call per trade)
-        const currentPrice = getCurrentPrice(trade.symbol) || allPrices[trade.symbol]?.price || null
+        // For option trades use option LTP, for index/futures use index price
+        const isOptionTrade = trade.signal_type?.includes('option') && trade.option_symbol
+        const currentPrice = isOptionTrade
+          ? (optionPrices[trade.option_symbol] || null)
+          : (getCurrentPrice(trade.symbol) || allPrices[trade.symbol]?.price || null)
 
         if (!currentPrice) continue
 
@@ -1014,6 +1041,7 @@ const server = http.createServer((req, res) => {
         // Send Telegram alert
         const curr  = market === 'delta' ? '$' : '₹'
         const emoji = sig === 'BUY' ? '🟢' : '🔴'
+        const isIndia = market === 'india'
         const msg   = `${emoji} <b>TRADINGVIEW SIGNAL</b>
 ` +
           `<b>${sig} ${symbol}</b> · ${strategy || 'Pine Script'} · ${timeframe || '15m'}
@@ -1026,14 +1054,17 @@ const server = http.createServer((req, res) => {
 ` : '') +
           `Confidence: ${conf}%
 ` +
-          (reason   ? `Reason: ${reason.slice(0,120)}` : '') +
+          (reason   ? `Reason: ${reason.slice(0,120)}
+` : '') +
+          (isIndia  ? `
+📋 Paper trades: Futures + ATM ${sig==='BUY'?'CE':'PE'} option` : '') +
           `
 
 <a href="${CONFIG.DASHBOARD_URL}/dashboard">⚡ View Dashboard →</a>`
 
         await sendTelegram(msg)
 
-        // Auto create paper trade
+        // ── Paper Trade 1: Futures / Index tracking ──────────────
         const ptRes = await fetch(`${CONFIG.DASHBOARD_URL}/api/paper-trades`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1048,10 +1079,62 @@ const server = http.createServer((req, res) => {
             target:      target   ? parseFloat(target)   : null,
             confidence:  conf,
             quantity:    stopLoss ? calcPositionSize(parseFloat(price), parseFloat(stopLoss), market) : 1,
-            notes: `TradingView signal · ${timeframe || '15m'} · ${strategy || 'Pine Script'}`,
+            notes: `TradingView signal · ${timeframe || '15m'} · ${strategy || 'Pine Script'} · FUTURES`,
           })
         })
         const pt = await ptRes.json()
+
+        // ── Paper Trade 2: ATM Option (India only) ────────────────
+        if (market === 'india' && ['NIFTY','BANKNIFTY','FINNIFTY'].includes(symbol)) {
+          try {
+            // Fetch option chain to get ATM strike and option price
+            const chainRes = await fetch(`${CONFIG.DASHBOARD_URL}/api/options-chain?symbol=${symbol}`)
+            const chain    = await chainRes.json()
+
+            if (chain.status === 'success' && chain.chain?.length > 0) {
+              const atmStrike = chain.atm
+              const optType   = sig === 'BUY' ? 'call' : 'put'
+              const atmOption = chain.chain.find(s => s.strike === atmStrike)
+              const optData   = atmOption?.[optType]
+
+              if (optData && optData.ltp > 0) {
+                const optSL  = parseFloat((optData.ltp * 0.40).toFixed(2))  // SL at 40% of premium
+                const optTgt = parseFloat((optData.ltp * 1.80).toFixed(2))  // Target at 80% gain
+
+                await fetch(`${CONFIG.DASHBOARD_URL}/api/paper-trades`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    symbol,
+                    strategy:          strategy || 'tv-pine-script',
+                    market:            'india',
+                    direction:         'BUY',  // always buy options
+                    signal_type:       `tradingview_${timeframe || '15'}m_option`,
+                    entry_price:       optData.ltp,
+                    stop_loss:         optSL,
+                    target:            optTgt,
+                    confidence:        conf,
+                    quantity:          1,  // 1 lot
+                    option_symbol:     optData.symbol,
+                    option_strike:     atmStrike,
+                    option_type:       sig === 'BUY' ? 'CE' : 'PE',
+                    option_expiry:     chain.expiry,
+                    option_entry_price: optData.ltp,
+                    option_sl:         optSL,
+                    option_target:     optTgt,
+                    notes: `TradingView signal · ${timeframe || '15m'} · ${strategy || 'Pine Script'} · ATM ${sig === 'BUY' ? 'CE' : 'PE'} @ ₹${optData.ltp} · Expiry ${chain.expiry}`,
+                  })
+                })
+
+                console.log(`[TVWebhook] ATM option paper trade: ${symbol} ${atmStrike}${sig==='BUY'?'CE':'PE'} @ ₹${optData.ltp}`)
+              } else {
+                console.log(`[TVWebhook] No ATM option data available for ${symbol}`)
+              }
+            }
+          } catch(e) {
+            console.error('[TVWebhook] Option paper trade error:', e.message)
+          }
+        }
 
         // Log to signal history
         await fetch(`${CONFIG.DASHBOARD_URL}/api/signal-history`, {
