@@ -1,6 +1,5 @@
 // /api/options-chain
 // Real options chain from Zerodha Kite API
-// Falls back to NSE if Kite not connected
 
 import { createClient } from '@supabase/supabase-js'
 const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY)
@@ -8,9 +7,7 @@ const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABA
 const KITE_BASE = 'https://api.kite.trade'
 const API_KEY   = process.env.KITE_API_KEY
 
-// Get stored access token from Supabase (set when user logs in)
-async function getAccessToken(headerToken) {
-  if (headerToken) return headerToken
+async function getAccessToken() {
   try {
     const { data } = await sb.from('kite_session').select('access_token,expires_at').eq('id','current').single()
     if (!data) return null
@@ -19,30 +16,14 @@ async function getAccessToken(headerToken) {
   } catch { return null }
 }
 
-// Get all instruments for a segment (cached)
-// (unused helper — instruments fetched inline with correct auth)
-
-// Get nearest weekly expiry Thursday
-function getNearestExpiry() {
-  const now  = new Date()
-  const day  = now.getDay() // 0=Sun, 4=Thu
-  const diff = day <= 4 ? 4 - day : 7 - day + 4
-  const expiry = new Date(now)
-  expiry.setDate(now.getDate() + (diff === 0 && now.getHours() >= 15 ? 7 : diff))
-  return expiry.toISOString().split('T')[0] // YYYY-MM-DD
-}
-
 export default async function handler(req, res) {
-  const { symbol = 'NIFTY' } = req.query
-  const headerToken = req.headers['x-kite-access-token']
-  const accessToken = await getAccessToken(headerToken)
+  const { symbol = 'NIFTY', expiry: reqExpiry } = req.query
+  const accessToken = await getAccessToken()
 
   if (!accessToken) {
     return res.status(200).json({
-      status: 'no_session',
-      symbol,
-      message: 'Zerodha session expired or not logged in. Please login via the dashboard to see live options chain.',
-      action: 'login_required',
+      status: 'no_session', action: 'login_required', symbol,
+      message: 'Zerodha session expired. Please login to see live options chain.',
       chain: [], expiries: [], spotPrice: 0
     })
   }
@@ -51,146 +32,137 @@ export default async function handler(req, res) {
   const HDRS = { 'X-Kite-Version': '3', 'Authorization': AUTH }
 
   try {
-    // Step 1: Get spot price
+    // Step 1: Spot price
     const spotMap = {
-      NIFTY:    'NSE:NIFTY 50',
-      BANKNIFTY:'NSE:NIFTY BANK',
-      FINNIFTY:  'NSE:NIFTY FIN SERVICE',
+      NIFTY: 'NSE:NIFTY 50', BANKNIFTY: 'NSE:NIFTY BANK',
+      FINNIFTY: 'NSE:NIFTY FIN SERVICE', MIDCPNIFTY: 'NSE:NIFTY MID SELECT',
     }
     const spotInstr = spotMap[symbol] || 'NSE:NIFTY 50'
     const spotR = await fetch(`${KITE_BASE}/quote?i=${encodeURIComponent(spotInstr)}`, { headers: HDRS })
     const spotD = await spotR.json()
     const spotPrice = spotD.data?.[spotInstr]?.last_price || 0
+    if (!spotPrice) return res.status(200).json({
+      status: 'no_data', symbol, spotPrice: 0, chain: [], expiries: [],
+      message: 'Could not fetch spot price. Market may be closed.'
+    })
 
-    if (!spotPrice) {
-      return res.status(200).json({ status: 'no_data', symbol, spotPrice: 0, chain: [], expiries: [] })
-    }
-
-    // Step 2: Get options instruments (NFO segment) — uses correct auth
-    const instrR = await fetch(`${KITE_BASE}/instruments/NFO`, { headers: HDRS })
+    // Step 2: NFO Instruments CSV
+    const instrR    = await fetch(`${KITE_BASE}/instruments/NFO`, { headers: HDRS })
     const instrText = await instrR.text()
-    const lines = instrText.split('\n').slice(1) // skip header
+    const allLines  = instrText.split('\n')
+    const header    = allLines[0] || ''
+    const dataLines = allLines.slice(1)
+    console.log('[OptionsChain] NFO lines:', allLines.length, 'Header:', header.substring(0, 100))
 
-    // Parse CSV: instrument_token,exchange_token,tradingsymbol,name,last_price,expiry,strike,tick_size,lot_size,instrument_type,segment,exchange
+    // Detect columns dynamically from header
+    const hCols = header.split(',')
+    let ci = {
+      token: hCols.indexOf('instrument_token'), sym: hCols.indexOf('tradingsymbol'),
+      name: hCols.indexOf('name'), expiry: hCols.indexOf('expiry'),
+      strike: hCols.indexOf('strike'), lot: hCols.indexOf('lot_size'),
+      type: hCols.indexOf('instrument_type'),
+    }
+    if (ci.token < 0) { ci = { token:0, sym:2, name:3, expiry:5, strike:6, lot:8, type:9 } }
+    console.log('[OptionsChain] Cols:', JSON.stringify(ci))
+
     const instruments = []
-    for (const line of lines) {
+    for (const line of dataLines) {
       if (!line.trim()) continue
       const cols = line.split(',')
-      if (cols.length < 12) continue
-      const name = cols[3]
-      const type = cols[9] // CE or PE
-      const seg  = cols[10]
-      if (name !== symbol) continue
-      if (type !== 'CE' && type !== 'PE') continue
+      if (cols.length < 8) continue
+      const iName = (cols[ci.name] || '').trim()
+      const iType = (cols[ci.type] || '').trim()
+      if (iName !== symbol) continue
+      if (iType !== 'CE' && iType !== 'PE') continue
       instruments.push({
-        token:    cols[0],
-        symbol:   cols[2],  // e.g. NIFTY24MAY24000CE
-        expiry:   cols[5],  // YYYY-MM-DD
-        strike:   parseFloat(cols[6]),
-        lotSize:  parseInt(cols[8]),
-        type:     type,     // CE or PE
+        token: cols[ci.token], symbol: cols[ci.sym],
+        expiry: (cols[ci.expiry] || '').trim(),
+        strike: parseFloat(cols[ci.strike]),
+        lotSize: parseInt(cols[ci.lot]) || 25, type: iType,
       })
     }
+    console.log('[OptionsChain]', symbol, 'instruments:', instruments.length)
 
-    // Step 3: Find expiries
-    const expiries = [...new Set(instruments.map(i => i.expiry))].sort()
-    const nearestExpiry = expiries[0]
+    if (instruments.length === 0) return res.status(200).json({
+      status: 'no_instruments', symbol, spotPrice, chain: [], expiries: [],
+      message: `No ${symbol} options found in Kite NFO.`,
+      debug: { headerPreview: header.substring(0, 200), totalLines: allLines.length }
+    })
 
-    // Step 4: Filter strikes near ATM (ATM ± 10 strikes, step 50 for NIFTY/100 for BN)
-    const step = symbol === 'BANKNIFTY' ? 100 : symbol === 'FINNIFTY' ? 50 : 50
+    // Step 3: Find nearest upcoming expiry
+    const today    = new Date().toISOString().split('T')[0]
+    const expiries = [...new Set(instruments.map(i => i.expiry))].filter(e => e >= today).sort()
+    const useExpiry = (reqExpiry && expiries.includes(reqExpiry)) ? reqExpiry : expiries[0]
+    console.log('[OptionsChain] Expiries:', expiries.slice(0,5), '| Using:', useExpiry)
+
+    if (!useExpiry) return res.status(200).json({
+      status: 'no_expiry', symbol, spotPrice, chain: [], expiries: [],
+      message: 'No upcoming expiries found.'
+    })
+
+    // Step 4: ATM ± 10 strikes
+    const step = symbol === 'BANKNIFTY' ? 100 : symbol === 'MIDCPNIFTY' ? 25 : 50
     const atm  = Math.round(spotPrice / step) * step
-    const strikesWanted = []
-    for (let i = -10; i <= 10; i++) strikesWanted.push(atm + i * step)
+    const strikesWanted = Array.from({length:21}, (_,i) => atm + (i-10)*step)
+    const filtered = instruments.filter(i => i.expiry === useExpiry && strikesWanted.includes(i.strike))
+    console.log('[OptionsChain] Filtered:', filtered.length, 'contracts | ATM:', atm)
 
-    const filtered = instruments.filter(i =>
-      i.expiry === nearestExpiry && strikesWanted.includes(i.strike)
-    )
+    if (filtered.length === 0) return res.status(200).json({
+      status: 'no_strikes', symbol, spotPrice, atm,
+      expiries: expiries.slice(0, 6), chain: [],
+      message: `No ${symbol} strikes for expiry ${useExpiry}. Available: ${expiries.slice(0,3).join(', ')}`
+    })
 
-    if (filtered.length === 0) {
-      return res.status(200).json({
-        status: 'no_strikes', symbol, spotPrice, expiries: expiries.slice(0,4), chain: [],
-        message: 'No options found for this expiry. Market may be closed.'
-      })
-    }
-
-    // Step 5: Get live quotes for all filtered options
+    // Step 5: Live quotes
     const tokens = filtered.map(i => `NFO:${i.symbol}`)
-    const chunkSize = 100 // Kite max per request
     const allQuotes = {}
-
-    for (let i = 0; i < tokens.length; i += chunkSize) {
-      const chunk = tokens.slice(i, i + chunkSize)
-      const qUrl  = `${KITE_BASE}/quote?${chunk.map(t => `i=${encodeURIComponent(t)}`).join('&')}`
-      const qR    = await fetch(qUrl, { headers: HDRS })
-      const qD    = await qR.json()
+    for (let i = 0; i < tokens.length; i += 100) {
+      const chunk = tokens.slice(i, i+100)
+      const qR = await fetch(`${KITE_BASE}/quote?${chunk.map(t=>`i=${encodeURIComponent(t)}`).join('&')}`, { headers: HDRS })
+      const qD = await qR.json()
       Object.assign(allQuotes, qD.data || {})
     }
 
     // Step 6: Build chain
     const chainMap = {}
     for (const instr of filtered) {
-      const key    = instr.strike
-      const qKey   = `NFO:${instr.symbol}`
-      const quote  = allQuotes[qKey] || {}
-      const oiData = quote.oi || 0
-      const oiChg  = quote.oi_day_high && quote.oi_day_low ? quote.oi - quote.oi_day_low : 0
-
-      if (!chainMap[key]) chainMap[key] = { strike: key, isATM: key === atm }
-
-      const side = instr.type === 'CE' ? 'call' : 'put'
-      chainMap[key][side] = {
-        symbol:    instr.symbol,
-        token:     instr.token,
-        lotSize:   instr.lotSize,
-        ltp:       quote.last_price || 0,
-        bid:       quote.depth?.buy?.[0]?.price || 0,
-        ask:       quote.depth?.sell?.[0]?.price || 0,
-        oi:        oiData,
-        oiChange:  oiChg,
-        volume:    quote.volume || 0,
-        iv:        0, // Kite doesn't provide IV directly
-        high:      quote.ohlc?.high || 0,
-        low:       quote.ohlc?.low || 0,
+      if (!chainMap[instr.strike]) chainMap[instr.strike] = { strike: instr.strike, isATM: instr.strike === atm }
+      const quote = allQuotes[`NFO:${instr.symbol}`] || {}
+      chainMap[instr.strike][instr.type === 'CE' ? 'call' : 'put'] = {
+        symbol: instr.symbol, lotSize: instr.lotSize,
+        ltp: quote.last_price || 0,
+        bid: quote.depth?.buy?.[0]?.price || 0, ask: quote.depth?.sell?.[0]?.price || 0,
+        oi: quote.oi || 0,
+        oiChange: quote.oi_day_high ? (quote.oi - (quote.oi_day_low || quote.oi)) : 0,
+        volume: quote.volume || 0, high: quote.ohlc?.high || 0, low: quote.ohlc?.low || 0,
       }
     }
-
     const chain = Object.values(chainMap).sort((a,b) => a.strike - b.strike)
 
-    // Step 7: Calculate PCR and Max Pain
-    const totalCallOI = chain.reduce((a,s) => a + (s.call?.oi || 0), 0)
-    const totalPutOI  = chain.reduce((a,s) => a + (s.put?.oi  || 0), 0)
+    // Step 7: PCR + Max Pain
+    const totalCallOI = chain.reduce((a,s) => a + (s.call?.oi||0), 0)
+    const totalPutOI  = chain.reduce((a,s) => a + (s.put?.oi||0), 0)
     const pcr = totalCallOI > 0 ? parseFloat((totalPutOI/totalCallOI).toFixed(2)) : 0
-
-    // Max pain = strike where total option seller loss is minimum
     let maxPain = atm, minLoss = Infinity
     for (const s of chain) {
-      let totalLoss = 0
-      for (const other of chain) {
-        if (other.strike < s.strike) totalLoss += (s.strike - other.strike) * (other.call?.oi || 0)
-        if (other.strike > s.strike) totalLoss += (other.strike - s.strike) * (other.put?.oi  || 0)
+      let loss = 0
+      for (const o of chain) {
+        if (o.strike < s.strike) loss += (s.strike - o.strike) * (o.call?.oi||0)
+        if (o.strike > s.strike) loss += (o.strike - s.strike) * (o.put?.oi||0)
       }
-      if (totalLoss < minLoss) { minLoss = totalLoss; maxPain = s.strike }
+      if (loss < minLoss) { minLoss = loss; maxPain = s.strike }
     }
 
     return res.status(200).json({
-      status:     'success',
-      symbol,
-      spotPrice,
-      atm,
-      expiry:     nearestExpiry,
-      expiries:   expiries.slice(0, 6),
-      pcr,
-      pcrSentiment: pcr > 1.2 ? 'Bullish' : pcr < 0.8 ? 'Bearish' : 'Neutral',
-      maxPain,
-      chain,
-      totalCallOI,
-      totalPutOI,
-      lotSize:    filtered[0]?.lotSize || 25,
-      source:     'kite',
+      status: 'success', symbol, spotPrice, atm,
+      expiry: useExpiry, expiries: expiries.slice(0, 6),
+      pcr, pcrSentiment: pcr > 1.2 ? 'Bullish' : pcr < 0.8 ? 'Bearish' : 'Neutral',
+      maxPain, chain, totalCallOI, totalPutOI,
+      lotSize: filtered[0]?.lotSize || 25, source: 'kite',
     })
 
   } catch(err) {
-    console.error('Options chain error:', err)
+    console.error('[OptionsChain] Error:', err)
     return res.status(500).json({ error: err.message, symbol })
   }
 }
