@@ -2686,9 +2686,26 @@ export default function Dashboard() {
           {tab==='paper'     && <PaperTradesTab t={t} />}
           {tab==='portfolio' && (
             <div style={{display:'flex',flexDirection:'column',gap:24}}>
+              {/* Kite — Live positions, funds, orders */}
+              {at && (
+                <div style={{background:t.card,borderRadius:16,padding:20,border:`1px solid ${t.border}`}}>
+                  <p style={{fontWeight:800,fontSize:15,color:t.text,marginBottom:16}}>🇮🇳 Zerodha — Live Portfolio</p>
+                  <Positions at={at} t={t} />
+                </div>
+              )}
+              {!at && (
+                <div style={{background:t.card,borderRadius:16,padding:32,border:`1px solid ${t.border}`,textAlign:'center'}}>
+                  <p style={{fontSize:36,marginBottom:8}}>🇮🇳</p>
+                  <p style={{color:t.text,fontWeight:700,marginBottom:6}}>Zerodha not connected</p>
+                  <p style={{color:t.muted,fontSize:13}}>Login with Zerodha to see live positions, funds and orders</p>
+                </div>
+              )}
+              {/* Delta Exchange wallet */}
               <DeltaPortfolioPanel t={t} />
+              {/* Binance portfolio */}
               <BinancePortfolio t={t} />
-              <KiteTradesPanel at={at} t={t} />
+              {/* Kite today's trades */}
+              {at && <KiteTradesPanel at={at} t={t} />}
             </div>
           )}
           {tab==='trades' && (

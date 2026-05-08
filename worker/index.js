@@ -567,6 +567,97 @@ async function monitorPaperTrades() {
   }
 }
 
+
+// ── NFO Instruments Cache ─────────────────────────────────────
+// Fetches NFO instruments from Kite and stores in Supabase
+// Called at 8:55 AM so option chain is ready when market opens
+// Worker has no timeout limit unlike Vercel serverless
+let lastNFODate = ''
+
+async function refreshNFOCache() {
+  try {
+    const token = await getKiteToken()
+    if (!token) {
+      console.log('[NFOCache] No Kite token — skip')
+      return
+    }
+    const API_KEY = process.env.KITE_API_KEY
+    const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY
+
+    console.log('[NFOCache] Fetching NFO instruments from Kite...')
+
+    // Fetch the 5MB instruments file
+    const r = await fetch('https://api.kite.trade/instruments/NFO', {
+      headers: { 'X-Kite-Version': '3', 'Authorization': `token ${API_KEY}:${token}` }
+    })
+    const text = await r.text()
+    const lines = text.split('\n')
+    const header = lines[0] || ''
+    const hCols = header.split(',')
+
+    let ci = {
+      token: hCols.indexOf('instrument_token'), sym: hCols.indexOf('tradingsymbol'),
+      name: hCols.indexOf('name'), expiry: hCols.indexOf('expiry'),
+      strike: hCols.indexOf('strike'), lot: hCols.indexOf('lot_size'),
+      type: hCols.indexOf('instrument_type'),
+    }
+    if (ci.token < 0) { ci = { token:0, sym:2, name:3, expiry:5, strike:6, lot:8, type:9 } }
+
+    const today = new Date().toISOString().split('T')[0]
+    const symbols = ['NIFTY', 'BANKNIFTY', 'FINNIFTY']
+    const bySymbol = { NIFTY: [], BANKNIFTY: [], FINNIFTY: [] }
+
+    for (const line of lines.slice(1)) {
+      if (!line.trim()) continue
+      const cols = line.split(',')
+      if (cols.length < 8) continue
+      const iName = (cols[ci.name] || '').trim()
+      const iType = (cols[ci.type] || '').trim()
+      if (!symbols.includes(iName)) continue
+      if (iType !== 'CE' && iType !== 'PE') continue
+      const expiry = (cols[ci.expiry] || '').trim()
+      if (expiry < today) continue
+      bySymbol[iName].push({
+        token: cols[ci.token], symbol: cols[ci.sym],
+        expiry, strike: parseFloat(cols[ci.strike]),
+        lotSize: parseInt(cols[ci.lot]) || 25, type: iType,
+      })
+    }
+
+    // Save each symbol to Supabase via REST API
+    for (const sym of symbols) {
+      const instruments = bySymbol[sym]
+      if (!instruments.length) continue
+
+      const body = JSON.stringify([{
+        symbol: sym,
+        cached_date: today,
+        instruments_json: JSON.stringify(instruments),
+        count: instruments.length,
+      }])
+
+      await fetch(`${SUPABASE_URL}/rest/v1/nfo_instruments_cache`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${SUPABASE_KEY}`,
+          'apikey': SUPABASE_KEY,
+          'Prefer': 'resolution=merge-duplicates',
+        },
+        body,
+      })
+      console.log(`[NFOCache] Saved ${instruments.length} instruments for ${sym}`)
+    }
+
+    console.log('[NFOCache] Done — all 3 symbols cached')
+    await sendTelegram(`✅ Options chain cache updated\nNIFTY: ${bySymbol.NIFTY.length} | BANKNIFTY: ${bySymbol.BANKNIFTY.length} | FINNIFTY: ${bySymbol.FINNIFTY.length}`).catch(()=>{})
+
+  } catch(e) {
+    console.error('[NFOCache] Error:', e.message)
+  }
+}
+
 // ── Main scheduler ────────────────────────────────────────────
 let checkCount     = 0
 let lastBriefDate  = ''
@@ -581,6 +672,12 @@ async function tick() {
   const m       = now.getMinutes()
   const dateStr = now.toDateString()
   const isWkday = now.getDay() >= 1 && now.getDay() <= 5
+
+  // NFO cache refresh — 8:55 AM IST weekdays (ready before market opens)
+  if (isWkday && h===8 && m===55 && lastNFODate!==dateStr) {
+    lastNFODate = dateStr
+    refreshNFOCache().catch(e => console.error('[NFOCache] tick error:', e.message))
+  }
 
   // Morning briefing — 9:00 AM IST weekdays
   if (isWkday && h===9 && m===0 && lastBriefDate!==dateStr) {
@@ -710,6 +807,9 @@ fetch('https://api.ipify.org?format=json')
     console.log(`[Worker] Outbound IP: ${d.ip} (Railway — variable, not used for Delta)`)
     // No Telegram alert — Railway IP changes on every deploy, Hetzner (178.105.45.73) is the fixed IP
   }).catch(()=>{})
+
+// Refresh NFO cache on boot (runs async, no delay to startup)
+setTimeout(() => refreshNFOCache().catch(()=>{}), 5000)
 
 sendTelegram(`🚀 <b>Projectzero Worker v2 Started</b>
 ━━━━━━━━━━━━━━━━
