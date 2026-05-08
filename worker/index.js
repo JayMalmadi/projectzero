@@ -833,6 +833,38 @@ async function tick() {
   const dateStr = now.toDateString()
   const isWkday = now.getDay() >= 1 && now.getDay() <= 5
 
+  // Kite login reminder — 8:50 AM IST weekdays
+  // Sent before market opens so user can login before 9:15 AM
+  if (isWkday && h===8 && m===50 && !firedToday.has('kite_login_reminder')) {
+    firedToday.add('kite_login_reminder')
+    const token = await getKiteToken()
+    if (!token) {
+      // Not logged in — send reminder
+      const loginUrl = `${CONFIG.DASHBOARD_URL}/api/kite-login`
+      await sendTelegram(
+        `🔐 <b>Zerodha Login Required</b>
+` +
+        `━━━━━━━━━━━━━━━━
+` +
+        `Market opens in 25 minutes.
+` +
+        `Login now to enable:
+` +
+        `• Live NIFTY / BANKNIFTY / FINNIFTY prices
+` +
+        `• Options chain with Greeks
+` +
+        `• Intraday charts (1m, 5m, 15m)
+
+` +
+        `<a href="${loginUrl}">👉 Tap here to login →</a>`
+      ).catch(() => {})
+      console.log('[KiteReminder] Login reminder sent')
+    } else {
+      console.log('[KiteReminder] Already logged in — no reminder needed')
+    }
+  }
+
   // NFO cache refresh — 8:55 AM IST weekdays (ready before market opens)
   if (isWkday && h===8 && m===55 && lastNFODate!==dateStr) {
     lastNFODate = dateStr
