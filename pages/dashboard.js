@@ -1189,182 +1189,284 @@ function SignalLogTab({t}) {
 
 // ── Backtest Tab ───────────────────────────────────────────────
 function BacktestTab({t}) {
-  const [sym,     setSym]    = useState('NIFTY')
-  const [strat,   setStrat]  = useState('vwap')
-  const [market,  setMkt]    = useState('india')
-  const [period,  setPeriod] = useState('1year')
-  const [result,  setResult] = useState(null)
-  const [loading, setLoading]= useState(false)
-  const [error,   setError]  = useState('')
+  const STRATEGIES = [
+    { id:'ema-cross',    name:'EMA 9/21 Crossover',         desc:'Fast/slow EMA crossover with ATR stop' },
+    { id:'rsi-reversal', name:'RSI Reversal + Bollinger',    desc:'Oversold/overbought reversals at BB bands' },
+    { id:'bb-breakout',  name:'Bollinger Breakout',          desc:'Price breaking out of BB bands with volume' },
+    { id:'macd-cross',   name:'MACD Crossover',              desc:'MACD line crossing signal line' },
+  ]
+  const INSTRUMENTS = {
+    india:  ['NIFTY','BANKNIFTY','FINNIFTY'],
+    crypto: ['BTC','ETH','SOL','XRP'],
+  }
 
-  const INDIA_SYMS   = ['NIFTY','BANKNIFTY','SENSEX','TCS','INFY','RELIANCE','HDFCBANK','ICICIBANK','SBIN']
-  const CRYPTO_SYMS  = ['BTC','ETH','SOL','BNB','XRP','DOGE']
-  const INDIA_STRATS = ['vwap','bollinger','macd']
-  const CRYPTO_STRATS= ['momentum','macd-cross','rsi-reversal','bb-breakout']
-  const syms   = market==='crypto'?CRYPTO_SYMS:INDIA_SYMS
-  const strats = market==='crypto'?CRYPTO_STRATS:INDIA_STRATS
+  const [market,    setMarket]    = useState('india')
+  const [symbol,    setSymbol]    = useState('NIFTY')
+  const [strategy,  setStrategy]  = useState('ema-cross')
+  const [timeframe, setTimeframe] = useState('15min')
+  const [days,      setDays]      = useState(60)
+  const [result,    setResult]    = useState(null)
+  const [loading,   setLoading]   = useState(false)
+  const [error,     setError]     = useState('')
+  const [dataStatus, setDataStatus] = useState(null)
+  const [backfilling, setBackfilling] = useState(false)
 
-  async function run() {
-    setLoading(true); setResult(null); setError('')
+  useEffect(() => { checkDataStatus() }, [])
+
+  async function checkDataStatus() {
     try {
-      const r = await fetch(`/api/backtest?symbol=${sym}&strategy=${strat}&market=${market}&period=${period}`)
+      const r = await fetch('/api/historical-data?action=status')
       const d = await r.json()
-      if (d.status==='success') setResult(d)
+      setDataStatus(d)
+    } catch {}
+  }
+
+  async function runBackfill() {
+    setBackfilling(true)
+    try {
+      const r = await fetch(`/api/historical-data?action=backfill&days=${days}`)
+      const d = await r.json()
+      if (d.status === 'success') {
+        await checkDataStatus()
+        alert('Data loaded successfully!')
+      }
+    } catch(e) { alert('Backfill failed: ' + e.message) }
+    setBackfilling(false)
+  }
+
+  async function runBacktest() {
+    setLoading(true); setError(''); setResult(null)
+    try {
+      const r = await fetch(`/api/backtest?symbol=${symbol}&strategy=${strategy}&market=${market}&timeframe=${timeframe}&days=${days}`)
+      const d = await r.json()
+      if (d.status === 'success') setResult(d)
+      else if (d.status === 'insufficient_data') setError(d.message)
       else setError(d.error || 'Backtest failed')
     } catch(e) { setError(e.message) }
     setLoading(false)
   }
 
-  const statColor = (v, threshold=0) => v > threshold ? t.green : v < threshold ? t.red : t.muted
+  const pnlColor = v => parseFloat(v) > 0 ? t.green : parseFloat(v) < 0 ? t.red : t.muted
+  const fmt2 = v => parseFloat(v||0).toFixed(2)
 
   return (
     <div>
       <div style={{marginBottom:20}}>
-        <h2 style={{fontSize:22,fontWeight:900,color:t.text}}>Strategy Backtest</h2>
-        <p style={{color:t.muted,fontSize:13,marginTop:4}}>Test any strategy against real historical data. See win rate, P&L, and drawdown.</p>
+        <h2 style={{fontSize:22,fontWeight:900,color:t.text}}>🔬 Backtest Engine</h2>
+        <p style={{color:t.muted,fontSize:13,marginTop:4}}>
+          Test strategies against historical data · ₹10,000 base · 1% risk per trade
+        </p>
       </div>
 
-      {/* Config */}
-      <div style={{background:t.card,borderRadius:16,padding:20,border:`1px solid ${t.border}`,marginBottom:20}}>
+      {/* Data status */}
+      <div style={{background:t.card,borderRadius:12,padding:'12px 16px',border:`1px solid ${t.border}`,marginBottom:16}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:8}}>
+          <div>
+            <p style={{fontSize:11,fontWeight:700,color:t.muted,letterSpacing:'0.06em',marginBottom:4}}>HISTORICAL DATA STATUS</p>
+            {dataStatus ? (
+              <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>
+                {Object.entries({...dataStatus.intraday_15min||{}, ...dataStatus.daily||{}})
+                  .filter(([,v]) => v.count > 0)
+                  .slice(0,6)
+                  .map(([sym,v]) => (
+                    <span key={sym} style={{fontSize:11,color:t.green}}>
+                      ✅ {sym}: {v.count} candles
+                    </span>
+                  ))}
+                {Object.keys(dataStatus.intraday_15min||{}).length === 0 &&
+                  <span style={{fontSize:11,color:t.amber}}>⚠️ No data yet — click Load Data</span>}
+              </div>
+            ) : <span style={{fontSize:11,color:t.muted}}>Checking...</span>}
+          </div>
+          <button onClick={runBackfill} disabled={backfilling}
+            style={{padding:'8px 16px',background:t.accentC,border:'none',borderRadius:10,
+              color:'#fff',fontWeight:700,cursor:'pointer',fontSize:12,fontFamily:'Inter,sans-serif',
+              opacity:backfilling?0.6:1}}>
+            {backfilling ? '⏳ Loading...' : '📥 Load Data'}
+          </button>
+        </div>
+      </div>
+
+      {/* Controls */}
+      <div style={{background:t.card,borderRadius:14,padding:16,border:`1px solid ${t.border}`,marginBottom:16}}>
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(160px,1fr))',gap:12,marginBottom:16}}>
+
+          {/* Market */}
           <div>
-            <p style={{color:t.muted,fontSize:11,fontWeight:700,marginBottom:6,letterSpacing:'0.06em'}}>MARKET</p>
-            <select value={market} onChange={e=>{setMkt(e.target.value);setSym(e.target.value==='crypto'?'BTC':'NIFTY');setStrat(e.target.value==='crypto'?'momentum':'vwap')}}
-              style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,padding:'8px 10px',width:'100%',fontSize:13,fontFamily:'Inter,sans-serif'}}>
-              <option value="india">🇮🇳 Indian</option>
-              <option value="crypto">🪙 Crypto</option>
+            <p style={{fontSize:10,fontWeight:700,color:t.muted,letterSpacing:'0.06em',marginBottom:6}}>MARKET</p>
+            <div style={{display:'flex',gap:4}}>
+              {['india','crypto'].map(m => (
+                <button key={m} onClick={()=>{setMarket(m);setSymbol(m==='india'?'NIFTY':'BTC')}}
+                  style={{flex:1,padding:'7px',borderRadius:8,border:`1px solid ${market===m?t.accentC:t.border}`,
+                    background:market===m?t.accentC+'22':t.surface,color:market===m?t.accentC:t.muted,
+                    fontWeight:700,cursor:'pointer',fontSize:11,fontFamily:'Inter,sans-serif'}}>
+                  {m==='india'?'🇮🇳 India':'🪙 Crypto'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Symbol */}
+          <div>
+            <p style={{fontSize:10,fontWeight:700,color:t.muted,letterSpacing:'0.06em',marginBottom:6}}>SYMBOL</p>
+            <select value={symbol} onChange={e=>setSymbol(e.target.value)}
+              style={{width:'100%',padding:'8px',borderRadius:8,border:`1px solid ${t.border}`,
+                background:t.surface,color:t.text,fontSize:12,fontFamily:'Inter,sans-serif'}}>
+              {INSTRUMENTS[market].map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
+
+          {/* Timeframe */}
           <div>
-            <p style={{color:t.muted,fontSize:11,fontWeight:700,marginBottom:6,letterSpacing:'0.06em'}}>SYMBOL</p>
-            <select value={sym} onChange={e=>setSym(e.target.value)}
-              style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,padding:'8px 10px',width:'100%',fontSize:13,fontFamily:'Inter,sans-serif'}}>
-              {syms.map(s=><option key={s} value={s}>{s}</option>)}
-            </select>
+            <p style={{fontSize:10,fontWeight:700,color:t.muted,letterSpacing:'0.06em',marginBottom:6}}>TIMEFRAME</p>
+            <div style={{display:'flex',gap:4}}>
+              {['15min','daily'].map(tf => (
+                <button key={tf} onClick={()=>setTimeframe(tf)}
+                  style={{flex:1,padding:'7px',borderRadius:8,border:`1px solid ${timeframe===tf?t.accentC:t.border}`,
+                    background:timeframe===tf?t.accentC+'22':t.surface,color:timeframe===tf?t.accentC:t.muted,
+                    fontWeight:700,cursor:'pointer',fontSize:11,fontFamily:'Inter,sans-serif'}}>
+                  {tf}
+                </button>
+              ))}
+            </div>
           </div>
+
+          {/* Days */}
           <div>
-            <p style={{color:t.muted,fontSize:11,fontWeight:700,marginBottom:6,letterSpacing:'0.06em'}}>STRATEGY</p>
-            <select value={strat} onChange={e=>setStrat(e.target.value)}
-              style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,padding:'8px 10px',width:'100%',fontSize:13,fontFamily:'Inter,sans-serif'}}>
-              {strats.map(s=><option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
-          <div>
-            <p style={{color:t.muted,fontSize:11,fontWeight:700,marginBottom:6,letterSpacing:'0.06em'}}>PERIOD</p>
-            <select value={period} onChange={e=>setPeriod(e.target.value)}
-              style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,padding:'8px 10px',width:'100%',fontSize:13,fontFamily:'Inter,sans-serif'}}>
-              <option value="3months">3 Months</option>
-              <option value="6months">6 Months</option>
-              <option value="1year">1 Year</option>
-            </select>
+            <p style={{fontSize:10,fontWeight:700,color:t.muted,letterSpacing:'0.06em',marginBottom:6}}>PERIOD</p>
+            <div style={{display:'flex',gap:4}}>
+              {[30,60,90].map(d => (
+                <button key={d} onClick={()=>setDays(d)}
+                  style={{flex:1,padding:'7px',borderRadius:8,border:`1px solid ${days===d?t.accentC:t.border}`,
+                    background:days===d?t.accentC+'22':t.surface,color:days===d?t.accentC:t.muted,
+                    fontWeight:700,cursor:'pointer',fontSize:11,fontFamily:'Inter,sans-serif'}}>
+                  {d}d
+                </button>
+              ))}
+            </div>
           </div>
         </div>
-        <button onClick={run} disabled={loading}
-          style={{padding:'11px 32px',background:loading?t.surface:'linear-gradient(135deg,#ff6600,#ff9500)',border:'none',borderRadius:10,color:loading?t.muted:'#fff',fontWeight:700,cursor:loading?'not-allowed':'pointer',fontFamily:'Inter,sans-serif',fontSize:14,boxShadow:loading?'none':'0 4px 16px #ff660033'}}>
-          {loading?'Running backtest...':'▶ Run Backtest'}
+
+        {/* Strategy selector */}
+        <div style={{marginBottom:16}}>
+          <p style={{fontSize:10,fontWeight:700,color:t.muted,letterSpacing:'0.06em',marginBottom:8}}>STRATEGY</p>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:8}}>
+            {STRATEGIES.map(s => (
+              <button key={s.id} onClick={()=>setStrategy(s.id)}
+                style={{padding:'10px 12px',borderRadius:10,textAlign:'left',cursor:'pointer',fontFamily:'Inter,sans-serif',
+                  border:`1px solid ${strategy===s.id?t.accentC:t.border}`,
+                  background:strategy===s.id?t.accentC+'22':t.surface}}>
+                <p style={{fontSize:12,fontWeight:700,color:strategy===s.id?t.accentC:t.text,marginBottom:2}}>{s.name}</p>
+                <p style={{fontSize:10,color:t.muted}}>{s.desc}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <button onClick={runBacktest} disabled={loading}
+          style={{width:'100%',padding:'12px',background:loading?t.surface:t.accentC,
+            border:'none',borderRadius:10,color:loading?t.muted:'#fff',
+            fontWeight:800,fontSize:14,cursor:loading?'not-allowed':'pointer',fontFamily:'Inter,sans-serif'}}>
+          {loading ? '⏳ Running backtest...' : '▶ Run Backtest'}
         </button>
-        {error&&(
-        <div style={{background:t.red+'0a',border:`1px solid ${t.red}33`,borderRadius:12,padding:'14px 16px',marginBottom:16}}>
-          <p style={{color:t.red,fontSize:13,fontWeight:700,marginBottom:6}}>⚠️ Binance Account Error</p>
-          <p style={{color:t.text2,fontSize:12,marginBottom:8}}>{error.includes('IP')||error.includes('invalid')||error.includes('Invalid')
-            ?'Your IPs are whitelisted but Vercel uses rotating IPs. The current server IP is not in your list.'
-            :error}
-          </p>
-          <p style={{color:t.muted,fontSize:11}}>
-            Solution: Delete this API key on Binance and create a NEW one with "Unrestricted" IP access 
-            (Binance will auto-delete it if you enable trading with unrestricted IPs, so use this key for reading balance only, and keep your current key for trading).
-          </p>
-        </div>
-      )}
+
+        {error && <p style={{color:t.red,fontSize:12,marginTop:10,textAlign:'center'}}>{error}</p>}
       </div>
 
       {/* Results */}
-      {result&&(
-        <>
-          {/* Stats grid */}
-          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(150px,1fr))',gap:12,marginBottom:20}}>
+      {result && (
+        <div style={{display:'flex',flexDirection:'column',gap:16}}>
+
+          {/* Summary stats */}
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(130px,1fr))',gap:10}}>
             {[
-              {l:'WIN RATE',          v:`${result.stats.winRate}%`,         c:statColor(result.stats.winRate,50)},
-              {l:'TOTAL TRADES',      v:result.stats.totalTrades,            c:t.text},
-              {l:'WINS / LOSSES',     v:`${result.stats.wins} / ${result.stats.losses}`, c:t.text},
-              {l:'AVG WIN',           v:`+${result.stats.avgWin}%`,          c:t.green},
-              {l:'AVG LOSS',          v:`${result.stats.avgLoss}%`,          c:t.red},
-              {l:'PROFIT FACTOR',     v:result.stats.profitFactor||'—',      c:statColor(result.stats.profitFactor,1)},
-              {l:'MAX DRAWDOWN',      v:`-${result.stats.maxDrawdownPct}%`,  c:statColor(-result.stats.maxDrawdownPct,-20)},
-              {l:'TOTAL P&L',         v:`${result.stats.totalPnlPct>0?'+':''}${result.stats.totalPnlPct}%`, c:statColor(result.stats.totalPnlPct)},
-              {l:'EXPECTANCY/TRADE',  v:`${result.stats.expectancy>0?'+':''}${result.stats.expectancy}%`,  c:statColor(result.stats.expectancy)},
-              {l:'FINAL EQUITY',      v:`₹${result.stats.finalEquity}`,      c:statColor(result.stats.finalEquity,100)},
+              {l:'TOTAL TRADES', v:result.stats.totalTrades,              c:t.text},
+              {l:'WIN RATE',     v:result.stats.winRate+'%',               c:result.stats.winRate>=55?t.green:t.red},
+              {l:'NET P&L %',    v:(result.stats.totalPnlPct>=0?'+':'')+fmt2(result.stats.totalPnlPct)+'%', c:pnlColor(result.stats.totalPnlPct)},
+              {l:'NET P&L ₹/$',  v:(result.stats.totalPnlAbs>=0?'+':'')+fmt2(result.stats.totalPnlAbs),    c:pnlColor(result.stats.totalPnlAbs)},
+              {l:'EXPECTANCY',   v:(result.stats.expectancy>=0?'+':'')+fmt2(result.stats.expectancy)+'%',  c:pnlColor(result.stats.expectancy)},
+              {l:'AVG R:R',      v:'1:'+fmt2(result.stats.avgRR),          c:result.stats.avgRR>=1.5?t.green:t.amber},
+              {l:'MAX DRAWDOWN', v:'-'+fmt2(result.stats.maxDrawdownPct)+'%', c:t.red},
+              {l:'CANDLES USED', v:result.candlesUsed,                    c:t.muted},
             ].map(x=>(
-              <div key={x.l} style={{background:t.card,borderRadius:12,padding:'14px',border:`1px solid ${t.border}`,textAlign:'center'}}>
-                <p style={{color:t.muted,fontSize:9,fontWeight:700,letterSpacing:'0.07em',marginBottom:6}}>{x.l}</p>
-                <p style={{color:x.c,fontSize:16,fontWeight:800,fontFamily:'JetBrains Mono,monospace'}}>{x.v}</p>
+              <div key={x.l} style={{background:t.card,borderRadius:12,padding:'12px 14px',border:`1px solid ${t.border}`,textAlign:'center'}}>
+                <p style={{color:t.muted,fontSize:9,fontWeight:700,letterSpacing:'0.07em',marginBottom:4}}>{x.l}</p>
+                <p style={{color:x.c,fontSize:15,fontWeight:800,fontFamily:'JetBrains Mono,monospace'}}>{x.v}</p>
               </div>
             ))}
           </div>
 
-          {/* Verdict */}
-          <div style={{
-            background: result.stats.winRate>=55&&result.stats.expectancy>0
-              ? t.green+'0d' : result.stats.winRate<45
-              ? t.red+'0d' : t.amber+'0d',
-            border:`1px solid ${result.stats.winRate>=55&&result.stats.expectancy>0?t.green:result.stats.winRate<45?t.red:t.amber}44`,
-            borderRadius:14,padding:18,marginBottom:20,
-          }}>
-            <p style={{fontWeight:800,fontSize:15,color:t.text,marginBottom:6}}>
-              {result.stats.winRate>=55&&result.stats.expectancy>0?'✅ STRATEGY PASSES — Positive expectancy. Trade this.'
-               :result.stats.winRate<45?'❌ STRATEGY FAILS — Negative expectancy on this period. Avoid.'
-               :'⚠️ MARGINAL — borderline results. Use with caution.'}
-            </p>
-            <p style={{color:t.text2,fontSize:13}}>
-              {sym} · {strat} · {period} · {result.dataPoints} trading days · Starting ₹100 → ₹{result.stats.finalEquity}
-            </p>
-          </div>
-
-          {/* Best & worst trades */}
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14,marginBottom:20}}>
-            {result.bestTrade&&(
-              <div style={{background:t.green+'0a',borderRadius:12,padding:16,border:`1px solid ${t.green}33`}}>
-                <p style={{color:t.green,fontSize:11,fontWeight:700,marginBottom:8}}>🏆 BEST TRADE</p>
-                <p style={{color:t.text,fontWeight:800,fontSize:16,fontFamily:'JetBrains Mono,monospace'}}>+{result.bestTrade.pnlPct}%</p>
-                <p style={{color:t.muted,fontSize:11,marginTop:4}}>{result.bestTrade.direction} · {result.bestTrade.entryDate} → {result.bestTrade.exitDate}</p>
+          {/* Equity curve */}
+          {result.equityCurve?.length > 1 && (
+            <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,padding:16}}>
+              <p style={{fontSize:11,fontWeight:700,color:t.muted,letterSpacing:'0.06em',marginBottom:12}}>
+                EQUITY CURVE — {result.strategy} on {symbol} ({days}d)
+              </p>
+              <div style={{display:'flex',alignItems:'flex-end',gap:2,height:80}}>
+                {result.equityCurve.map((v,i) => {
+                  const max = Math.max(...result.equityCurve.map(Math.abs), 0.1)
+                  const h   = Math.max(Math.abs(v)/max*72, 2)
+                  return <div key={i} title={`Trade ${i+1}: ${v>=0?'+':''}${v}%`}
+                    style={{flex:1,height:h+'px',background:v>=0?t.green:t.red,
+                      borderRadius:'2px 2px 0 0',opacity:0.8,minWidth:2}}/>
+                })}
               </div>
-            )}
-            {result.worstTrade&&(
-              <div style={{background:t.red+'0a',borderRadius:12,padding:16,border:`1px solid ${t.red}33`}}>
-                <p style={{color:t.red,fontSize:11,fontWeight:700,marginBottom:8}}>⚠️ WORST TRADE</p>
-                <p style={{color:t.text,fontWeight:800,fontSize:16,fontFamily:'JetBrains Mono,monospace'}}>{result.worstTrade.pnlPct}%</p>
-                <p style={{color:t.muted,fontSize:11,marginTop:4}}>{result.worstTrade.direction} · {result.worstTrade.entryDate} → {result.worstTrade.exitDate}</p>
+              <div style={{display:'flex',justifyContent:'space-between',marginTop:4}}>
+                <span style={{fontSize:10,color:t.muted}}>Trade 1</span>
+                <span style={{fontSize:11,fontWeight:700,color:pnlColor(result.stats.totalPnlPct)}}>
+                  Final: {result.stats.totalPnlPct>=0?'+':''}{fmt2(result.stats.totalPnlPct)}%
+                </span>
+                <span style={{fontSize:10,color:t.muted}}>Trade {result.stats.totalTrades}</span>
               </div>
-            )}
-          </div>
-
-          {/* Recent trades */}
-          {result.recentTrades?.length>0&&(
-            <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,overflow:'hidden'}}>
-              <div style={{padding:'10px 16px',borderBottom:`1px solid ${t.border}`,fontSize:11,fontWeight:700,color:t.muted,letterSpacing:'0.06em'}}>RECENT TRADES (last 10)</div>
-              <div style={{overflowX:'auto',WebkitOverflowScrolling:'touch'}}><table style={{width:'100%',minWidth:650,borderCollapse:'collapse'}}>
-                <thead><tr style={{background:t.surface}}>
-                  {['ENTRY DATE','EXIT DATE','DIRECTION','ENTRY','EXIT','P&L %','RESULT'].map(h=>(
-                    <th key={h} style={{padding:'8px 12px',textAlign:'left',fontSize:10,fontWeight:700,color:t.muted,letterSpacing:'0.06em',borderBottom:`1px solid ${t.border}`}}>{h}</th>
-                  ))}
-                </tr></thead>
-                <tbody>
-                  {result.recentTrades.map((tr,i)=>(
-                    <tr key={i} style={{borderBottom:`1px solid ${t.border}22`}}>
-                      <td style={{padding:'9px 12px',color:t.muted,fontSize:12}}>{tr.entryDate}</td>
-                      <td style={{padding:'9px 12px',color:t.muted,fontSize:12}}>{tr.exitDate}</td>
-                      <td style={{padding:'9px 12px'}}><span style={{color:tr.direction==='BUY'?t.green:t.red,fontWeight:700,fontSize:11}}>{tr.direction}</span></td>
-                      <td style={{padding:'9px 12px',fontFamily:'JetBrains Mono,monospace',fontSize:12,color:t.text}}>{market==='crypto'?'$':'₹'}{tr.entry?.toLocaleString('en-IN',{maximumFractionDigits:2})}</td>
-                      <td style={{padding:'9px 12px',fontFamily:'JetBrains Mono,monospace',fontSize:12,color:t.text}}>{market==='crypto'?'$':'₹'}{tr.exit?.toLocaleString('en-IN',{maximumFractionDigits:2})}</td>
-                      <td style={{padding:'9px 12px',fontFamily:'JetBrains Mono,monospace',fontWeight:700,fontSize:12,color:tr.pnlPct>=0?t.green:t.red}}>{tr.pnlPct>=0?'+':''}{tr.pnlPct}%</td>
-                      <td style={{padding:'9px 12px'}}><span style={{color:tr.result==='WIN'?t.green:t.red,fontSize:11,fontWeight:700}}>{tr.result==='WIN'?'✅ WIN':'❌ LOSS'}</span></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table></div>
             </div>
           )}
-        </>
+
+          {/* Recent trades table */}
+          {result.recentTrades?.length > 0 && (
+            <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,overflow:'hidden'}}>
+              <div style={{padding:'12px 16px',borderBottom:`1px solid ${t.border}`}}>
+                <p style={{fontSize:11,fontWeight:700,color:t.muted,letterSpacing:'0.06em'}}>
+                  RECENT TRADES (last {result.recentTrades.length})
+                </p>
+              </div>
+              <div style={{overflowX:'auto'}}>
+                <table style={{width:'100%',minWidth:500,borderCollapse:'collapse',fontSize:12}}>
+                  <thead>
+                    <tr style={{background:t.surface}}>
+                      {['DATE','DIR','ENTRY','EXIT','P&L%','RESULT','R:R'].map(h=>(
+                        <th key={h} style={{padding:'8px 12px',textAlign:'left',fontSize:10,
+                          fontWeight:700,color:t.muted,letterSpacing:'0.05em',
+                          borderBottom:`1px solid ${t.border}`}}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {result.recentTrades.map((tr,i)=>(
+                      <tr key={i} style={{borderBottom:`1px solid ${t.border}22`,
+                        background:i%2===0?'transparent':t.surface+'44'}}>
+                        <td style={{padding:'8px 12px',color:t.muted,fontSize:11}}>{tr.entryDate}</td>
+                        <td style={{padding:'8px 12px',fontWeight:700,color:tr.direction==='BUY'?t.green:t.red}}>{tr.direction}</td>
+                        <td style={{padding:'8px 12px',fontFamily:'JetBrains Mono,monospace',color:t.text,fontSize:11}}>{parseFloat(tr.entry).toFixed(0)}</td>
+                        <td style={{padding:'8px 12px',fontFamily:'JetBrains Mono,monospace',color:t.text,fontSize:11}}>{parseFloat(tr.exit).toFixed(0)}</td>
+                        <td style={{padding:'8px 12px',fontFamily:'JetBrains Mono,monospace',fontWeight:700,color:pnlColor(tr.pnlPct)}}>
+                          {tr.pnlPct>=0?'+':''}{fmt2(tr.pnlPct)}%
+                        </td>
+                        <td style={{padding:'8px 12px'}}>
+                          <span style={{padding:'2px 7px',borderRadius:6,fontSize:10,fontWeight:700,
+                            background:(tr.exitReason==='TARGET_HIT'?t.green:tr.exitReason==='SL_HIT'?t.red:t.amber)+'22',
+                            color:tr.exitReason==='TARGET_HIT'?t.green:tr.exitReason==='SL_HIT'?t.red:t.amber}}>
+                            {tr.exitReason==='TARGET_HIT'?'✅ WIN':tr.exitReason==='SL_HIT'?'❌ SL':'⏱ EXP'}
+                          </span>
+                        </td>
+                        <td style={{padding:'8px 12px',color:t.muted,fontFamily:'JetBrains Mono,monospace',fontSize:11}}>1:{fmt2(tr.rr)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
       )}
     </div>
   )

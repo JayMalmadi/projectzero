@@ -195,18 +195,15 @@ function getCurrentPrice(symbol) {
   return livePrices[symbol]?.price || null
 }
 
-// Signal monitoring — placeholder for when strategies are built
-// Strategies will use livePrices and priceHistory
+// ── Strategy Engine ───────────────────────────────────────────
+// Strategies run on livePrices and priceHistory (rolling 60 ticks)
+// Each strategy returns: { signal: 'BUY'|'SELL'|'HOLD', confidence, reason, stopLoss, target }
+// Strategies are defined in separate functions below and called from here
+
 async function checkSignals() {
-  // Live price data is available in livePrices and priceHistory
-  // Strategy logic will be added here when strategies are defined
-  // For now just log that monitoring is active
-  if (Object.keys(livePrices).length > 0) {
-    const isOpen = isIndianMarketOpen()
-    if (isOpen) {
-      console.log('[Signals] Market open — monitoring', Object.keys(livePrices).length, 'instruments')
-    }
-  }
+  if (Object.keys(livePrices).length === 0) return
+  // Strategy functions will be called here once defined
+  // Currently monitoring live prices - strategies coming soon
 }
 
 // ── Price alert checking ───────────────────────────────────────
@@ -658,6 +655,192 @@ async function refreshNFOCache() {
   }
 }
 
+
+// ── Daily Historical Data Update ──────────────────────────────
+// Runs at 4:05 PM IST after market close
+// Appends today's candles to Supabase for all 7 instruments
+let lastDataUpdateDate = ''
+
+async function updateHistoricalData() {
+  try {
+    console.log('[HistData] Running daily update...')
+    const r = await fetch(`${CONFIG.DASHBOARD_URL}/api/historical-data?action=backfill&days=3`, {
+      headers: { 'User-Agent': 'projectzero-worker/1.0' }
+    })
+    const d = await r.json()
+    if (d.status === 'success') {
+      const summary = Object.entries(d.results || {})
+        .map(([k,v]) => `${k}: ${v.saved}`)
+        .join(', ')
+      console.log('[HistData] Update complete:', summary)
+    }
+  } catch(e) {
+    console.error('[HistData] Update error:', e.message)
+  }
+}
+
+
+// ── Historical Data Backfill ──────────────────────────────────
+// Fetches OHLCV candles and stores in Supabase for backtesting
+// Runs on boot and daily at 4 PM after market close
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY
+const DELTA_BASE   = 'https://api.india.delta.exchange'
+const KITE_BASE_H  = 'https://api.kite.trade'
+
+let lastHistDate = ''
+
+async function backfillHistoricalData(forceAll=false) {
+  try {
+    console.log('[HistData] Starting backfill...')
+    const results = {}
+
+    // ── Crypto: Delta Exchange 15min (no auth) ─────────────
+    const cryptoSyms = { BTC:'BTCUSD', ETH:'ETHUSD', SOL:'SOLUSD', XRP:'XRPUSD' }
+    const days = forceAll ? 60 : 2 // full 60d on first run, just 2d daily after
+
+    for (const [sym, deltaSym] of Object.entries(cryptoSyms)) {
+      try {
+        const now   = Math.floor(Date.now() / 1000)
+        const start = now - (days * 86400)
+        const r = await fetch(
+          `${DELTA_BASE}/v2/history/candles?symbol=${deltaSym}&resolution=15m&start=${start}&end=${now}`,
+          { headers: { 'User-Agent': 'projectzero/1.0' } }
+        )
+        const d = await r.json()
+        const candles = (d.result || []).map(c => ({
+          symbol: sym, market: 'crypto',
+          ts:     new Date(c.time * 1000).toISOString(),
+          open: parseFloat(c.open), high: parseFloat(c.high),
+          low:  parseFloat(c.low),  close: parseFloat(c.close),
+          volume: parseFloat(c.volume),
+        }))
+
+        if (candles.length > 0) {
+          await upsertOHLCV('ohlcv_15min', candles)
+          results[`${sym}_15min`] = candles.length
+          console.log(`[HistData] ${sym} 15min: ${candles.length} candles stored`)
+        }
+
+        // Daily candles
+        const rD = await fetch(
+          `${DELTA_BASE}/v2/history/candles?symbol=${deltaSym}&resolution=1d&start=${now-(365*86400)}&end=${now}`,
+          { headers: { 'User-Agent': 'projectzero/1.0' } }
+        )
+        const dD = await rD.json()
+        const daily = (dD.result || []).map(c => ({
+          symbol: sym, market: 'crypto',
+          date: new Date(c.time * 1000).toISOString().split('T')[0],
+          open: parseFloat(c.open), high: parseFloat(c.high),
+          low: parseFloat(c.low), close: parseFloat(c.close),
+          volume: parseFloat(c.volume),
+        }))
+        if (daily.length > 0) {
+          await upsertOHLCV('ohlcv_daily', daily)
+          results[`${sym}_daily`] = daily.length
+          console.log(`[HistData] ${sym} daily: ${daily.length} candles stored`)
+        }
+      } catch(e) {
+        console.error(`[HistData] ${sym} error:`, e.message)
+      }
+      await new Promise(r => setTimeout(r, 500)) // throttle
+    }
+
+    // ── India: Yahoo Finance daily (no auth) ───────────────
+    const indiaYahoo = { NIFTY:'%5ENSEI', BANKNIFTY:'%5ENSEBANK', FINNIFTY:'%5ECNXFIN' }
+    for (const [sym, ticker] of Object.entries(indiaYahoo)) {
+      try {
+        const r = await fetch(
+          `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=5y`,
+          { headers: { 'User-Agent': 'Mozilla/5.0' } }
+        )
+        const d = await r.json()
+        const result = d?.chart?.result?.[0]
+        if (!result) continue
+        const ts = result.timestamp || []
+        const q  = result.indicators?.quote?.[0] || {}
+        const daily = ts.map((t, i) => ({
+          symbol: sym, market: 'india',
+          date:   new Date(t * 1000).toISOString().split('T')[0],
+          open:   parseFloat((q.open?.[i] || 0).toFixed(2)),
+          high:   parseFloat((q.high?.[i] || 0).toFixed(2)),
+          low:    parseFloat((q.low?.[i]  || 0).toFixed(2)),
+          close:  parseFloat((q.close?.[i]|| 0).toFixed(2)),
+          volume: q.volume?.[i] || 0,
+        })).filter(c => c.close > 0)
+
+        if (daily.length > 0) {
+          await upsertOHLCV('ohlcv_daily', daily)
+          results[`${sym}_daily`] = daily.length
+          console.log(`[HistData] ${sym} daily: ${daily.length} candles stored`)
+        }
+      } catch(e) {
+        console.error(`[HistData] ${sym} Yahoo error:`, e.message)
+      }
+    }
+
+    // ── India: Kite 15min (requires daily login) ───────────
+    const kiteToken = await getKiteToken()
+    if (kiteToken) {
+      const kiteTokens = { NIFTY:'256265', BANKNIFTY:'260105', FINNIFTY:'257801' }
+      const to   = new Date()
+      const from = new Date()
+      from.setDate(from.getDate() - (forceAll ? 60 : 2))
+      const fromStr = from.toISOString().split('T')[0] + ' 09:15:00'
+      const toStr   = to.toISOString().split('T')[0] + ' 15:30:00'
+
+      for (const [sym, token] of Object.entries(kiteTokens)) {
+        try {
+          const r = await fetch(
+            `${KITE_BASE_H}/instruments/historical/${token}/15minute?from=${encodeURIComponent(fromStr)}&to=${encodeURIComponent(toStr)}&continuous=0&oi=0`,
+            { headers: { 'X-Kite-Version':'3', 'Authorization':`token ${process.env.KITE_API_KEY}:${kiteToken}` } }
+          )
+          const d = await r.json()
+          const candles = (d.data?.candles || []).map(c => ({
+            symbol: sym, market: 'india',
+            ts: new Date(c[0]).toISOString(),
+            open: c[1], high: c[2], low: c[3], close: c[4], volume: c[5],
+          }))
+          if (candles.length > 0) {
+            await upsertOHLCV('ohlcv_15min', candles)
+            results[`${sym}_15min`] = candles.length
+            console.log(`[HistData] ${sym} 15min Kite: ${candles.length} candles stored`)
+          }
+        } catch(e) {
+          console.error(`[HistData] ${sym} Kite error:`, e.message)
+        }
+      }
+    } else {
+      console.log('[HistData] No Kite token — skipping India 15min')
+    }
+
+    const total = Object.values(results).reduce((a,b) => a+b, 0)
+    console.log(`[HistData] Backfill done — ${total} total candles across ${Object.keys(results).length} datasets`)
+    return results
+  } catch(e) {
+    console.error('[HistData] Backfill error:', e.message)
+    return {}
+  }
+}
+
+async function upsertOHLCV(table, rows) {
+  if (!rows.length) return
+  const batchSize = 500
+  for (let i = 0; i < rows.length; i += batchSize) {
+    const batch = rows.slice(i, i + batchSize)
+    await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${SUPABASE_KEY}`,
+        'apikey': SUPABASE_KEY,
+        'Prefer': 'resolution=merge-duplicates',
+      },
+      body: JSON.stringify(batch),
+    })
+  }
+}
+
 // ── Main scheduler ────────────────────────────────────────────
 let checkCount     = 0
 let lastBriefDate  = ''
@@ -683,6 +866,18 @@ async function tick() {
   if (isWkday && h===9 && m===0 && lastBriefDate!==dateStr) {
     lastBriefDate = dateStr
     await sendMorningBriefing()
+  }
+
+  // Daily historical data update — 4:05 PM IST weekdays (after market close)
+  if (isWkday && h===16 && m===5 && lastDataUpdateDate!==dateStr) {
+    lastDataUpdateDate = dateStr
+    updateHistoricalData().catch(e => console.error('[HistData] tick error:', e.message))
+  }
+
+  // Historical data backfill — 4:05 PM IST weekdays (after market close)
+  if (isWkday && h===16 && m===5 && lastHistDate!==dateStr) {
+    lastHistDate = dateStr
+    backfillHistoricalData(false).catch(e => console.error('[HistData] 4PM error:', e.message))
   }
 
   // Square-off alert — 3:19 PM IST weekdays
@@ -808,8 +1003,11 @@ fetch('https://api.ipify.org?format=json')
     // No Telegram alert — Railway IP changes on every deploy, Hetzner (178.105.45.73) is the fixed IP
   }).catch(()=>{})
 
-// Refresh NFO cache on boot (runs async, no delay to startup)
+// Refresh NFO cache on boot
 setTimeout(() => refreshNFOCache().catch(()=>{}), 5000)
+
+// Full historical data backfill on boot (runs after 30s to not overwhelm startup)
+setTimeout(() => backfillHistoricalData(true).catch(()=>{}), 30000)
 
 sendTelegram(`🚀 <b>Projectzero Worker v2 Started</b>
 ━━━━━━━━━━━━━━━━
