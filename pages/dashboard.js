@@ -205,28 +205,32 @@ function PZChart({symbol, t, h=420, accessToken, market='india'}) {
 
     chart.timeScale().fitContent()
 
-    // Draw S/R levels as horizontal lines
+    // Draw S/R levels as horizontal price lines
     if (!srData) srData = { support:[], resistance:[] }
-    for (const sup of (srData.support || []).slice(0, 3)) {
-      try {
-        const line = cSer.createPriceLine({
-          price: sup.price, color: '#10f59e88',
-          lineWidth: 1, lineStyle: 2, // dashed
-          axisLabelVisible: true,
-          title: `S ${sup.strength > 2 ? '★' : ''}`,
-        })
-      } catch {}
-    }
-    for (const res of (srData.resistance || []).slice(0, 3)) {
+    ;(srData.support || []).slice(0, 3).forEach(sup => {
       try {
         cSer.createPriceLine({
-          price: res.price, color: '#ff446688',
-          lineWidth: 1, lineStyle: 2,
+          price:            sup.price,
+          color:            '#10f59e',
+          lineWidth:        sup.strength > 2 ? 2 : 1,
+          lineStyle:        1,  // dotted — clearly visible
           axisLabelVisible: true,
-          title: `R ${res.strength > 2 ? '★' : ''}`,
+          title:            'S' + (sup.strength > 2 ? '★' : ''),
         })
-      } catch {}
-    }
+      } catch(e) { console.warn('SR sup line error:', e.message) }
+    })
+    ;(srData.resistance || []).slice(0, 3).forEach(res => {
+      try {
+        cSer.createPriceLine({
+          price:            res.price,
+          color:            '#ff4466',
+          lineWidth:        res.strength > 2 ? 2 : 1,
+          lineStyle:        1,  // dotted
+          axisLabelVisible: true,
+          title:            'R' + (res.strength > 2 ? '★' : ''),
+        })
+      } catch(e) { console.warn('SR res line error:', e.message) }
+    })
 
     lwChart.current   = chart
     candleSer.current = cSer
