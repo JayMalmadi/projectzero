@@ -99,19 +99,22 @@ function volumeSpike(volumes, period = 20) {
 
 // ── Fetch candles from Supabase ───────────────────────────────
 async function getCandles(symbol, timeframe, limit = 200) {
+  // Use ohlcv_15min for intraday strategies, ohlcv_daily for daily
+  const tableName = (timeframe === 'daily' || timeframe === '1d') ? 'ohlcv_daily' : 'ohlcv_15min'
+  const tsCol     = tableName === 'ohlcv_daily' ? 'date' : 'ts'
+
   const { data, error } = await sb
-    .from('ohlcv')
-    .select('ts, open, high, low, close, volume')
+    .from(tableName)
+    .select(`${tsCol}, open, high, low, close, volume`)
     .eq('symbol', symbol)
-    .eq('timeframe', timeframe)
-    .order('ts', { ascending: false })
+    .order(tsCol, { ascending: false })
     .limit(limit)
 
   if (error || !data?.length) return null
 
   // Reverse to chronological order
   return data.reverse().map(c => ({
-    ts:     c.ts,
+    ts:     c.ts || c.date,
     open:   parseFloat(c.open),
     high:   parseFloat(c.high),
     low:    parseFloat(c.low),
