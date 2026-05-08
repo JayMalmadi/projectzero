@@ -88,8 +88,8 @@ function PZChart({symbol, t, h=420, accessToken, market='india'}) {
       // Use Delta Exchange for crypto, Kite/Yahoo for India
       const isCrypto = market === 'crypto' || ['BTC','ETH','SOL','XRP'].includes(symbol)
       const cryptoIntervalMap = {
-        'minute':'1','3minute':'5','5minute':'5','10minute':'15',
-        '15minute':'15','30minute':'30','60minute':'60','day':'1d',
+        'minute':'1m','3minute':'5m','5minute':'5m','10minute':'15m',
+        '15minute':'15m','30minute':'30m','60minute':'60','day':'1d',
       }
       const url = isCrypto
         ? `/api/delta?action=candles&symbol=${symbol}USD&resolution=${cryptoIntervalMap[intv]||'15m'}&limit=300`

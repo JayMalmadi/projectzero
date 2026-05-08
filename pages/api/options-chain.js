@@ -53,11 +53,24 @@ async function getCachedInstruments(symbol, accessToken) {
 
   console.log(`[OptionsChain] Fetching fresh NFO instruments for ${symbol}`)
 
-  // Fetch the 5MB instruments file
-  const instrR    = await fetch(`${KITE_BASE}/instruments/NFO`, {
-    headers: { 'X-Kite-Version': '3', 'Authorization': `token ${API_KEY}:${accessToken}` }
-  })
-  const instrText = await instrR.text()
+  // Fetch the 5MB instruments file with 8s timeout (Vercel limit is 10s)
+  const controller = new AbortController()
+  const fetchTimeout = setTimeout(() => controller.abort(), 8000)
+  let instrText = ''
+  try {
+    const instrR = await fetch(`${KITE_BASE}/instruments/NFO`, {
+      headers: { 'X-Kite-Version': '3', 'Authorization': `token ${API_KEY}:${accessToken}` },
+      signal: controller.signal,
+    })
+    instrText = await instrR.text()
+  } catch(fetchErr) {
+    clearTimeout(fetchTimeout)
+    console.warn('[OptionsChain] NFO fetch timeout/error:', fetchErr.message)
+    return [] // triggers "loading" state in handler
+  } finally {
+    clearTimeout(fetchTimeout)
+  }
+  if (!instrText || instrText.length < 1000) return []
   const allLines  = instrText.split('\n')
   const header    = allLines[0] || ''
   const dataLines = allLines.slice(1)
@@ -150,8 +163,9 @@ export default async function handler(req, res) {
 
     if (!instruments.length) {
       return res.status(200).json({
-        status: 'no_instruments', symbol, spotPrice, chain: [], expiries: [],
-        message: `No ${symbol} options instruments in cache. Try refreshing.`,
+        status: 'loading', symbol, spotPrice, chain: [], expiries: [],
+        message: `Loading ${symbol} options data... First load takes ~15 seconds. Tap Try Again.`,
+        retryAfter: 15,
       })
     }
 

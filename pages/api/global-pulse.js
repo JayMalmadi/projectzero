@@ -40,25 +40,38 @@ export default async function handler(req, res) {
       'ETH-USD',
     ]
 
-    const r = await fetch(
-      `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbols.join(',')}&fields=regularMarketPrice,regularMarketChange,regularMarketChangePercent,regularMarketPreviousClose,shortName,regularMarketTime`,
-      { headers: { 'User-Agent': 'Mozilla/5.0' } }
-    )
-    const data  = await r.json()
-    const quotes = data?.quoteResponse?.result || []
-
-    const q = (sym) => {
-      const decoded = decodeURIComponent(sym)
-      const found   = quotes.find(q => q.symbol === decoded || q.symbol === sym)
-      if (!found) return null
-      return {
-        price: parseFloat((found.regularMarketPrice || 0).toFixed(4)),
-        change: parseFloat((found.regularMarketChange || 0).toFixed(2)),
-        pct:    parseFloat((found.regularMarketChangePercent || 0).toFixed(2)),
-        prev:   parseFloat((found.regularMarketPreviousClose || 0).toFixed(2)),
-        name:   found.shortName || sym,
-      }
+    // Yahoo Finance v8 chart API (v7 requires auth now)
+    // Fetch all symbols in parallel using v8 chart endpoint
+    const fetchYahoo = async (sym) => {
+      try {
+        const decoded = decodeURIComponent(sym)
+        const r = await fetch(
+          `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(decoded)}?interval=1d&range=1d`,
+          { headers: { 'User-Agent': 'Mozilla/5.0' } }
+        )
+        const d = await r.json()
+        const meta = d?.chart?.result?.[0]?.meta
+        if (!meta) return null
+        const price = meta.regularMarketPrice || 0
+        const prev  = meta.chartPreviousClose || meta.previousClose || price
+        const change = price - prev
+        const pct    = prev ? (change / prev * 100) : 0
+        return {
+          price:  parseFloat(price.toFixed(4)),
+          change: parseFloat(change.toFixed(2)),
+          pct:    parseFloat(pct.toFixed(2)),
+          prev:   parseFloat(prev.toFixed(4)),
+          name:   meta.shortName || meta.symbol || decoded,
+        }
+      } catch { return null }
     }
+
+    // Fetch all in parallel
+    const results = await Promise.all(symbols.map(s => fetchYahoo(s)))
+    const quoteMap = {}
+    symbols.forEach((s, i) => { quoteMap[s] = results[i] })
+
+    const q = (sym) => quoteMap[sym] || null
 
     // Fetch global news (market-moving headlines)
     const newsFeeds = [
