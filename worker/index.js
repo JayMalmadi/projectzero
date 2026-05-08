@@ -1042,7 +1042,7 @@ const server = http.createServer((req, res) => {
             strategy:    strategy || 'tv-pine-script',
             market,
             direction:   sig,
-            signal_type: 'tradingview',
+            signal_type: `tradingview_${timeframe || '15'}m`,
             entry_price: parseFloat(price),
             stop_loss:   stopLoss ? parseFloat(stopLoss) : null,
             target:      target   ? parseFloat(target)   : null,

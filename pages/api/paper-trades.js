@@ -179,18 +179,19 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'symbol, strategy, direction, entry_price required' })
     }
 
-    // Prevent duplicate: one paper trade per strategy+symbol per day
-    const today = new Date().toISOString().split('T')[0]
+    // Prevent duplicate: one open trade per symbol+strategy+direction
+    // Allow same symbol on different timeframes (5m vs 15m = different signal_type)
     const { data: existing } = await sb.from('paper_trades')
       .select('id')
       .eq('symbol', symbol)
       .eq('strategy', strategy)
+      .eq('direction', direction)
+      .eq('signal_type', signal_type)
       .eq('status', 'OPEN')
-      .gte('opened_at', `${today}T00:00:00Z`)
       .limit(1)
 
     if (existing && existing.length > 0) {
-      return res.status(200).json({ created: false, reason: 'Already have open paper trade for this strategy+symbol today' })
+      return res.status(200).json({ created: false, reason: 'Already have open paper trade for this symbol+strategy+timeframe' })
     }
 
     const { data, error } = await sb.from('paper_trades').insert([{
