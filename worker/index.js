@@ -625,7 +625,7 @@ async function refreshNFOCache() {
     }
 
     console.log('[NFOCache] Done — all 3 symbols cached')
-    await sendTelegram(`✅ Options chain cache updated\nNIFTY: ${bySymbol.NIFTY.length} | BANKNIFTY: ${bySymbol.BANKNIFTY.length} | FINNIFTY: ${bySymbol.FINNIFTY.length}`).catch(()=>{})
+    // No Telegram — runs on every boot, would spam
 
   } catch(e) {
     console.error('[NFOCache] Error:', e.message)
@@ -1057,7 +1057,7 @@ const server = http.createServer((req, res) => {
       market:    isIndianMarketOpen() ? 'OPEN' : 'CLOSED',
       checks:    checkCount,
       telegram:  !!CONFIG.TELEGRAM_BOT_TOKEN,
-      features:  ['signals','price_alerts','morning_briefing','squareoff_319pm','daily_summary','multi_timeframe'],
+      features:  ['tradingview_webhooks','paper_trade_monitor','morning_briefing','squareoff_319pm','daily_summary','live_prices'],
     }))
   } else {
     res.writeHead(200, {'Content-Type':'text/plain'})
@@ -1087,16 +1087,7 @@ setTimeout(() => refreshNFOCache().catch(()=>{}), 5000)
 // Full historical data backfill on boot (runs after 30s to not overwhelm startup)
 setTimeout(() => backfillHistoricalData(true).catch(()=>{}), 30000)
 
-sendTelegram(`🚀 <b>Projectzero Worker v2 Started</b>
-━━━━━━━━━━━━━━━━
-✅ Signal monitoring (every 30s)
-✅ Price alerts (every 5 min)
-✅ Morning briefing at 9:00 AM IST
-✅ Square-off alert at 3:19 PM IST
-✅ Daily summary at 3:35 PM IST
-✅ Multi-timeframe confluence checks
-
-<a href="${CONFIG.DASHBOARD_URL}/dashboard">Dashboard →</a>`).catch(()=>{})
+console.log('[Worker] Started — Telegram startup message disabled to prevent restart spam').catch(()=>{})
 
 // Start ticking every 30 seconds
 tick().catch(console.error)
