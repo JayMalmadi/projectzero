@@ -2579,6 +2579,204 @@ function PerformanceTab({t}) {
 
 
 // ── Morning Brief Tab ──────────────────────────────────────────
+
+
+function StrategiesTab({t}) {
+  const [strats,  setStrats]  = useState([])
+  const [loading, setLoading] = useState(true)
+  const [editing, setEditing] = useState(null)
+
+  useEffect(() => { load() }, [])
+
+  async function load() {
+    setLoading(true)
+    try {
+      const r = await fetch('/api/strategies')
+      const d = await r.json()
+      setStrats(d.strategies || [])
+    } catch(e) { console.error(e) }
+    setLoading(false)
+  }
+
+  async function toggle(s) {
+    await fetch('/api/strategies', {
+      method:'PATCH', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ id: s.id, enabled: !s.enabled })
+    })
+    load()
+  }
+
+  async function saveEdit() {
+    if (!editing) return
+    await fetch('/api/strategies', {
+      method:'PATCH', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(editing)
+    })
+    setEditing(null)
+    load()
+  }
+
+  const statusColor = (s) => {
+    if (!s.enabled) return t.muted
+    if (s.status === 'live') return t.green
+    if (s.status === 'forward_test') return t.amber
+    if (s.status === 'backtest') return '#3b82f6'
+    return t.muted
+  }
+
+  const statusLabel = (s) => {
+    if (!s.enabled) return 'DISABLED'
+    return s.status?.toUpperCase().replace('_',' ') || 'DESIGN'
+  }
+
+  return (
+    <div>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:20,flexWrap:'wrap',gap:12}}>
+        <div>
+          <h2 style={{fontSize:22,fontWeight:900,color:t.text}}>🎯 Strategies</h2>
+          <p style={{color:t.muted,fontSize:13,marginTop:4}}>
+            Strategy registry · Discipline rules · Forward test tracking
+          </p>
+        </div>
+        <button onClick={load} style={{padding:'7px 14px',background:t.surface,border:`1px solid ${t.border}`,borderRadius:10,color:t.muted,cursor:'pointer',fontSize:12}}>↻ Refresh</button>
+      </div>
+
+      {loading && (
+        <div style={{textAlign:'center',padding:40}}>
+          <div style={{width:32,height:32,border:`3px solid ${t.border}`,borderTopColor:t.accentC,borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'0 auto 12px'}}/>
+          <p style={{color:t.muted,fontSize:13}}>Loading strategies...</p>
+        </div>
+      )}
+
+      {!loading && strats.length === 0 && (
+        <div style={{background:t.card,padding:40,borderRadius:14,border:`1px solid ${t.border}`,textAlign:'center'}}>
+          <p style={{fontSize:32,marginBottom:12}}>🎯</p>
+          <p style={{color:t.text,fontWeight:700,marginBottom:8}}>No strategies yet</p>
+          <p style={{color:t.muted,fontSize:13}}>Strategies are added via API or seeded in DB</p>
+        </div>
+      )}
+
+      <div style={{display:'flex',flexDirection:'column',gap:12}}>
+        {strats.map(s => (
+          <div key={s.id} style={{background:t.card,borderRadius:14,border:`1px solid ${s.enabled?t.border:t.border+'80'}`,padding:'16px',opacity:s.enabled?1:0.65}}>
+            {/* Header row */}
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:10,flexWrap:'wrap',gap:10}}>
+              <div style={{flex:1,minWidth:200}}>
+                <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',marginBottom:4}}>
+                  <h3 style={{fontSize:15,fontWeight:800,color:t.text}}>{s.name}</h3>
+                  <span style={{fontSize:9,fontWeight:800,padding:'2px 7px',borderRadius:4,
+                    background:statusColor(s)+'22',color:statusColor(s),letterSpacing:'0.05em'}}>
+                    {statusLabel(s)}
+                  </span>
+                  <span style={{fontSize:10,color:t.muted,fontFamily:'JetBrains Mono,monospace'}}>{s.tv_symbol} · {s.tv_timeframe}m</span>
+                </div>
+                <p style={{color:t.muted,fontSize:12,lineHeight:1.4}}>{s.description}</p>
+              </div>
+
+              <div style={{display:'flex',gap:6}}>
+                <button onClick={() => toggle(s)} style={{padding:'5px 12px',borderRadius:8,fontSize:11,fontWeight:700,cursor:'pointer',
+                  background:s.enabled?t.green+'22':t.surface,
+                  border:`1px solid ${s.enabled?t.green:t.border}`,
+                  color:s.enabled?t.green:t.muted,fontFamily:'Inter,sans-serif'}}>
+                  {s.enabled ? '● ENABLED' : '○ DISABLED'}
+                </button>
+                <button onClick={() => setEditing({...s})} style={{padding:'5px 10px',borderRadius:8,fontSize:11,cursor:'pointer',
+                  background:'none',border:`1px solid ${t.border}`,color:t.muted,fontFamily:'Inter,sans-serif'}}>
+                  ⚙ Rules
+                </button>
+              </div>
+            </div>
+
+            {/* Stats row */}
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(110px,1fr))',gap:8,marginTop:12}}>
+              {[
+                {l:'30D TRADES',v:s.stats_30d?.total||0},
+                {l:'WIN RATE',v:s.stats_30d?.win_rate!=null?`${s.stats_30d.win_rate}%`:'—',
+                  c:s.stats_30d?.win_rate>=50?t.green:s.stats_30d?.win_rate!=null?t.red:t.muted},
+                {l:'30D P&L',v:`${s.stats_30d?.pnl_pct>=0?'+':''}${s.stats_30d?.pnl_pct||0}%`,
+                  c:(s.stats_30d?.pnl_pct||0)>0?t.green:(s.stats_30d?.pnl_pct||0)<0?t.red:t.muted},
+                {l:'TODAY',v:`${s.state?.trades_today||0}/${s.max_trades_per_day}`},
+                {l:'TODAY P&L',v:`${(s.state?.pnl_today_pct||0)>=0?'+':''}${s.state?.pnl_today_pct||0}%`,
+                  c:(s.state?.pnl_today_pct||0)>0?t.green:(s.state?.pnl_today_pct||0)<0?t.red:t.muted},
+                {l:'CONSEC L',v:`${s.state?.consec_losses||0}/${s.max_consec_losses}`,
+                  c:(s.state?.consec_losses||0)>=s.max_consec_losses?t.red:t.muted},
+              ].map(x => (
+                <div key={x.l} style={{background:t.surface,padding:'7px 9px',borderRadius:8,textAlign:'center'}}>
+                  <p style={{color:t.muted,fontSize:8,fontWeight:700,letterSpacing:'0.05em'}}>{x.l}</p>
+                  <p style={{color:x.c||t.text,fontSize:13,fontWeight:800,fontFamily:'JetBrains Mono,monospace',marginTop:2}}>{x.v}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Discipline rules summary */}
+            <div style={{marginTop:10,padding:'8px 10px',background:t.surface+'66',borderRadius:8,fontSize:11,color:t.muted,lineHeight:1.6}}>
+              <strong style={{color:t.text2}}>Rules:</strong> Daily loss cap {s.daily_loss_cap_pct}% · Max {s.max_consec_losses} consec losses · {s.cooldown_minutes}m cooldown · Risk {s.risk_per_trade_pct}%/trade
+              {s.allowed_start_ist && <> · Active {s.allowed_start_ist}-{s.allowed_end_ist} IST</>}
+              {s.trade_options && <> · ATM options (SL {s.option_sl_pct}%, T {s.option_target_pct}%)</>}
+            </div>
+
+            {/* Pause warning */}
+            {s.state?.paused_until && new Date(s.state.paused_until) > new Date() && (
+              <div style={{marginTop:8,padding:'8px 10px',background:t.red+'22',borderRadius:8,fontSize:11,color:t.red,fontWeight:600}}>
+                ⏸ PAUSED — {s.state.pause_reason}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Edit modal */}
+      {editing && (
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000,padding:16}} onClick={() => setEditing(null)}>
+          <div onClick={e => e.stopPropagation()} style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,padding:20,maxWidth:500,width:'100%',maxHeight:'90vh',overflowY:'auto'}}>
+            <h3 style={{fontSize:16,fontWeight:800,color:t.text,marginBottom:14}}>⚙ {editing.name}</h3>
+            <div style={{display:'flex',flexDirection:'column',gap:12}}>
+              {[
+                ['daily_loss_cap_pct','Daily loss cap %','number',0.1,10],
+                ['max_consec_losses','Max consecutive losses','number',1,10],
+                ['cooldown_minutes','Cooldown after loss (min)','number',0,180],
+                ['max_trades_per_day','Max trades per day','number',1,50],
+                ['risk_per_trade_pct','Risk per trade %','number',0.1,5],
+                ['option_sl_pct','Option SL % of premium','number',10,80],
+                ['option_target_pct','Option target % gain','number',20,300],
+                ['allowed_start_ist','Allowed start (HH:MM IST)','text'],
+                ['allowed_end_ist','Allowed end (HH:MM IST)','text'],
+                ['allowed_days','Allowed days (comma-sep)','text'],
+                ['notes','Notes','text'],
+              ].map(([k,label,type,min,max]) => (
+                <div key={k}>
+                  <label style={{color:t.muted,fontSize:11,fontWeight:600,display:'block',marginBottom:4}}>{label}</label>
+                  <input type={type} min={min} max={max} step="0.1"
+                    value={editing[k] ?? ''}
+                    onChange={e => setEditing({...editing, [k]: type==='number' ? parseFloat(e.target.value) : e.target.value})}
+                    style={{width:'100%',padding:'8px 10px',background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,fontSize:13,fontFamily:'JetBrains Mono,monospace'}}/>
+                </div>
+              ))}
+              <div>
+                <label style={{color:t.muted,fontSize:11,fontWeight:600,display:'block',marginBottom:4}}>Lifecycle status</label>
+                <select value={editing.status || 'design'}
+                  onChange={e => setEditing({...editing, status: e.target.value})}
+                  style={{width:'100%',padding:'8px 10px',background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,fontSize:13}}>
+                  <option value="design">Design</option>
+                  <option value="backtest">Backtest</option>
+                  <option value="forward_test">Forward Test</option>
+                  <option value="live">Live</option>
+                  <option value="retired">Retired</option>
+                </select>
+              </div>
+              <div style={{display:'flex',gap:8,marginTop:8}}>
+                <button onClick={saveEdit} style={{flex:1,padding:'10px',background:t.accentC,border:'none',borderRadius:10,color:'#fff',fontWeight:700,cursor:'pointer',fontFamily:'Inter,sans-serif'}}>Save</button>
+                <button onClick={() => setEditing(null)} style={{padding:'10px 16px',background:t.surface,border:`1px solid ${t.border}`,borderRadius:10,color:t.muted,cursor:'pointer',fontFamily:'Inter,sans-serif'}}>Cancel</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+
 function MorningBriefTab({t}) {
   const [data,    setData]    = useState(null)
   const [loading, setLoading] = useState(false)
@@ -3041,6 +3239,7 @@ export default function Dashboard() {
     { id:'india',    l:'🇮🇳 India'   },
     { id:'crypto',   l:'🪙 Crypto'   },
     { id:'paper',    l:'🧪 Paper'    },
+    { id:'strategies',l:'🎯 Strategies'},
     { id:'portfolio',l:'💼 Portfolio'},
     { id:'trades',   l:'📋 History'  },
   ]
@@ -3127,6 +3326,7 @@ export default function Dashboard() {
           {tab==='india'     && <IndiaTab t={t} at={at} prices={prices} />}
           {tab==='crypto'    && <CryptoLiveTab t={t} prices={prices} />}
           {tab==='paper'     && <PaperTradesTab t={t} />}
+          {tab==='strategies'&& <StrategiesTab t={t} />}
           {tab==='portfolio' && (
             <div style={{display:'flex',flexDirection:'column',gap:24}}>
               {/* Kite — Live positions, funds, orders */}

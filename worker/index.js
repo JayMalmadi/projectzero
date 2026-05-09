@@ -558,6 +558,19 @@ async function monitorPaperTrades() {
             'Reason: ' + (tgtHit ? 'Target hit ✅' : 'Stop loss hit ❌')
           await sendTelegram(msg)
           console.log('[PaperMonitor] ' + (tgtHit?'WIN':'LOSS') + ': ' + trade.symbol + ' ' + pnlPct.toFixed(2) + '% of base')
+
+          // Update strategy state for discipline tracking
+          // Map signal_type → strategy_id (e.g. tradingview_15m + symbol + market)
+          let stratId = null
+          if (trade.signal_type?.includes('tradingview')) {
+            const tf  = (trade.signal_type.match(/_(\d+)m/) || [])[1] || '15'
+            const mkt = (trade.market === 'crypto' || trade.market === 'delta') ? 'crypto' : 'india'
+            if (mkt === 'india' && trade.symbol === 'NIFTY')      stratId = 'tv_nifty_' + tf + 'm'
+            else if (mkt === 'crypto' && trade.symbol === 'BTC') stratId = 'tv_btc_'   + tf + 'm'
+          }
+          if (stratId) {
+            await updateStrategyState(stratId, tgtHit ? 'WIN' : 'LOSS', pnlPct).catch(()=>{})
+          }
         }
       } catch(e) {
         console.error(`[PaperMonitor] Error on trade ${trade.id}:`, e.message)
@@ -1014,6 +1027,150 @@ const server = http.createServer((req, res) => {
     return
   }
 
+  // ── Update Strategy State (called after trade closes) ────────
+  async function updateStrategyState(strategyId, outcome, pnlPct) {
+    try {
+      if (!strategyId) return
+      const today = getNow().toISOString().split('T')[0]
+      const r = await fetchJSON(`${CONFIG.DASHBOARD_URL}/api/strategies`)
+      const s = (r.strategies || []).find(x => x.id === strategyId)
+      if (!s) return
+
+      const st = s.state || {}
+      // Reset if new day
+      const isNewDay = (st.trade_date || today) !== today
+
+      const newConsec = outcome === 'WIN' ? 0 : (st.consec_losses || 0) + 1
+      const newPnl    = isNewDay ? pnlPct : (st.pnl_today_pct || 0) + pnlPct
+      const newCount  = isNewDay ? 1      : (st.trades_today  || 0) + 1
+
+      // Auto-pause logic
+      let pausedUntil = null
+      let pauseReason = null
+
+      // Daily loss cap pause until next day
+      if (newPnl <= -Math.abs(s.daily_loss_cap_pct)) {
+        const tomorrow = new Date(getNow())
+        tomorrow.setDate(tomorrow.getDate() + 1)
+        tomorrow.setHours(0, 0, 0, 0)
+        pausedUntil = tomorrow.toISOString()
+        pauseReason = `Daily loss cap ${newPnl}% (limit -${s.daily_loss_cap_pct}%)`
+      }
+      // Cooldown after a loss
+      else if (outcome === 'LOSS' && s.cooldown_minutes > 0) {
+        pausedUntil = new Date(Date.now() + s.cooldown_minutes * 60000).toISOString()
+        pauseReason = `Cooldown after loss (${s.cooldown_minutes}m)`
+      }
+      // Consecutive loss pause
+      if (newConsec >= s.max_consec_losses) {
+        const tomorrow = new Date(getNow())
+        tomorrow.setDate(tomorrow.getDate() + 1)
+        tomorrow.setHours(0, 0, 0, 0)
+        pausedUntil = tomorrow.toISOString()
+        pauseReason = `Max consec losses ${newConsec}`
+      }
+
+      // Direct DB update via Supabase REST
+      await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/strategy_state?strategy_id=eq.${strategyId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': process.env.SUPABASE_SERVICE_KEY,
+          'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_KEY}`,
+          'Prefer': 'return=minimal',
+        },
+        body: JSON.stringify({
+          trade_date:    today,
+          trades_today:  newCount,
+          pnl_today_pct: parseFloat(newPnl.toFixed(2)),
+          consec_losses: newConsec,
+          last_trade_at: new Date().toISOString(),
+          last_loss_at:  outcome === 'LOSS' ? new Date().toISOString() : st.last_loss_at,
+          paused_until:  pausedUntil,
+          pause_reason:  pauseReason,
+          updated_at:    new Date().toISOString(),
+        })
+      })
+
+      if (pausedUntil) {
+        await sendTelegram(`⏸ <b>${s.name} PAUSED</b>\n${pauseReason}\nResume: ${pausedUntil}`).catch(()=>{})
+      }
+    } catch(e) {
+      console.error('[updateStrategyState]', e.message)
+    }
+  }
+
+  // ── Strategy Discipline Check ────────────────────────────────
+  // Returns { allowed: bool, reason: string|null, strategyId: string|null }
+  async function checkStrategyDiscipline(symbol, timeframe, market) {
+    try {
+      const tfNorm = String(timeframe || '15').replace('m','')
+      const r = await fetchJSON(`${CONFIG.DASHBOARD_URL}/api/strategies`)
+      const strategies = r.strategies || []
+
+      // Match by market + symbol pattern + timeframe
+      const matched = strategies.find(s =>
+        s.market === market &&
+        s.tv_timeframe === tfNorm &&
+        ((market === 'india'  && s.tv_symbol?.includes(symbol)) ||
+         (market === 'crypto' && s.tv_symbol?.toLowerCase().includes(symbol.toLowerCase())))
+      )
+
+      if (!matched) return { allowed: true, reason: null, strategyId: null }
+
+      // Disabled strategies
+      if (!matched.enabled) {
+        return { allowed: false, reason: `Strategy '${matched.name}' is disabled`, strategyId: matched.id }
+      }
+
+      const st = matched.state || {}
+
+      // Pause check
+      if (st.paused_until && new Date(st.paused_until) > new Date()) {
+        return { allowed: false, reason: `Paused until ${st.paused_until}: ${st.pause_reason}`, strategyId: matched.id }
+      }
+
+      // Daily loss cap
+      if (st.pnl_today_pct <= -Math.abs(matched.daily_loss_cap_pct)) {
+        return { allowed: false, reason: `Daily loss cap hit: ${st.pnl_today_pct}% (cap: -${matched.daily_loss_cap_pct}%)`, strategyId: matched.id }
+      }
+
+      // Consecutive loss check
+      if (st.consec_losses >= matched.max_consec_losses) {
+        return { allowed: false, reason: `Max consecutive losses hit: ${st.consec_losses}/${matched.max_consec_losses}`, strategyId: matched.id }
+      }
+
+      // Max trades per day
+      if (st.trades_today >= matched.max_trades_per_day) {
+        return { allowed: false, reason: `Daily trade cap hit: ${st.trades_today}/${matched.max_trades_per_day}`, strategyId: matched.id }
+      }
+
+      // Day of week filter
+      if (matched.allowed_days) {
+        const today = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][getNow().getDay()]
+        if (!matched.allowed_days.split(',').map(d=>d.trim()).includes(today)) {
+          return { allowed: false, reason: `Not allowed on ${today}`, strategyId: matched.id }
+        }
+      }
+
+      // Time window filter (IST)
+      if (matched.allowed_start_ist && matched.allowed_end_ist) {
+        const now  = getNow()
+        const hh   = String(now.getHours()).padStart(2,'0')
+        const mm   = String(now.getMinutes()).padStart(2,'0')
+        const cur  = `${hh}:${mm}`
+        if (cur < matched.allowed_start_ist || cur > matched.allowed_end_ist) {
+          return { allowed: false, reason: `Outside time window ${matched.allowed_start_ist}-${matched.allowed_end_ist} (now ${cur})`, strategyId: matched.id }
+        }
+      }
+
+      return { allowed: true, reason: null, strategyId: matched.id, strategy: matched }
+    } catch(e) {
+      console.error('[Discipline]', e.message)
+      return { allowed: true, reason: null, strategyId: null }  // fail open — don't block on errors
+    }
+  }
+
   // ── TradingView Webhook ──────────────────────────────────────
   // TradingView Pine Script alerts POST here when signal fires
   // Payload: {"symbol":"NIFTY","signal":"BUY","price":24200,"strategy":"EMA Trend","timeframe":"15m","confidence":72}
@@ -1061,6 +1218,16 @@ const server = http.createServer((req, res) => {
           `
 
 <a href="${CONFIG.DASHBOARD_URL}/dashboard">⚡ View Dashboard →</a>`
+
+        // ── Discipline check ─────────────────────────────────────
+        const discipline = await checkStrategyDiscipline(symbol, timeframe, market)
+        if (!discipline.allowed) {
+          await sendTelegram(`⛔ <b>SIGNAL BLOCKED</b>\n${sig} ${symbol} · ${timeframe || '15'}m\nReason: ${discipline.reason}`).catch(()=>{})
+          console.log(`[TVWebhook] Blocked: ${discipline.reason}`)
+          res.writeHead(200, {'Content-Type':'application/json'})
+          res.end(JSON.stringify({ ok: true, blocked: true, reason: discipline.reason }))
+          return
+        }
 
         await sendTelegram(msg)
 
