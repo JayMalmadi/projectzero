@@ -562,7 +562,10 @@ async function monitorPaperTrades() {
           // Update strategy state for discipline tracking
           // Map signal_type → strategy_id (e.g. tradingview_15m + symbol + market)
           let stratId = null
-          if (trade.signal_type?.includes('tradingview')) {
+          if (trade.signal_type?.includes('SPRING_RECLAIM') || trade.signal_type?.includes('S1_SPRING')) {
+            stratId = 'S1_SPRING_RECLAIM_V1'
+          }
+          else if (trade.signal_type?.includes('tradingview')) {
             const tf  = (trade.signal_type.match(/_(\d+)m/) || [])[1] || '15'
             const mkt = (trade.market === 'crypto' || trade.market === 'delta') ? 'crypto' : 'india'
             if (mkt === 'india' && trade.symbol === 'NIFTY')      stratId = 'tv_nifty_' + tf + 'm'
@@ -1043,7 +1046,7 @@ async function updateStrategyState(strategyId, outcome, pnlPct) {
 
 // ── Strategy Discipline Check ────────────────────────────────
 // Returns { allowed: bool, reason: string|null, strategyId: string|null }
-async function checkStrategyDiscipline(symbol, timeframe, market) {
+async function checkStrategyDiscipline(symbol, timeframe, market, explicitStrategyId = null) {
   try {
     const tfNorm = String(timeframe || '15').replace('m','')
     const r = await fetchJSON(`${CONFIG.DASHBOARD_URL}/api/strategies`)
@@ -1052,13 +1055,21 @@ async function checkStrategyDiscipline(symbol, timeframe, market) {
     // Normalize market: webhook uses 'delta' for crypto, registry uses 'crypto'
     const marketNorm = (market === 'delta' || market === 'crypto') ? 'crypto' : 'india'
 
-    // Match by market + symbol pattern + timeframe
-    const matched = strategies.find(s =>
-      s.market === marketNorm &&
-      s.tv_timeframe === tfNorm &&
-      ((marketNorm === 'india'  && s.tv_symbol?.includes(symbol)) ||
-       (marketNorm === 'crypto' && s.tv_symbol?.toLowerCase().includes(symbol.toLowerCase())))
-    )
+    // First try: match by explicit strategy_id if provided in webhook payload
+    let matched = null
+    if (explicitStrategyId) {
+      matched = strategies.find(s => s.id === explicitStrategyId)
+    }
+
+    // Fallback: match by market + symbol pattern + timeframe
+    if (!matched) {
+      matched = strategies.find(s =>
+        s.market === marketNorm &&
+        s.tv_timeframe === tfNorm &&
+        ((marketNorm === 'india'  && s.tv_symbol?.includes(symbol)) ||
+         (marketNorm === 'crypto' && s.tv_symbol?.toLowerCase().includes(symbol.toLowerCase())))
+      )
+    }
 
     if (!matched) {
       return { allowed: true, reason: null, strategyId: null }
@@ -1189,6 +1200,21 @@ const server = http.createServer((req, res) => {
         const data = JSON.parse(body)
         console.log('[TVWebhook] Received:', JSON.stringify(data))
 
+        // Translate Spring Reclaim format → standard format
+        // Spring webhook sends: direction (CE/PE), entry, stop, target, strategy_id
+        // Standard format expects: signal (BUY/SELL), price, stopLoss, target
+        if (data.direction === 'CE' || data.direction === 'PE') {
+          data.signal = data.direction === 'CE' ? 'BUY' : 'SELL'
+          data.price = data.entry || data.price
+          data.stopLoss = data.stop || data.stopLoss
+          // target stays as is
+          data.strategy = data.strategy || 'Spring Reclaim'
+          // Convert NSE:NIFTY1! to NIFTY for symbol matching
+          if (data.symbol === 'NSE:NIFTY1!' || data.symbol === 'NSE:NIFTY') {
+            data.symbol = 'NIFTY'
+          }
+        }
+
         const { symbol, signal, price, strategy, timeframe, confidence, stopLoss, target, reason } = data
 
         // Validate
@@ -1227,7 +1253,7 @@ const server = http.createServer((req, res) => {
 <a href="${CONFIG.DASHBOARD_URL}/dashboard">⚡ View Dashboard →</a>`
 
         // ── Discipline check ─────────────────────────────────────
-        const discipline = await checkStrategyDiscipline(symbol, timeframe, market)
+        const discipline = await checkStrategyDiscipline(symbol, timeframe, market, data.strategy_id || null)
         if (!discipline.allowed) {
           await sendTelegram(`⛔ <b>SIGNAL BLOCKED</b>\n${sig} ${symbol} · ${timeframe || '15'}m\nReason: ${discipline.reason}`).catch(()=>{})
           console.log(`[TVWebhook] Blocked: ${discipline.reason}`)

@@ -1,0 +1,4 @@
+trade_id,date,day_of_week,signal_time_IST,direction,nifty_at_signal,support_or_resistance_level,wick_depth_pts,reclaim_distance_pts,volume_multiple,body_pct,confluence_count,confluence_tags,vix_at_signal,dte_to_tuesday,grade_A_B_C,futures_entry,futures_stop,futures_target,risk_pts,minutes_to_outcome,exit_reason,futures_exit,r_multiple,est_option_strike,est_option_premium_at_signal,est_option_exit,option_r_multiple,regime_tag,notes
+1,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+2,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+3,,,,,,,,,,,,,,,,,,,,,,,,,,,,

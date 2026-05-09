@@ -1,0 +1,469 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// PROJECT ZERO — STRATEGY S1
+// SPRING RECLAIM at Support / Resistance (Wyckoff Spring + Stop-Hunt aware)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// VERSION: 1.0
+// AUTHOR:  ProjectZero (Jay)
+// DATE:    2026-05-10
+//
+// THESIS:
+//   Big players hunt liquidity at obvious S/R levels by briefly piercing them
+//   to trigger retail stop-losses, then reverse sharply. This script identifies
+//   that exact mechanic — wick BELOW support + close BACK ABOVE = bullish CE,
+//   wick ABOVE resistance + close BACK BELOW = bearish PE.
+//
+// USAGE:
+//   - Apply to NSE:NIFTY1! 15-minute chart (continuous front-month futures)
+//   - Use as STRATEGY for backtest mode (TradingView Strategy Tester)
+//   - Use as INDICATOR with alerts for live signals (alert webhook → Railway)
+//   - Toggle via "Mode" input
+//
+// CRITICAL DISCIPLINE RULES (enforced in code):
+//   - Tuesday weekly expiry → SKIP (0-DTE gamma/theta lottery)
+//   - First 30min (09:15-09:45) → SKIP (opening volatility too erratic)
+//   - Last 30min (15:00-15:30) → SKIP (no time for 1:3 to play out)
+//   - Lunch hour (11:30-13:50) → SKIP unless A-grade confluence (≥3)
+//   - VIX outside 12-20 band → handled server-side (Pine fires; Railway filters)
+//   - Force-flatten 15:15 IST always
+//   - Time-stop: exit if no resolution in 8 bars (2 hours)
+//
+// BACKTEST INTERPRETATION:
+//   This script backtests against NIFTY1! futures price action.
+//   Real options P&L is typically 60-80% of futures P&L (theta drag).
+//   To estimate options P&L: multiply backtest results by 0.7.
+//   For honest forward-test: paper trade the actual options via Strategy Manager.
+//
+// ═══════════════════════════════════════════════════════════════════════════
+
+//@version=6
+strategy("ProjectZero - Spring Reclaim S1",
+     shorttitle = "PZ-S1-Spring",
+     overlay = true,
+     pyramiding = 0,
+     calc_on_order_fills = false,
+     calc_on_every_tick = false,
+     process_orders_on_close = true,
+     initial_capital = 10000,
+     default_qty_type = strategy.fixed,
+     default_qty_value = 1,
+     commission_type = strategy.commission.percent,
+     commission_value = 0.05)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// INPUTS
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Mode
+mode = input.string("BACKTEST", title = "Mode", options = ["BACKTEST", "LIVE_ALERTS"], group = "Mode")
+
+// Pattern parameters
+grpPat = "Pattern Definition"
+pivotLeft  = input.int(5, "Pivot Left Bars", minval = 3, maxval = 10, group = grpPat)
+pivotRight = input.int(5, "Pivot Right Bars", minval = 3, maxval = 10, group = grpPat)
+levelLookback = input.int(10, "Level Lookback (sessions)", minval = 5, maxval = 20, group = grpPat)
+clusterTolATR = input.float(0.25, "Touch Cluster Tolerance (× daily ATR)", minval = 0.1, maxval = 0.5, step = 0.05, group = grpPat)
+minWickATR = input.float(0.15, "Min Wick Depth (× 15m ATR)", minval = 0.05, maxval = 0.5, step = 0.05, group = grpPat)
+maxWickDailyATR = input.float(0.75, "Max Wick Depth (× daily ATR)", minval = 0.3, maxval = 1.5, step = 0.05, group = grpPat)
+minReclaimATR = input.float(0.10, "Min Reclaim Distance (× 15m ATR)", minval = 0.05, maxval = 0.5, step = 0.05, group = grpPat)
+volMultiple = input.float(1.3, "Volume Multiple (× SMA20)", minval = 1.0, maxval = 3.0, step = 0.1, group = grpPat)
+bodyUpperPct = input.float(0.65, "Body Upper Pct of Range", minval = 0.5, maxval = 0.9, step = 0.05, group = grpPat)
+requireAGrade = input.bool(true, "A-Grade Only (Confluence ≥ 2)", group = grpPat)
+
+// Trade management
+grpTrade = "Trade Management"
+rrTarget = input.float(3.0, "Target R-Multiple", minval = 1.5, maxval = 5.0, step = 0.5, group = grpTrade)
+stopBufferATR = input.float(0.15, "Stop Buffer (× 15m ATR beyond wick)", minval = 0.05, maxval = 0.5, step = 0.05, group = grpTrade)
+maxStopDailyATR = input.float(0.5, "Max Stop Distance (× daily ATR)", minval = 0.2, maxval = 1.0, step = 0.05, group = grpTrade)
+timeStopBars = input.int(8, "Time Stop (bars)", minval = 4, maxval = 20, group = grpTrade)
+
+// Filters
+grpFilt = "Filters"
+useTrendFilter = input.bool(true, "Daily EMA20 Trend Filter", group = grpFilt)
+trendEmaLength = input.int(20, "Daily EMA Length", minval = 10, maxval = 50, group = grpFilt)
+allowMonday    = input.bool(true,  "Allow Monday",    group = grpFilt)
+allowWednesday = input.bool(true,  "Allow Wednesday", group = grpFilt)
+allowThursday  = input.bool(true,  "Allow Thursday",  group = grpFilt)
+allowFriday    = input.bool(true,  "Allow Friday",    group = grpFilt)
+allowTuesday   = input.bool(false, "Allow Tuesday (expiry, NOT recommended)", group = grpFilt)
+allowLunch = input.bool(false, "Allow Lunch (11:30-13:50) if A-grade ≥ 3", group = grpFilt)
+
+// Direction
+grpDir = "Direction"
+allowLongs  = input.bool(true, "Allow Long (CE) Setups",  group = grpDir)
+allowShorts = input.bool(true, "Allow Short (PE) Setups", group = grpDir)
+
+// Webhook
+grpWh = "Webhook (LIVE_ALERTS)"
+webhookSecret = input.string("CHANGE_ME", "Webhook Secret", group = grpWh)
+strategyId    = input.string("S1_SPRING_RECLAIM_V1", "Strategy ID", group = grpWh)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// HELPER FUNCTIONS
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Get IST hour and minute (TradingView "Asia/Kolkata")
+istHour() =>
+    hour(time, "Asia/Kolkata")
+istMinute() =>
+    minute(time, "Asia/Kolkata")
+istDayOfWeek() =>
+    dayofweek(time, "Asia/Kolkata")
+
+// Round to 50 (NIFTY ATM strike)
+roundTo50(price) =>
+    math.round(price / 50) * 50
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BASE VALUES
+// ═══════════════════════════════════════════════════════════════════════════
+
+atr15  = ta.atr(14)
+atrDay = request.security(syminfo.tickerid, "D", ta.atr(14)[1], lookahead = barmerge.lookahead_off)
+
+vol20  = ta.sma(volume, 20)
+
+// Daily reference levels (always from PREVIOUS completed daily bar — non-repainting)
+pdh = request.security(syminfo.tickerid, "D", high[1],  lookahead = barmerge.lookahead_off)
+pdl = request.security(syminfo.tickerid, "D", low[1],   lookahead = barmerge.lookahead_off)
+pdc = request.security(syminfo.tickerid, "D", close[1], lookahead = barmerge.lookahead_off)
+pdo = request.security(syminfo.tickerid, "D", open[1],  lookahead = barmerge.lookahead_off)
+
+// Central Pivot Range (classical)
+pp = (pdh + pdl + pdc) / 3.0
+bc = (pdh + pdl) / 2.0
+tc = pp + (pp - bc)
+
+// Session VWAP
+vwapVal = ta.vwap
+
+// Daily EMA20 for trend filter
+emaDaily = request.security(syminfo.tickerid, "D", ta.ema(close, trendEmaLength)[1], lookahead = barmerge.lookahead_off)
+emaDailyPrev = request.security(syminfo.tickerid, "D", ta.ema(close, trendEmaLength)[2], lookahead = barmerge.lookahead_off)
+trendUp   = emaDaily > emaDailyPrev
+trendDown = emaDaily < emaDailyPrev
+
+// India VIX (request — Pine doesn't have it natively, use proxy)
+vixVal = request.security("NSE:INDIAVIX", "D", close[1], lookahead = barmerge.lookahead_off)
+vixOk = vixVal >= 12.0 and vixVal <= 20.0
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SUPPORT/RESISTANCE LEVEL DETECTION
+// ═══════════════════════════════════════════════════════════════════════════
+
+var array<float> swingLows  = array.new<float>()
+var array<float> swingHighs = array.new<float>()
+var array<int>   swingLowBars  = array.new<int>()
+var array<int>   swingHighBars = array.new<int>()
+
+pivotLow_  = ta.pivotlow(low, pivotLeft, pivotRight)
+pivotHigh_ = ta.pivothigh(high, pivotLeft, pivotRight)
+
+if not na(pivotLow_)
+    array.push(swingLows, pivotLow_)
+    array.push(swingLowBars, bar_index - pivotRight)
+if not na(pivotHigh_)
+    array.push(swingHighs, pivotHigh_)
+    array.push(swingHighBars, bar_index - pivotRight)
+
+// Trim arrays to last 50 swings (memory management)
+if array.size(swingLows) > 50
+    array.shift(swingLows)
+    array.shift(swingLowBars)
+if array.size(swingHighs) > 50
+    array.shift(swingHighs)
+    array.shift(swingHighBars)
+
+// Bars per session on 15m ≈ 25; lookback in bars = 25 × levelLookback
+lookbackBars = 25 * levelLookback
+
+// Find clustered support: a level where 2+ swing lows within tolerance
+findActiveLevel(array<float> levels, array<int> bars, bool isSupport) =>
+    float bestLevel = na
+    int   bestCount = 0
+    if array.size(levels) >= 2
+        for i = 0 to array.size(levels) - 1
+            float refLvl = array.get(levels, i)
+            int   refBar = array.get(bars, i)
+            // Only consider recent levels
+            if bar_index - refBar <= lookbackBars
+                int matches = 0
+                float sumLvl = 0.0
+                for j = 0 to array.size(levels) - 1
+                    float candLvl = array.get(levels, j)
+                    int   candBar = array.get(bars, j)
+                    if bar_index - candBar <= lookbackBars and math.abs(candLvl - refLvl) <= clusterTolATR * atrDay
+                        matches += 1
+                        sumLvl += candLvl
+                if matches >= 2 and matches > bestCount
+                    bestCount := matches
+                    bestLevel := sumLvl / matches
+    bestLevel
+
+activeSupport    = findActiveLevel(swingLows,  swingLowBars,  true)
+activeResistance = findActiveLevel(swingHighs, swingHighBars, false)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CONFLUENCE SCORING
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Helper: is level X near reference Y within Z × daily ATR
+nearLevel(float a, float b, float tolMul) =>
+    not na(a) and not na(b) and math.abs(a - b) <= tolMul * atrDay
+
+// Confluence count for a given level
+confluenceCount(float level) =>
+    int count = 0
+    if nearLevel(level, pdl, 0.20)
+        count += 1
+    if nearLevel(level, pdh, 0.20)
+        count += 1
+    if nearLevel(level, pdc, 0.20)
+        count += 1
+    if nearLevel(level, vwapVal, 0.20)
+        count += 1
+    if nearLevel(level, bc, 0.20)
+        count += 1
+    if nearLevel(level, tc, 0.20)
+        count += 1
+    if nearLevel(level, pp, 0.20)
+        count += 1
+    count
+
+supConfluence = na(activeSupport)    ? 0 : confluenceCount(activeSupport)
+resConfluence = na(activeResistance) ? 0 : confluenceCount(activeResistance)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TIME WINDOW FILTERS
+// ═══════════════════════════════════════════════════════════════════════════
+
+h = istHour()
+m = istMinute()
+dow = istDayOfWeek()
+
+// Day-of-week mask (1=Sun, 2=Mon, 3=Tue, 4=Wed, 5=Thu, 6=Fri, 7=Sat)
+dayOk = (dow == 2 and allowMonday) or
+        (dow == 3 and allowTuesday) or
+        (dow == 4 and allowWednesday) or
+        (dow == 5 and allowThursday) or
+        (dow == 6 and allowFriday)
+
+// Time-of-day windows (IST)
+// Skip first 30min: before 09:45
+// Skip last 30min: after 15:00
+// Skip lunch unless A-grade ≥ 3 AND allowLunch
+inOpening   = (h == 9 and m >= 45) or (h == 10) or (h == 11 and m < 30)
+inAfternoon = (h == 14) or (h == 15 and m == 0)  // 14:00 to 15:00
+inLunch     = (h == 11 and m >= 30) or (h == 12) or (h == 13) or (h == 13 and m < 50)
+
+// Force-flatten time
+isFlattenTime = (h == 15 and m >= 15)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PATTERN DETECTION
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Long Spring (CE setup) at support
+bodyRange = high - low
+bodyUpperFraction = bodyRange == 0 ? 0.5 : (close - low) / bodyRange
+bodyLowerFraction = bodyRange == 0 ? 0.5 : (high - close) / bodyRange
+
+// Long Spring conditions
+longSpring = allowLongs and not na(activeSupport)
+longSpring := longSpring and barstate.isconfirmed
+longSpring := longSpring and low < activeSupport
+longSpring := longSpring and close > activeSupport
+longSpring := longSpring and (activeSupport - low) >= minWickATR * atr15
+longSpring := longSpring and (activeSupport - low) <= maxWickDailyATR * atrDay
+longSpring := longSpring and (close - activeSupport) >= minReclaimATR * atr15
+longSpring := longSpring and volume > vol20 * volMultiple
+longSpring := longSpring and bodyUpperFraction >= bodyUpperPct
+longSpring := longSpring and (not requireAGrade or supConfluence >= 2)
+longSpring := longSpring and dayOk
+longSpring := longSpring and (inOpening or inAfternoon or (allowLunch and inLunch and supConfluence >= 3))
+longSpring := longSpring and (not useTrendFilter or trendUp or not trendDown)
+
+// Short Upthrust (PE setup) at resistance — mirror
+shortUpthrust = allowShorts and not na(activeResistance)
+shortUpthrust := shortUpthrust and barstate.isconfirmed
+shortUpthrust := shortUpthrust and high > activeResistance
+shortUpthrust := shortUpthrust and close < activeResistance
+shortUpthrust := shortUpthrust and (high - activeResistance) >= minWickATR * atr15
+shortUpthrust := shortUpthrust and (high - activeResistance) <= maxWickDailyATR * atrDay
+shortUpthrust := shortUpthrust and (activeResistance - close) >= minReclaimATR * atr15
+shortUpthrust := shortUpthrust and volume > vol20 * volMultiple
+shortUpthrust := shortUpthrust and bodyLowerFraction >= bodyUpperPct
+shortUpthrust := shortUpthrust and (not requireAGrade or resConfluence >= 2)
+shortUpthrust := shortUpthrust and dayOk
+shortUpthrust := shortUpthrust and (inOpening or inAfternoon or (allowLunch and inLunch and resConfluence >= 3))
+shortUpthrust := shortUpthrust and (not useTrendFilter or trendDown or not trendUp)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ENTRY/STOP/TARGET CALCULATION
+// ═══════════════════════════════════════════════════════════════════════════
+
+// On a Long Spring bar:
+//   Entry  = close
+//   Stop   = low - stopBufferATR × atr15
+//   Risk   = entry - stop
+//   Target = entry + rrTarget × risk
+
+longEntry  = close
+longStop   = low - stopBufferATR * atr15
+longRisk   = longEntry - longStop
+longTarget = longEntry + rrTarget * longRisk
+
+// On a Short Upthrust bar:
+shortEntry  = close
+shortStop   = high + stopBufferATR * atr15
+shortRisk   = shortStop - shortEntry
+shortTarget = shortEntry - rrTarget * shortRisk
+
+// Validate stop distance
+longStopOk  = longRisk <= maxStopDailyATR * atrDay and longRisk > 0
+shortStopOk = shortRisk <= maxStopDailyATR * atrDay and shortRisk > 0
+
+// Final signals (with stop validation)
+longSignal  = longSpring and longStopOk
+shortSignal = shortUpthrust and shortStopOk
+
+// ═══════════════════════════════════════════════════════════════════════════
+// STRATEGY EXECUTION (BACKTEST MODE)
+// ═══════════════════════════════════════════════════════════════════════════
+
+if mode == "BACKTEST"
+
+    // Long entries
+    if longSignal and strategy.position_size == 0
+        strategy.entry("CE_Long", strategy.long, comment = "Spring")
+        strategy.exit("CE_Exit", "CE_Long", stop = longStop, limit = longTarget, comment_loss = "SL", comment_profit = "Target")
+
+    // Short entries
+    if shortSignal and strategy.position_size == 0
+        strategy.entry("PE_Short", strategy.short, comment = "Upthrust")
+        strategy.exit("PE_Exit", "PE_Short", stop = shortStop, limit = shortTarget, comment_loss = "SL", comment_profit = "Target")
+
+    // Time-based exits
+    barsHeld = ta.barssince(strategy.position_size != 0)
+    if not na(barsHeld) and barsHeld >= timeStopBars and strategy.position_size != 0
+        strategy.close_all(comment = "TimeStop")
+
+    // Force-flatten at 15:15 IST
+    if isFlattenTime and strategy.position_size != 0
+        strategy.close_all(comment = "Flatten")
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LIVE ALERTS MODE
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Build webhook payload
+buildPayload(string direction, float entry, float stop, float target, float supportLvl, int conf) =>
+    string optionType = direction == "BUY" ? "CE" : "PE"
+    int    strike = int(roundTo50(entry))
+    string dayName = dow == 2 ? "Mon" : dow == 3 ? "Tue" : dow == 4 ? "Wed" : dow == 5 ? "Thu" : dow == 6 ? "Fri" : "Other"
+    int    dteToTuesday = dow == 4 ? 6 : dow == 5 ? 5 : dow == 6 ? 4 : dow == 2 ? 1 : dow == 3 ? 0 : 7
+
+    string payload = '{'
+       + '"secret":"' + webhookSecret + '",'
+       + '"strategy_id":"' + strategyId + '",'
+       + '"signal_type":"SPRING_RECLAIM",'
+       + '"direction":"' + optionType + '",'
+       + '"symbol":"NSE:NIFTY1!",'
+       + '"timeframe":"15",'
+       + '"timestamp":"' + str.format_time(time, "yyyy-MM-dd'T'HH:mm:ssZ", "Asia/Kolkata") + '",'
+       + '"spot_proxy":' + str.tostring(close, "#.##") + ','
+       + '"entry":'  + str.tostring(entry, "#.##") + ','
+       + '"stop":'   + str.tostring(stop, "#.##") + ','
+       + '"target":' + str.tostring(target, "#.##") + ','
+       + '"rr":' + str.tostring(rrTarget, "#.##") + ','
+       + '"atr_15m":' + str.tostring(atr15, "#.##") + ','
+       + '"atr_daily":' + str.tostring(atrDay, "#.##") + ','
+       + '"strike":' + str.tostring(strike) + ','
+       + '"option_type":"' + optionType + '",'
+       + '"pattern_meta":{'
+       + '"support_level":' + str.tostring(supportLvl, "#.##") + ','
+       + '"wick_depth":' + str.tostring(direction == "BUY" ? supportLvl - low : high - supportLvl, "#.##") + ','
+       + '"reclaim_distance":' + str.tostring(direction == "BUY" ? close - supportLvl : supportLvl - close, "#.##") + ','
+       + '"volume_multiple":' + str.tostring(volume / vol20, "#.##") + ','
+       + '"body_pct":' + str.tostring(direction == "BUY" ? bodyUpperFraction : bodyLowerFraction, "#.##") + ','
+       + '"confluence_count":' + str.tostring(conf) + ','
+       + '"vix":' + str.tostring(vixVal, "#.##") + ','
+       + '"day_of_week":"' + dayName + '",'
+       + '"dte":' + str.tostring(dteToTuesday)
+       + '}}'
+    payload
+
+if longSignal and mode == "LIVE_ALERTS"
+    alert(buildPayload("BUY", longEntry, longStop, longTarget, activeSupport, supConfluence), alert.freq_once_per_bar_close)
+
+if shortSignal and mode == "LIVE_ALERTS"
+    alert(buildPayload("SELL", shortEntry, shortStop, shortTarget, activeResistance, resConfluence), alert.freq_once_per_bar_close)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// VISUALIZATION
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Plot active levels
+plot(activeSupport, title = "Active Support", color = color.new(color.green, 0), linewidth = 2, style = plot.style_linebr)
+plot(activeResistance, title = "Active Resistance", color = color.new(color.red, 0), linewidth = 2, style = plot.style_linebr)
+
+// Plot daily references (subtle)
+plot(pdh, title = "PDH", color = color.new(color.gray, 60), style = plot.style_circles)
+plot(pdl, title = "PDL", color = color.new(color.gray, 60), style = plot.style_circles)
+plot(pdc, title = "PDC", color = color.new(color.gray, 70), style = plot.style_circles)
+plot(vwapVal, title = "VWAP", color = color.new(color.blue, 50), style = plot.style_line, linewidth = 1)
+plot(pp, title = "Pivot", color = color.new(color.orange, 70), style = plot.style_circles)
+
+// Plot signals
+plotshape(longSignal,  title = "Spring (CE)",     style = shape.triangleup,   location = location.belowbar, color = color.new(color.green, 0), size = size.normal, text = "🟢 SPRING")
+plotshape(shortSignal, title = "Upthrust (PE)",   style = shape.triangledown, location = location.abovebar, color = color.new(color.red, 0),   size = size.normal, text = "🔴 UPTHRUST")
+
+// Plot stop and target lines for last signal (cosmetic, only on live)
+var line entryLine  = na
+var line stopLine   = na
+var line targetLine = na
+
+if longSignal
+    line.delete(entryLine)
+    line.delete(stopLine)
+    line.delete(targetLine)
+    entryLine := line.new(bar_index, longEntry, bar_index + 16, longEntry, color = color.blue, width = 1, style = line.style_dashed)
+    stopLine := line.new(bar_index, longStop, bar_index + 16, longStop, color = color.red, width = 1, style = line.style_dotted)
+    targetLine := line.new(bar_index, longTarget, bar_index + 16, longTarget, color = color.green, width = 1, style = line.style_dotted)
+
+if shortSignal
+    line.delete(entryLine)
+    line.delete(stopLine)
+    line.delete(targetLine)
+    entryLine := line.new(bar_index, shortEntry, bar_index + 16, shortEntry, color = color.blue, width = 1, style = line.style_dashed)
+    stopLine := line.new(bar_index, shortStop, bar_index + 16, shortStop, color = color.red, width = 1, style = line.style_dotted)
+    targetLine := line.new(bar_index, shortTarget, bar_index + 16, shortTarget, color = color.green, width = 1, style = line.style_dotted)
+
+// Status table (corner display)
+var table statusTable = table.new(position.top_right, 2, 8, bgcolor = color.new(color.black, 80), border_width = 1)
+
+if barstate.islast
+    table.cell(statusTable, 0, 0, "PZ-S1", text_color = color.white, bgcolor = color.new(color.blue, 30), text_size = size.small)
+    table.cell(statusTable, 1, 0, mode, text_color = color.white, bgcolor = color.new(color.blue, 30), text_size = size.small)
+
+    table.cell(statusTable, 0, 1, "Support", text_color = color.gray, text_size = size.tiny)
+    table.cell(statusTable, 1, 1, na(activeSupport) ? "—" : str.tostring(activeSupport, "#.##"), text_color = color.green, text_size = size.tiny)
+
+    table.cell(statusTable, 0, 2, "Resistance", text_color = color.gray, text_size = size.tiny)
+    table.cell(statusTable, 1, 2, na(activeResistance) ? "—" : str.tostring(activeResistance, "#.##"), text_color = color.red, text_size = size.tiny)
+
+    table.cell(statusTable, 0, 3, "Sup Conf", text_color = color.gray, text_size = size.tiny)
+    table.cell(statusTable, 1, 3, str.tostring(supConfluence), text_color = supConfluence >= 2 ? color.green : color.gray, text_size = size.tiny)
+
+    table.cell(statusTable, 0, 4, "Res Conf", text_color = color.gray, text_size = size.tiny)
+    table.cell(statusTable, 1, 4, str.tostring(resConfluence), text_color = resConfluence >= 2 ? color.red : color.gray, text_size = size.tiny)
+
+    table.cell(statusTable, 0, 5, "VIX", text_color = color.gray, text_size = size.tiny)
+    table.cell(statusTable, 1, 5, na(vixVal) ? "—" : str.tostring(vixVal, "#.#"), text_color = vixOk ? color.green : color.red, text_size = size.tiny)
+
+    table.cell(statusTable, 0, 6, "Trend", text_color = color.gray, text_size = size.tiny)
+    table.cell(statusTable, 1, 6, trendUp ? "UP" : trendDown ? "DOWN" : "FLAT", text_color = trendUp ? color.green : trendDown ? color.red : color.gray, text_size = size.tiny)
+
+    string sessionStr = inOpening ? "OPEN-WIN" : inAfternoon ? "PM-WIN" : inLunch ? "LUNCH" : isFlattenTime ? "FLATTEN" : "OFF"
+    table.cell(statusTable, 0, 7, "Session", text_color = color.gray, text_size = size.tiny)
+    table.cell(statusTable, 1, 7, sessionStr, text_color = (inOpening or inAfternoon) ? color.green : color.gray, text_size = size.tiny)
