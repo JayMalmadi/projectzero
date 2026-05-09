@@ -1203,7 +1203,7 @@ const server = http.createServer((req, res) => {
           return
         }
 
-        const market = ['BTC','ETH','SOL','XRP'].includes(symbol) ? 'delta' : 'india'
+        const market = ['BTC','ETH','SOL','XRP'].includes(symbol) ? 'crypto' : 'india'
         const conf   = parseInt(confidence) || 70
         const sig    = signal.toUpperCase()
 
