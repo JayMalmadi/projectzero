@@ -1326,7 +1326,7 @@ const server = http.createServer((req, res) => {
 
         console.log(`[TVWebhook] ${sig} ${symbol} @ ${price} → paper trade created`)
         res.writeHead(200, {'Content-Type':'application/json'})
-        res.end(JSON.stringify({ ok: true, signal: sig, symbol, paperTradeId: pt.id }))
+        res.end(JSON.stringify({ ok: true, signal: sig, symbol, paperTradeId: pt.trade?.id || pt.id || null, created: pt.created !== false }))
 
       } catch(e) {
         console.error('[TVWebhook] Error:', e.message)
