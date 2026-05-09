@@ -1051,12 +1051,15 @@ async function checkStrategyDiscipline(symbol, timeframe, market) {
     const strategies = r.strategies || []
     console.log(`[Discipline] Got ${strategies.length} strategies from API`)
 
+    // Normalize market: webhook uses 'delta' for crypto, registry uses 'crypto'
+    const marketNorm = (market === 'delta' || market === 'crypto') ? 'crypto' : 'india'
+
     // Match by market + symbol pattern + timeframe
     const matched = strategies.find(s =>
-      s.market === market &&
+      s.market === marketNorm &&
       s.tv_timeframe === tfNorm &&
-      ((market === 'india'  && s.tv_symbol?.includes(symbol)) ||
-       (market === 'crypto' && s.tv_symbol?.toLowerCase().includes(symbol.toLowerCase())))
+      ((marketNorm === 'india'  && s.tv_symbol?.includes(symbol)) ||
+       (marketNorm === 'crypto' && s.tv_symbol?.toLowerCase().includes(symbol.toLowerCase())))
     )
 
     if (!matched) {
