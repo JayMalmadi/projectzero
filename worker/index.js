@@ -955,9 +955,6 @@ async function tick() {
 
   // Always fetch live prices on every tick (every 15s)
   await fetchLivePrices().catch(e => console.error('[tick] Live prices error:', e.message))
-  if (checkIndian || checkCrypto) {
-    await checkSignals()
-  }
 
   // Price alerts — every 5 minutes
   if (Date.now() - lastAlertCheck > 300000) {
