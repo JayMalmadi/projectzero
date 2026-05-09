@@ -1102,8 +1102,10 @@ const server = http.createServer((req, res) => {
   async function checkStrategyDiscipline(symbol, timeframe, market) {
     try {
       const tfNorm = String(timeframe || '15').replace('m','')
+      console.log(`[Discipline] Check start: ${symbol}/${tfNorm}m/${market}`)
       const r = await fetchJSON(`${CONFIG.DASHBOARD_URL}/api/strategies`)
       const strategies = r.strategies || []
+      console.log(`[Discipline] Got ${strategies.length} strategies from API`)
 
       // Match by market + symbol pattern + timeframe
       const matched = strategies.find(s =>
@@ -1113,7 +1115,11 @@ const server = http.createServer((req, res) => {
          (market === 'crypto' && s.tv_symbol?.toLowerCase().includes(symbol.toLowerCase())))
       )
 
-      if (!matched) return { allowed: true, reason: null, strategyId: null }
+      if (!matched) {
+        console.log(`[Discipline] No matching strategy for ${symbol}/${tfNorm}m/${market} — fail open`)
+        return { allowed: true, reason: null, strategyId: null }
+      }
+      console.log(`[Discipline] Matched: ${matched.id} | enabled=${matched.enabled}`)
 
       // Disabled strategies
       if (!matched.enabled) {
@@ -1161,9 +1167,10 @@ const server = http.createServer((req, res) => {
         }
       }
 
+      console.log(`[Discipline] Allowed: ${matched.id}`)
       return { allowed: true, reason: null, strategyId: matched.id, strategy: matched }
     } catch(e) {
-      console.error('[Discipline]', e.message)
+      console.error('[Discipline] EXCEPTION:', e.message, e.stack)
       return { allowed: true, reason: null, strategyId: null }  // fail open — don't block on errors
     }
   }
