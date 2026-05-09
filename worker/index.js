@@ -1046,10 +1046,8 @@ async function updateStrategyState(strategyId, outcome, pnlPct) {
 async function checkStrategyDiscipline(symbol, timeframe, market) {
   try {
     const tfNorm = String(timeframe || '15').replace('m','')
-    console.log(`[Discipline] Check start: ${symbol}/${tfNorm}m/${market}`)
     const r = await fetchJSON(`${CONFIG.DASHBOARD_URL}/api/strategies`)
     const strategies = r.strategies || []
-    console.log(`[Discipline] Got ${strategies.length} strategies from API`)
 
     // Normalize market: webhook uses 'delta' for crypto, registry uses 'crypto'
     const marketNorm = (market === 'delta' || market === 'crypto') ? 'crypto' : 'india'
@@ -1063,10 +1061,8 @@ async function checkStrategyDiscipline(symbol, timeframe, market) {
     )
 
     if (!matched) {
-      console.log(`[Discipline] No matching strategy for ${symbol}/${tfNorm}m/${market} — fail open`)
       return { allowed: true, reason: null, strategyId: null }
     }
-    console.log(`[Discipline] Matched: ${matched.id} | enabled=${matched.enabled}`)
 
     // Disabled strategies
     if (!matched.enabled) {
@@ -1114,7 +1110,6 @@ async function checkStrategyDiscipline(symbol, timeframe, market) {
       }
     }
 
-    console.log(`[Discipline] Allowed: ${matched.id}`)
     return { allowed: true, reason: null, strategyId: matched.id, strategy: matched }
   } catch(e) {
     console.error('[Discipline] EXCEPTION:', e.message, e.stack)
