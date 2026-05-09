@@ -1369,7 +1369,7 @@ setTimeout(() => refreshNFOCache().catch(()=>{}), 5000)
 // Full historical data backfill on boot (runs after 30s to not overwhelm startup)
 setTimeout(() => backfillHistoricalData(true).catch(()=>{}), 30000)
 
-console.log('[Worker] Started — Telegram startup message disabled to prevent restart spam').catch(()=>{})
+console.log('[Worker] Started — Telegram startup message disabled to prevent restart spam')
 
 // Start ticking every 30 seconds
 tick().catch(console.error)
@@ -1389,4 +1389,3 @@ setInterval(async () => {
   }
   paperMonitorRunning = false
 }, 5000)  // Every 5 seconds
-// Last deploy: 2026-05-09T07:07:44Z
