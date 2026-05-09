@@ -29,34 +29,48 @@ export default async function handler(req, res) {
       const stateMap = {}
       for (const s of (states || [])) stateMap[s.strategy_id] = s
 
-      // Fetch paper trade stats per strategy (last 30 days)
+      // Fetch paper trade stats — match by market + symbol + timeframe extracted from signal_type
       const since = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
       const { data: trades } = await sb
         .from('paper_trades')
-        .select('strategy, status, pnl_pct, signal_type')
+        .select('strategy, status, pnl_pct, signal_type, symbol, market')
         .gte('opened_at', since)
+
+      // Compute strategy_id for each trade based on its attributes
+      function tradeToStrategyId(t) {
+        if (!t.signal_type?.includes('tradingview')) return null
+        // Skip option sub-trades — they share parent strategy stats via the futures trade
+        if (t.signal_type.includes('option')) return null
+        const tf = (t.signal_type.match(/_(\d+)m/) || [])[1] || '15'
+        const mkt = (t.market === 'crypto' || t.market === 'delta') ? 'crypto' : 'india'
+        if (mkt === 'india' && t.symbol === 'NIFTY')      return 'tv_nifty_' + tf + 'm'
+        if (mkt === 'india' && t.symbol === 'BANKNIFTY')  return 'tv_banknifty_' + tf + 'm'
+        if (mkt === 'india' && t.symbol === 'FINNIFTY')   return 'tv_finnifty_' + tf + 'm'
+        if (mkt === 'crypto' && t.symbol === 'BTC')       return 'tv_btc_' + tf + 'm'
+        if (mkt === 'crypto' && t.symbol === 'ETH')       return 'tv_eth_' + tf + 'm'
+        return null
+      }
 
       const tradeStats = {}
       for (const t of (trades || [])) {
-        // signal_type is like "tradingview_15m" — match to strategy via timeframe
-        // For now match by strategy name pattern in notes
-        const key = t.strategy
-        if (!tradeStats[key]) tradeStats[key] = { total: 0, wins: 0, losses: 0, open: 0, totalPnl: 0 }
-        tradeStats[key].total++
-        if (t.status === 'WIN')   { tradeStats[key].wins++; tradeStats[key].totalPnl += (t.pnl_pct || 0) }
-        if (t.status === 'LOSS')  { tradeStats[key].losses++; tradeStats[key].totalPnl += (t.pnl_pct || 0) }
-        if (t.status === 'OPEN')  tradeStats[key].open++
+        const sid = tradeToStrategyId(t)
+        if (!sid) continue
+        if (!tradeStats[sid]) tradeStats[sid] = { total: 0, wins: 0, losses: 0, open: 0, totalPnl: 0 }
+        tradeStats[sid].total++
+        if (t.status === 'WIN')   { tradeStats[sid].wins++;   tradeStats[sid].totalPnl += (t.pnl_pct || 0) }
+        if (t.status === 'LOSS')  { tradeStats[sid].losses++; tradeStats[sid].totalPnl += (t.pnl_pct || 0) }
+        if (t.status === 'OPEN')  tradeStats[sid].open++
       }
 
       const enriched = strategies.map(s => {
         const st = stateMap[s.id] || {}
-        const stats = tradeStats[s.name] || tradeStats['tv-pine-script'] || { total: 0, wins: 0, losses: 0, open: 0, totalPnl: 0 }
+        const stats = tradeStats[s.id] || { total: 0, wins: 0, losses: 0, open: 0, totalPnl: 0 }
         const closed = stats.wins + stats.losses
         return {
           ...s,
           state: {
             trades_today:    st.trades_today || 0,
-            pnl_today_pct:   st.pnl_today_pct || 0,
+            pnl_today_pct:   parseFloat(st.pnl_today_pct || 0),
             consec_losses:   st.consec_losses || 0,
             paused_until:    st.paused_until || null,
             pause_reason:    st.pause_reason || null,
