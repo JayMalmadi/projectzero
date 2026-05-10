@@ -37,15 +37,31 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 //@version=6
-// SIZING NOTE (PINE STRATEGY LAYER — separate from paper-trade layer):
-//   The $10k normalization convention belongs to Project Zero's paper-trade
-//   system (server-side P&L tracking), NOT to TradingView Pine strategies.
-//   Pine strategies must use realistic capital so signal execution works.
-//   On NIFTY1! (~24k per unit), capital must comfortably exceed the
-//   contract notional or TradingView silently rejects every entry order
-//   (symptom: plotshape markers fire but List of Trades stays empty).
-//   ₹10 lakh = realistic NIFTY trading account with margin headroom.
-//   Increase further if a future strategy uses larger position sizing.
+// ═══════════════════════════════════════════════════════════════════════════
+// PINE-LAYER SIZING — DO NOT CONFUSE WITH REAL TRADING CAPITAL
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// initial_capital = 1000000 (₹10 lakh) — FAKE NUMBER FOR TRADINGVIEW ONLY
+//   TradingView's backtester silently rejects entry orders when its mock
+//   account doesn't have enough capital for the position notional value.
+//   On NIFTY1! at ~24,000 per unit, ₹10,000 mock capital cannot open a
+//   position of ₹24,000+ notional. Result: signals fire visually but
+//   List of Trades stays empty. Setting ₹10 lakh gives the mock account
+//   comfortable headroom so backtest actually runs.
+//   THIS IS NOT YOUR REAL TRADING CAPITAL.
+//
+// default_qty_value = 1 — ONE UNIT OF FUTURES, NOT 1 LOT OF 65
+//   Pine treats NIFTY1! as 1 unit per "qty". We ALWAYS keep this at 1
+//   because Pine's backtest uses it only for win/loss counting and
+//   approximate futures-based P&L. NEVER set this to 65 — the mock
+//   account would need ₹15.6 lakh+ per trade and rejection returns.
+//
+// REAL CAPITAL, REAL LOT SIZING (×65), REAL OPTION PREMIUM, REAL DISCIPLINE
+// all happen in the Railway worker (worker/index.js) when it processes the
+// alert webhook into a Supabase paper trade. This Pine script only fires
+// signals — the worker is the brain.
+//
+// ═══════════════════════════════════════════════════════════════════════════
 strategy("ProjectZero - Spring Reclaim S1",
      shorttitle = "PZ-S1-Spring",
      overlay = true,
