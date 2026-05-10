@@ -242,11 +242,11 @@ m = istMinute()
 dow = istDayOfWeek()
 
 // Day-of-week mask (1=Sun, 2=Mon, 3=Tue, 4=Wed, 5=Thu, 6=Fri, 7=Sat)
-dayOk = (dow == 2 and allowMonday) or
-        (dow == 3 and allowTuesday) or
-        (dow == 4 and allowWednesday) or
-        (dow == 5 and allowThursday) or
-        (dow == 6 and allowFriday)
+dayOk = (dow == 2 and allowMonday)
+     or (dow == 3 and allowTuesday)
+     or (dow == 4 and allowWednesday)
+     or (dow == 5 and allowThursday)
+     or (dow == 6 and allowFriday)
 
 // Time-of-day windows (IST)
 // Skip first 30min: before 09:45
