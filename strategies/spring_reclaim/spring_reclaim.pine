@@ -66,9 +66,9 @@ clusterTolATR = input.float(0.25, "Touch Cluster Tolerance (× daily ATR)", minv
 minWickATR = input.float(0.15, "Min Wick Depth (× 15m ATR)", minval = 0.05, maxval = 0.5, step = 0.05, group = grpPat)
 maxWickDailyATR = input.float(0.75, "Max Wick Depth (× daily ATR)", minval = 0.3, maxval = 1.5, step = 0.05, group = grpPat)
 minReclaimATR = input.float(0.10, "Min Reclaim Distance (× 15m ATR)", minval = 0.05, maxval = 0.5, step = 0.05, group = grpPat)
-volMultiple = input.float(1.3, "Volume Multiple (× SMA20)", minval = 1.0, maxval = 3.0, step = 0.1, group = grpPat)
-bodyUpperPct = input.float(0.65, "Body Upper Pct of Range", minval = 0.5, maxval = 0.9, step = 0.05, group = grpPat)
-requireAGrade = input.bool(true, "A-Grade Only (Confluence ≥ 2)", group = grpPat)
+volMultiple = input.float(1.1, "Volume Multiple (× SMA20)", minval = 1.0, maxval = 3.0, step = 0.1, group = grpPat)
+bodyUpperPct = input.float(0.55, "Body Upper Pct of Range", minval = 0.5, maxval = 0.9, step = 0.05, group = grpPat)
+requireAGrade = input.bool(false, "A-Grade Only (Confluence ≥ 2)", group = grpPat)
 
 // Trade management
 grpTrade = "Trade Management"
@@ -335,31 +335,38 @@ shortSignal = shortUpthrust and shortStopOk
 // Counters for debug visibility
 var int longSignalCount  = 0
 var int shortSignalCount = 0
-if longSignal
+if longSignal and (barstate.isconfirmed or barstate.ishistory)
     longSignalCount += 1
-if shortSignal
+if shortSignal and (barstate.isconfirmed or barstate.ishistory)
     shortSignalCount += 1
 
 // Debug: count how many bars passed each gate (for diagnosis)
+// Increment only when bar is fully formed (barstate.isconfirmed) to get TRUE bar count
+// For backtest historical bars, every bar is counted exactly once
 var int barsWithSupport      = 0
 var int barsWickedSupport    = 0
 var int barsReclaimedSupport = 0
 var int barsVolumePassed     = 0
 var int barsBodyPassed       = 0
 var int barsTimeWindowPassed = 0
+var int barsAllFiltersPassed = 0  // CRITICAL: all-AND combined
 
-if not na(activeSupport)
-    barsWithSupport += 1
-if not na(activeSupport) and low < activeSupport
-    barsWickedSupport += 1
-if not na(activeSupport) and low < activeSupport and close > activeSupport
-    barsReclaimedSupport += 1
-if volume > vol20 * volMultiple
-    barsVolumePassed += 1
-if bodyUpperFraction >= bodyUpperPct
-    barsBodyPassed += 1
-if inOpening or inAfternoon
-    barsTimeWindowPassed += 1
+if barstate.isconfirmed or barstate.ishistory
+    if not na(activeSupport)
+        barsWithSupport += 1
+    if not na(activeSupport) and low < activeSupport
+        barsWickedSupport += 1
+    if not na(activeSupport) and low < activeSupport and close > activeSupport
+        barsReclaimedSupport += 1
+    if volume > vol20 * volMultiple
+        barsVolumePassed += 1
+    if bodyUpperFraction >= bodyUpperPct
+        barsBodyPassed += 1
+    if inOpening or inAfternoon
+        barsTimeWindowPassed += 1
+    // The compound check: how many bars have a Spring with all critical filters
+    if not na(activeSupport) and low < activeSupport and close > activeSupport and volume > vol20 * volMultiple and bodyUpperFraction >= bodyUpperPct and (inOpening or inAfternoon)
+        barsAllFiltersPassed += 1
 
 // ═══════════════════════════════════════════════════════════════════════════
 // STRATEGY EXECUTION (BACKTEST MODE)
@@ -377,10 +384,12 @@ if mode == "BACKTEST"
         strategy.entry("PE_Short", strategy.short, comment = "Upthrust")
         strategy.exit("PE_Exit", "PE_Short", stop = shortStop, limit = shortTarget, comment_loss = "SL", comment_profit = "Target")
 
-    // Time-based exits
-    barsHeld = ta.barssince(strategy.position_size != 0)
-    if not na(barsHeld) and barsHeld >= timeStopBars and strategy.position_size != 0
-        strategy.close_all(comment = "TimeStop")
+    // Time-based exits — use entry bar index for accurate hold-time tracking
+    if strategy.opentrades > 0
+        entryBarIdx = strategy.opentrades.entry_bar_index(0)
+        barsHeld    = bar_index - entryBarIdx
+        if barsHeld >= timeStopBars
+            strategy.close_all(comment = "TimeStop")
 
     // Force-flatten at 15:15 IST
     if isFlattenTime and strategy.position_size != 0
@@ -520,5 +529,17 @@ if barstate.islast
     table.cell(debugTable, 1, 5, str.tostring(barsBodyPassed),       text_color = color.white, text_size = size.tiny)
     table.cell(debugTable, 0, 6, "TimeWin Pass", text_color = color.gray, text_size = size.tiny)
     table.cell(debugTable, 1, 6, str.tostring(barsTimeWindowPassed), text_color = color.white, text_size = size.tiny)
-    table.cell(debugTable, 0, 7, "Signals",      text_color = color.yellow, text_size = size.tiny)
-    table.cell(debugTable, 1, 7, "L:" + str.tostring(longSignalCount) + " S:" + str.tostring(shortSignalCount), text_color = color.yellow, text_size = size.tiny)
+    table.cell(debugTable, 0, 7, "ALL Pass",     text_color = color.lime, text_size = size.tiny)
+    table.cell(debugTable, 1, 7, str.tostring(barsAllFiltersPassed), text_color = color.lime, text_size = size.tiny)
+
+// Second debug table — final signal counts
+var table sigTable = table.new(position.middle_right, 2, 4, bgcolor = color.new(color.black, 80), border_width = 1)
+if barstate.islast
+    table.cell(sigTable, 0, 0, "SIGNALS", text_color = color.yellow, bgcolor = color.new(color.purple, 50), text_size = size.small)
+    table.cell(sigTable, 1, 0, "FINAL", text_color = color.yellow, bgcolor = color.new(color.purple, 50), text_size = size.small)
+    table.cell(sigTable, 0, 1, "Long signals", text_color = color.gray, text_size = size.tiny)
+    table.cell(sigTable, 1, 1, str.tostring(longSignalCount), text_color = color.green, text_size = size.tiny)
+    table.cell(sigTable, 0, 2, "Short signals", text_color = color.gray, text_size = size.tiny)
+    table.cell(sigTable, 1, 2, str.tostring(shortSignalCount), text_color = color.red, text_size = size.tiny)
+    table.cell(sigTable, 0, 3, "Total signals", text_color = color.gray, text_size = size.tiny)
+    table.cell(sigTable, 1, 3, str.tostring(longSignalCount + shortSignalCount), text_color = color.yellow, text_size = size.tiny)
