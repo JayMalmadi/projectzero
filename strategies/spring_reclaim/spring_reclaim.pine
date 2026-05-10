@@ -252,9 +252,14 @@ dayOk = (dow == 2 and allowMonday)
 // Skip first 30min: before 09:45
 // Skip last 30min: after 15:00
 // Skip lunch unless A-grade ≥ 3 AND allowLunch
-inOpening   = (h == 9 and m >= 45) or (h == 10) or (h == 11 and m < 30)
-inAfternoon = (h == 14) or (h == 15 and m == 0)  // 14:00 to 15:00
-inLunch     = (h == 11 and m >= 30) or (h == 12) or (h == 13) or (h == 13 and m < 50)
+// IST minutes since midnight for cleaner range checks
+istMinutesOfDay = h * 60 + m
+// Opening window: 09:45 to 11:30 inclusive (allows 9:45, 10:00, 10:15, ..., 11:15)
+inOpening   = istMinutesOfDay >= 9*60+45  and istMinutesOfDay <= 11*60+15
+// Afternoon window: 14:00 to 15:00 inclusive (allows 14:00, 14:15, 14:30, 14:45)
+inAfternoon = istMinutesOfDay >= 14*60    and istMinutesOfDay <= 14*60+45
+// Lunch window: 11:30 to 13:45 inclusive
+inLunch     = istMinutesOfDay >= 11*60+30 and istMinutesOfDay <= 13*60+45
 
 // Force-flatten time
 isFlattenTime = (h == 15 and m >= 15)
@@ -269,8 +274,9 @@ bodyUpperFraction = bodyRange == 0 ? 0.5 : (close - low) / bodyRange
 bodyLowerFraction = bodyRange == 0 ? 0.5 : (high - close) / bodyRange
 
 // Long Spring conditions
+// Note: barstate.isconfirmed only checked for live alert mode (handled below)
+// Backtest evaluates on bar close anyway via process_orders_on_close=true
 longSpring = allowLongs and not na(activeSupport)
-longSpring := longSpring and barstate.isconfirmed
 longSpring := longSpring and low < activeSupport
 longSpring := longSpring and close > activeSupport
 longSpring := longSpring and (activeSupport - low) >= minWickATR * atr15
@@ -285,7 +291,6 @@ longSpring := longSpring and (not useTrendFilter or trendUp or not trendDown)
 
 // Short Upthrust (PE setup) at resistance — mirror
 shortUpthrust = allowShorts and not na(activeResistance)
-shortUpthrust := shortUpthrust and barstate.isconfirmed
 shortUpthrust := shortUpthrust and high > activeResistance
 shortUpthrust := shortUpthrust and close < activeResistance
 shortUpthrust := shortUpthrust and (high - activeResistance) >= minWickATR * atr15
@@ -326,6 +331,35 @@ shortStopOk = shortRisk <= maxStopDailyATR * atrDay and shortRisk > 0
 // Final signals (with stop validation)
 longSignal  = longSpring and longStopOk
 shortSignal = shortUpthrust and shortStopOk
+
+// Counters for debug visibility
+var int longSignalCount  = 0
+var int shortSignalCount = 0
+if longSignal
+    longSignalCount += 1
+if shortSignal
+    shortSignalCount += 1
+
+// Debug: count how many bars passed each gate (for diagnosis)
+var int barsWithSupport      = 0
+var int barsWickedSupport    = 0
+var int barsReclaimedSupport = 0
+var int barsVolumePassed     = 0
+var int barsBodyPassed       = 0
+var int barsTimeWindowPassed = 0
+
+if not na(activeSupport)
+    barsWithSupport += 1
+if not na(activeSupport) and low < activeSupport
+    barsWickedSupport += 1
+if not na(activeSupport) and low < activeSupport and close > activeSupport
+    barsReclaimedSupport += 1
+if volume > vol20 * volMultiple
+    barsVolumePassed += 1
+if bodyUpperFraction >= bodyUpperPct
+    barsBodyPassed += 1
+if inOpening or inAfternoon
+    barsTimeWindowPassed += 1
 
 // ═══════════════════════════════════════════════════════════════════════════
 // STRATEGY EXECUTION (BACKTEST MODE)
@@ -393,10 +427,10 @@ buildPayload(string direction, float entry, float stop, float target, float supp
        + '}}'
     payload
 
-if longSignal and mode == "LIVE_ALERTS"
+if longSignal and mode == "LIVE_ALERTS" and barstate.isconfirmed
     alert(buildPayload("BUY", longEntry, longStop, longTarget, activeSupport, supConfluence), alert.freq_once_per_bar_close)
 
-if shortSignal and mode == "LIVE_ALERTS"
+if shortSignal and mode == "LIVE_ALERTS" and barstate.isconfirmed
     alert(buildPayload("SELL", shortEntry, shortStop, shortTarget, activeResistance, resConfluence), alert.freq_once_per_bar_close)
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -467,3 +501,24 @@ if barstate.islast
     string sessionStr = inOpening ? "OPEN-WIN" : inAfternoon ? "PM-WIN" : inLunch ? "LUNCH" : isFlattenTime ? "FLATTEN" : "OFF"
     table.cell(statusTable, 0, 7, "Session", text_color = color.gray, text_size = size.tiny)
     table.cell(statusTable, 1, 7, sessionStr, text_color = (inOpening or inAfternoon) ? color.green : color.gray, text_size = size.tiny)
+
+// Debug table — funnel to diagnose why no signals fire
+var table debugTable = table.new(position.bottom_right, 2, 8, bgcolor = color.new(color.black, 80), border_width = 1)
+if barstate.islast
+    table.cell(debugTable, 0, 0, "DEBUG", text_color = color.yellow, bgcolor = color.new(color.purple, 50), text_size = size.small)
+    table.cell(debugTable, 1, 0, "FUNNEL", text_color = color.yellow, bgcolor = color.new(color.purple, 50), text_size = size.small)
+
+    table.cell(debugTable, 0, 1, "w/ Support",   text_color = color.gray, text_size = size.tiny)
+    table.cell(debugTable, 1, 1, str.tostring(barsWithSupport),      text_color = color.white, text_size = size.tiny)
+    table.cell(debugTable, 0, 2, "Wicked Sup",   text_color = color.gray, text_size = size.tiny)
+    table.cell(debugTable, 1, 2, str.tostring(barsWickedSupport),    text_color = color.white, text_size = size.tiny)
+    table.cell(debugTable, 0, 3, "Reclaimed",    text_color = color.gray, text_size = size.tiny)
+    table.cell(debugTable, 1, 3, str.tostring(barsReclaimedSupport), text_color = color.white, text_size = size.tiny)
+    table.cell(debugTable, 0, 4, "Vol Pass",     text_color = color.gray, text_size = size.tiny)
+    table.cell(debugTable, 1, 4, str.tostring(barsVolumePassed),     text_color = color.white, text_size = size.tiny)
+    table.cell(debugTable, 0, 5, "Body Pass",    text_color = color.gray, text_size = size.tiny)
+    table.cell(debugTable, 1, 5, str.tostring(barsBodyPassed),       text_color = color.white, text_size = size.tiny)
+    table.cell(debugTable, 0, 6, "TimeWin Pass", text_color = color.gray, text_size = size.tiny)
+    table.cell(debugTable, 1, 6, str.tostring(barsTimeWindowPassed), text_color = color.white, text_size = size.tiny)
+    table.cell(debugTable, 0, 7, "Signals",      text_color = color.yellow, text_size = size.tiny)
+    table.cell(debugTable, 1, 7, "L:" + str.tostring(longSignalCount) + " S:" + str.tostring(shortSignalCount), text_color = color.yellow, text_size = size.tiny)
