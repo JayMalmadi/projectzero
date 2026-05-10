@@ -1,0 +1,88 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// PZ-S1 SPRING RECLAIM — DEBUG MINIMAL VERSION
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Purpose: identify the absolute minimum logic that fires trades.
+// Strategy: single wick-and-reclaim of recent low with no other filters.
+// Once this fires trades, we add filters back ONE AT A TIME.
+//
+// USAGE:
+// 1. Apply this to NSE:NIFTY1! 15-minute (Indian futures, NOT Gift Nifty)
+// 2. Run Strategy Tester
+// 3. Should produce HUNDREDS of trades over 1 year
+// 4. If 0 trades fire here, the bug is in basic logic, not filters
+//
+// ═══════════════════════════════════════════════════════════════════════════
+
+//@version=6
+strategy("PZ-S1-DEBUG-Min",
+     shorttitle = "DEBUG-Min",
+     overlay = true,
+     pyramiding = 0,
+     calc_on_order_fills = false,
+     calc_on_every_tick = false,
+     process_orders_on_close = true,
+     initial_capital = 10000,
+     default_qty_type = strategy.fixed,
+     default_qty_value = 1,
+     commission_type = strategy.commission.percent,
+     commission_value = 0.05)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ABSOLUTE MINIMAL SPRING DETECTION
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Use simple recent low (last 10 bars) as "support"
+recentLow = ta.lowest(low, 10)[1]  // [1] to avoid look-ahead
+
+// Spring = low went below recent low, but close is back above it
+isSpring = low < recentLow and close > recentLow
+
+// Stop = below the wick by 1 ATR
+atr15 = ta.atr(14)
+spStop   = low - atr15
+spEntry  = close
+spRisk   = spEntry - spStop
+spTarget = spEntry + 3 * spRisk
+
+// Validate: positive risk
+canTrade = spRisk > 0
+
+// Counter for diagnosis
+var int signalCount = 0
+if isSpring and canTrade and (barstate.isconfirmed or barstate.ishistory)
+    signalCount += 1
+
+// ═══════════════════════════════════════════════════════════════════════════
+// EXECUTE
+// ═══════════════════════════════════════════════════════════════════════════
+
+if isSpring and canTrade and strategy.position_size == 0
+    strategy.entry("Long", strategy.long, comment = "Spring")
+    strategy.exit("Exit", "Long", stop = spStop, limit = spTarget, comment_loss = "SL", comment_profit = "TP")
+
+// Time-based exit after 8 bars
+if strategy.opentrades > 0
+    entryBarIdx = strategy.opentrades.entry_bar_index(0)
+    barsHeld    = bar_index - entryBarIdx
+    if barsHeld >= 8
+        strategy.close_all(comment = "TimeStop")
+
+// ═══════════════════════════════════════════════════════════════════════════
+// VISUAL
+// ═══════════════════════════════════════════════════════════════════════════
+
+plot(recentLow, title = "Recent Low (Support)", color = color.green, linewidth = 1, style = plot.style_linebr)
+plotshape(isSpring and canTrade, title = "Spring", style = shape.triangleup, location = location.belowbar, color = color.lime, size = size.small, text = "S")
+
+// Status
+var table tbl = table.new(position.top_right, 2, 4, bgcolor = color.new(color.black, 70), border_width = 1)
+if barstate.islast
+    table.cell(tbl, 0, 0, "DEBUG-MIN", text_color = color.yellow, text_size = size.small)
+    table.cell(tbl, 1, 0, "v1", text_color = color.yellow, text_size = size.small)
+    table.cell(tbl, 0, 1, "Recent Low", text_color = color.gray, text_size = size.tiny)
+    table.cell(tbl, 1, 1, str.tostring(recentLow, "#.##"), text_color = color.green, text_size = size.tiny)
+    table.cell(tbl, 0, 2, "Signals", text_color = color.gray, text_size = size.tiny)
+    table.cell(tbl, 1, 2, str.tostring(signalCount), text_color = color.yellow, text_size = size.tiny)
+    table.cell(tbl, 0, 3, "Trades", text_color = color.gray, text_size = size.tiny)
+    table.cell(tbl, 1, 3, str.tostring(strategy.closedtrades), text_color = color.lime, text_size = size.tiny)
