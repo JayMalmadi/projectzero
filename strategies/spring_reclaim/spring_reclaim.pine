@@ -37,6 +37,15 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 //@version=6
+// SIZING NOTE (PINE STRATEGY LAYER — separate from paper-trade layer):
+//   The $10k normalization convention belongs to Project Zero's paper-trade
+//   system (server-side P&L tracking), NOT to TradingView Pine strategies.
+//   Pine strategies must use realistic capital so signal execution works.
+//   On NIFTY1! (~24k per unit), capital must comfortably exceed the
+//   contract notional or TradingView silently rejects every entry order
+//   (symptom: plotshape markers fire but List of Trades stays empty).
+//   ₹10 lakh = realistic NIFTY trading account with margin headroom.
+//   Increase further if a future strategy uses larger position sizing.
 strategy("ProjectZero - Spring Reclaim S1",
      shorttitle = "PZ-S1-Spring",
      overlay = true,
@@ -44,7 +53,7 @@ strategy("ProjectZero - Spring Reclaim S1",
      calc_on_order_fills = false,
      calc_on_every_tick = false,
      process_orders_on_close = true,
-     initial_capital = 10000,
+     initial_capital = 1000000,
      default_qty_type = strategy.fixed,
      default_qty_value = 1,
      commission_type = strategy.commission.percent,
@@ -532,9 +541,15 @@ if barstate.islast
     table.cell(debugTable, 0, 7, "ALL Pass",     text_color = color.lime, text_size = size.tiny)
     table.cell(debugTable, 1, 7, str.tostring(barsAllFiltersPassed), text_color = color.lime, text_size = size.tiny)
 
-// Second debug table — final signal counts
-var table sigTable = table.new(position.middle_right, 2, 4, bgcolor = color.new(color.black, 80), border_width = 1)
+// Second debug table — final signal counts vs executed trades
+// If signals > 0 but executed == 0, you have a strategy.entry execution
+// problem (usually a sizing/capital mismatch). Don't let this stay silent.
+var table sigTable = table.new(position.middle_right, 2, 6, bgcolor = color.new(color.black, 80), border_width = 1)
 if barstate.islast
+    int totalSignals = longSignalCount + shortSignalCount
+    int executed     = strategy.closedtrades + strategy.opentrades
+    bool entryGap    = totalSignals > 0 and executed == 0
+
     table.cell(sigTable, 0, 0, "SIGNALS", text_color = color.yellow, bgcolor = color.new(color.purple, 50), text_size = size.small)
     table.cell(sigTable, 1, 0, "FINAL", text_color = color.yellow, bgcolor = color.new(color.purple, 50), text_size = size.small)
     table.cell(sigTable, 0, 1, "Long signals", text_color = color.gray, text_size = size.tiny)
@@ -542,4 +557,9 @@ if barstate.islast
     table.cell(sigTable, 0, 2, "Short signals", text_color = color.gray, text_size = size.tiny)
     table.cell(sigTable, 1, 2, str.tostring(shortSignalCount), text_color = color.red, text_size = size.tiny)
     table.cell(sigTable, 0, 3, "Total signals", text_color = color.gray, text_size = size.tiny)
-    table.cell(sigTable, 1, 3, str.tostring(longSignalCount + shortSignalCount), text_color = color.yellow, text_size = size.tiny)
+    table.cell(sigTable, 1, 3, str.tostring(totalSignals), text_color = color.yellow, text_size = size.tiny)
+    table.cell(sigTable, 0, 4, "Trades executed", text_color = color.gray, text_size = size.tiny)
+    table.cell(sigTable, 1, 4, str.tostring(executed), text_color = entryGap ? color.red : color.aqua, text_size = size.tiny)
+    table.cell(sigTable, 0, 5, "Status", text_color = color.gray, text_size = size.tiny)
+    string statusMsg = entryGap ? "⚠ ENTRY BLOCKED" : executed > 0 ? "✓ Executing" : totalSignals == 0 ? "no signals" : "running"
+    table.cell(sigTable, 1, 5, statusMsg, text_color = entryGap ? color.red : color.lime, text_size = size.tiny)
