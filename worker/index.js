@@ -1080,6 +1080,17 @@ async function checkStrategyDiscipline(symbol, timeframe, market, explicitStrate
       return { allowed: false, reason: `Strategy '${matched.name}' is disabled`, strategyId: matched.id }
     }
 
+    // ════════════════════════════════════════════════════════════════════
+    // BYPASS MODE — learning / forward-test phase
+    // When bypass_discipline_rules=true, we let ALL signals through to
+    // paper trades so raw strategy performance is visible. Rules to be
+    // defined later based on actual data, not assumptions.
+    // ════════════════════════════════════════════════════════════════════
+    if (matched.bypass_discipline_rules === true) {
+      console.log(`[Discipline] BYPASS active for ${matched.id} — all rules skipped`)
+      return { allowed: true, reason: null, strategyId: matched.id, strategy: matched, bypass: true }
+    }
+
     const st = matched.state || {}
 
     // Pause check

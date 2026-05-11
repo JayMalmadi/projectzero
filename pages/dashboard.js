@@ -2710,7 +2710,11 @@ function StrategiesTab({t}) {
 
             {/* Discipline rules summary */}
             <div style={{marginTop:10,padding:'8px 10px',background:t.surface+'66',borderRadius:8,fontSize:11,color:t.muted,lineHeight:1.6}}>
-              <strong style={{color:t.text2}}>Rules:</strong> Daily loss cap {s.daily_loss_cap_pct}% · Max {s.max_consec_losses} consec losses · {s.cooldown_minutes}m cooldown · Risk {s.risk_per_trade_pct}%/trade
+              {s.bypass_discipline_rules ? (
+                <span style={{color:'#ffc800'}}>🚦 <strong>BYPASS ON</strong> — rules ignored, all signals → paper trades</span>
+              ) : (
+                <><strong style={{color:t.text2}}>Rules:</strong> Daily loss cap {s.daily_loss_cap_pct}% · Max {s.max_consec_losses} consec losses · {s.cooldown_minutes}m cooldown · Risk {s.risk_per_trade_pct}%/trade</>
+              )}
               {s.allowed_start_ist && <> · Active {s.allowed_start_ist}-{s.allowed_end_ist} IST</>}
               {s.trade_options && <> · ATM options (SL {s.option_sl_pct}%, T {s.option_target_pct}%)</>}
             </div>
@@ -2732,26 +2736,43 @@ function StrategiesTab({t}) {
             <h3 style={{fontSize:16,fontWeight:800,color:t.text,marginBottom:14}}>⚙ {editing.name}</h3>
             <div style={{display:'flex',flexDirection:'column',gap:12}}>
               {[
-                ['daily_loss_cap_pct','Daily loss cap %','number',0.1,10],
-                ['max_consec_losses','Max consecutive losses','number',1,10],
-                ['cooldown_minutes','Cooldown after loss (min)','number',0,180],
-                ['max_trades_per_day','Max trades per day','number',1,50],
-                ['risk_per_trade_pct','Risk per trade %','number',0.1,5],
-                ['option_sl_pct','Option SL % of premium','number',10,80],
-                ['option_target_pct','Option target % gain','number',20,300],
-                ['allowed_start_ist','Allowed start (HH:MM IST)','text'],
-                ['allowed_end_ist','Allowed end (HH:MM IST)','text'],
-                ['allowed_days','Allowed days (comma-sep)','text'],
+                ['daily_loss_cap_pct','Daily loss cap % (0 = no cap)','number',0,100],
+                ['max_consec_losses','Max consecutive losses (0 = no limit)','number',0,100],
+                ['cooldown_minutes','Cooldown after loss (min, 0 = none)','number',0,1440],
+                ['max_trades_per_day','Max trades per day (0 = unlimited)','number',0,500],
+                ['risk_per_trade_pct','Risk per trade %','number',0,20],
+                ['option_sl_pct','Option SL % of premium','number',0,99],
+                ['option_target_pct','Option target % gain','number',0,1000],
+                ['allowed_start_ist','Allowed start HH:MM (blank = no limit)','text'],
+                ['allowed_end_ist','Allowed end HH:MM (blank = no limit)','text'],
+                ['allowed_days','Allowed days (blank = all days)','text'],
                 ['notes','Notes','text'],
               ].map(([k,label,type,min,max]) => (
                 <div key={k}>
                   <label style={{color:t.muted,fontSize:11,fontWeight:600,display:'block',marginBottom:4}}>{label}</label>
                   <input type={type} min={min} max={max} step="0.1"
                     value={editing[k] ?? ''}
-                    onChange={e => setEditing({...editing, [k]: type==='number' ? parseFloat(e.target.value) : e.target.value})}
+                    onChange={e => setEditing({...editing, [k]: type==='number' ? (e.target.value === '' ? 0 : parseFloat(e.target.value)) : e.target.value})}
                     style={{width:'100%',padding:'8px 10px',background:t.surface,border:`1px solid ${t.border}`,borderRadius:8,color:t.text,fontSize:13,fontFamily:'JetBrains Mono,monospace'}}/>
                 </div>
               ))}
+              <div style={{padding:'12px',background:editing.bypass_discipline_rules?'rgba(255,200,0,0.08)':t.surface,border:`1px solid ${editing.bypass_discipline_rules?'rgba(255,200,0,0.4)':t.border}`,borderRadius:8}}>
+                <label style={{display:'flex',alignItems:'center',gap:10,cursor:'pointer'}}>
+                  <input type="checkbox"
+                    checked={!!editing.bypass_discipline_rules}
+                    onChange={e => setEditing({...editing, bypass_discipline_rules: e.target.checked})}
+                    style={{width:18,height:18,cursor:'pointer'}}/>
+                  <div>
+                    <div style={{color:editing.bypass_discipline_rules?'#ffc800':t.text,fontSize:13,fontWeight:700}}>
+                      🚦 Bypass discipline rules
+                    </div>
+                    <div style={{color:t.muted,fontSize:11,marginTop:2}}>
+                      When ON, all rules above are ignored. Every signal creates a paper trade.
+                      Use during forward-test phase to see raw strategy performance.
+                    </div>
+                  </div>
+                </label>
+              </div>
               <div>
                 <label style={{color:t.muted,fontSize:11,fontWeight:600,display:'block',marginBottom:4}}>Lifecycle status</label>
                 <select value={editing.status || 'design'}

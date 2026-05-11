@@ -38,9 +38,12 @@ export default async function handler(req, res) {
 
       // Compute strategy_id for each trade based on its attributes
       function tradeToStrategyId(t) {
+        if (t.signal_type?.includes('option')) return null  // skip option sub-trades
+        // Custom strategies first (explicit signal type match)
+        if (t.signal_type?.includes('SPRING_RECLAIM') || t.signal_type?.includes('S1_SPRING')) {
+          return 'S1_SPRING_RECLAIM_V1'
+        }
         if (!t.signal_type?.includes('tradingview')) return null
-        // Skip option sub-trades — they share parent strategy stats via the futures trade
-        if (t.signal_type.includes('option')) return null
         const tf = (t.signal_type.match(/_(\d+)m/) || [])[1] || '15'
         const mkt = (t.market === 'crypto' || t.market === 'delta') ? 'crypto' : 'india'
         if (mkt === 'india' && t.symbol === 'NIFTY')      return 'tv_nifty_' + tf + 'm'
