@@ -988,30 +988,40 @@ async function updateStrategyState(strategyId, outcome, pnlPct) {
     const newPnl    = isNewDay ? pnlPct : (st.pnl_today_pct || 0) + pnlPct
     const newCount  = isNewDay ? 1      : (st.trades_today  || 0) + 1
 
-    // Auto-pause logic
+    // ════════════════════════════════════════════════════════════════════
+    // BYPASS MODE — skip ALL auto-pause logic during learning phase
+    // Track stats (trades_today, pnl_today_pct, consec_losses) for visibility,
+    // but never set paused_until, never send PAUSED notifications.
+    // ════════════════════════════════════════════════════════════════════
     let pausedUntil = null
     let pauseReason = null
 
-    // Daily loss cap pause until next day
-    if (newPnl <= -Math.abs(s.daily_loss_cap_pct)) {
-      const tomorrow = new Date(getNow())
-      tomorrow.setDate(tomorrow.getDate() + 1)
-      tomorrow.setHours(0, 0, 0, 0)
-      pausedUntil = tomorrow.toISOString()
-      pauseReason = `Daily loss cap ${newPnl}% (limit -${s.daily_loss_cap_pct}%)`
-    }
-    // Cooldown after a loss
-    else if (outcome === 'LOSS' && s.cooldown_minutes > 0) {
-      pausedUntil = new Date(Date.now() + s.cooldown_minutes * 60000).toISOString()
-      pauseReason = `Cooldown after loss (${s.cooldown_minutes}m)`
-    }
-    // Consecutive loss pause
-    if (newConsec >= s.max_consec_losses) {
-      const tomorrow = new Date(getNow())
-      tomorrow.setDate(tomorrow.getDate() + 1)
-      tomorrow.setHours(0, 0, 0, 0)
-      pausedUntil = tomorrow.toISOString()
-      pauseReason = `Max consec losses ${newConsec}`
+    if (s.bypass_discipline_rules === true) {
+      console.log(`[StrategyState] BYPASS active for ${strategyId} — stats tracked but no auto-pause`)
+    } else {
+      // Auto-pause logic — only when rules are enforced
+
+      // Daily loss cap pause until next day
+      if (newPnl <= -Math.abs(s.daily_loss_cap_pct)) {
+        const tomorrow = new Date(getNow())
+        tomorrow.setDate(tomorrow.getDate() + 1)
+        tomorrow.setHours(0, 0, 0, 0)
+        pausedUntil = tomorrow.toISOString()
+        pauseReason = `Daily loss cap ${newPnl}% (limit -${s.daily_loss_cap_pct}%)`
+      }
+      // Cooldown after a loss
+      else if (outcome === 'LOSS' && s.cooldown_minutes > 0) {
+        pausedUntil = new Date(Date.now() + s.cooldown_minutes * 60000).toISOString()
+        pauseReason = `Cooldown after loss (${s.cooldown_minutes}m)`
+      }
+      // Consecutive loss pause
+      if (newConsec >= s.max_consec_losses) {
+        const tomorrow = new Date(getNow())
+        tomorrow.setDate(tomorrow.getDate() + 1)
+        tomorrow.setHours(0, 0, 0, 0)
+        pausedUntil = tomorrow.toISOString()
+        pauseReason = `Max consec losses ${newConsec}`
+      }
     }
 
     // Direct DB update via Supabase REST
