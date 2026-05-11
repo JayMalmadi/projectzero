@@ -138,8 +138,15 @@ function calcPositionSize(entryPrice, stopLoss, market) {
     const riskAmt    = base * (CONFIG.RISK_PER_TRADE_PCT / 100)  // ₹100 or $10
     const slDistance = Math.abs(entryPrice - stopLoss)
     if (!slDistance || slDistance <= 0) return 1
-    const qty = Math.floor(riskAmt / slDistance)
-    return Math.max(qty, 1)
+    // For crypto: allow fractional units (2 dp) — BTC at $80k needs 0.00x sizing
+    // For India: whole lots only (minimum 1 lot)
+    if (market === 'india') {
+      return Math.max(Math.floor(riskAmt / slDistance), 1)
+    } else {
+      // Fractional: round to 4 decimal places, minimum 0.001
+      const qty = Math.round((riskAmt / slDistance) * 10000) / 10000
+      return Math.max(qty, 0.001)
+    }
   } catch {
     return 1
   }
@@ -845,19 +852,26 @@ async function backfillHistoricalData(forceAll=false) {
 
 async function upsertOHLCV(table, rows) {
   if (!rows.length) return
+  // on_conflict column varies by table: 15min uses symbol+ts, daily uses symbol+date
+  const conflictCol = table === 'ohlcv_daily' ? 'symbol,date' : 'symbol,ts'
   const batchSize = 500
   for (let i = 0; i < rows.length; i += batchSize) {
     const batch = rows.slice(i, i + batchSize)
-    await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?on_conflict=${conflictCol}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${SUPABASE_KEY}`,
         'apikey': SUPABASE_KEY,
-        'Prefer': 'resolution=merge-duplicates',
+        'Prefer': 'resolution=merge-duplicates,return=minimal',
       },
       body: JSON.stringify(batch),
     })
+    // 409 after fix = real problem, log it
+    if (res.status === 409) {
+      const body = await res.text().catch(() => '')
+      console.error(`[OHLCV] 409 on ${table}:`, body.slice(0, 200))
+    }
   }
 }
 

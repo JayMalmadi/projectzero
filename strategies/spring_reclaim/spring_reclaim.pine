@@ -97,8 +97,8 @@ requireAGrade = input.bool(false, "A-Grade Only (Confluence ≥ 2)", group = grp
 
 // Trade management
 grpTrade = "Trade Management"
-rrTarget = input.float(3.0, "Target R-Multiple", minval = 1.5, maxval = 5.0, step = 0.5, group = grpTrade)
-stopBufferATR = input.float(0.15, "Stop Buffer (× 15m ATR beyond wick)", minval = 0.05, maxval = 0.5, step = 0.05, group = grpTrade)
+rrTarget = input.float(2.0, "Target R-Multiple", minval = 1.5, maxval = 5.0, step = 0.5, group = grpTrade)
+stopBufferATR = input.float(0.25, "Stop Buffer (× 15m ATR beyond wick)", minval = 0.05, maxval = 0.5, step = 0.05, group = grpTrade)
 maxStopDailyATR = input.float(0.5, "Max Stop Distance (× daily ATR)", minval = 0.2, maxval = 1.0, step = 0.05, group = grpTrade)
 timeStopBars = input.int(8, "Time Stop (bars)", minval = 4, maxval = 20, group = grpTrade)
 
@@ -106,10 +106,10 @@ timeStopBars = input.int(8, "Time Stop (bars)", minval = 4, maxval = 20, group =
 grpFilt = "Filters"
 useTrendFilter = input.bool(true, "Daily EMA20 Trend Filter", group = grpFilt)
 trendEmaLength = input.int(20, "Daily EMA Length", minval = 10, maxval = 50, group = grpFilt)
-allowMonday    = input.bool(true,  "Allow Monday",    group = grpFilt)
+allowMonday    = input.bool(false, "Allow Monday (backtest: losing, skip)", group = grpFilt)
 allowWednesday = input.bool(true,  "Allow Wednesday", group = grpFilt)
-allowThursday  = input.bool(true,  "Allow Thursday",  group = grpFilt)
-allowFriday    = input.bool(true,  "Allow Friday",    group = grpFilt)
+allowThursday  = input.bool(true,  "Allow Thursday (best day)", group = grpFilt)
+allowFriday    = input.bool(false, "Allow Friday (backtest: worst day, skip)", group = grpFilt)
 allowTuesday   = input.bool(false, "Allow Tuesday (expiry, NOT recommended)", group = grpFilt)
 allowLunch = input.bool(false, "Allow Lunch (11:30-13:50) if A-grade ≥ 3", group = grpFilt)
 
