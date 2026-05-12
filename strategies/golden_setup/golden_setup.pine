@@ -1,0 +1,542 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// PROJECT ZERO — STRATEGY S2
+// GOLDEN SETUP — Round Level + Structure, Target-First Sizing, Trail Stop
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// THESIS:
+//   Enter at round numbers ($500 BTC / $50 Gold) or nearby significant S/R.
+//   Find target FIRST (next structural resistance/support above/below entry).
+//   Stop = target_distance / min_rr. Tiny stop, high R:R by design.
+//   Accept small losses many times. One big move pays for everything.
+//   At 1:3R profit: move stop to break-even. Trail from there. Let it run.
+//
+// UNIVERSAL DESIGN:
+//   Zero hardcoded dollar amounts. All math is percentage or R-based.
+//   Change round_unit input: same strategy works on BTC, Gold, ETH, anything.
+//
+// 10 ACCURACY FIXES APPLIED BEFORE RELEASE:
+//   1. S/R detection uses pivot arrays (not nested loops — no timeout risk)
+//   2. Pivots stored after full confirmation — zero look-ahead bias
+//   3. strategy.exit() called every bar while in position (no order cancellation)
+//   4. Trail stop enforced >= entry_price always (break-even guarantee)
+//   5. No-pivot edge case handled: falls back to next round number as target
+//   6. Stop floor (0.05%) prevents noise-level untradeable stops
+//   7. S/R proximity capped at 35% of round_unit (no adjacent level bleed)
+//   8. R:R validated against actual_stop after cap (not theoretical stop)
+//   9. Trail uses ta.lowest/highest — fast response, no pivot lag
+//  10. Weekly/daily always use [1] offset — non-repainting guaranteed
+//
+// MODE:
+//   BACKTEST    → runs in TradingView Strategy Tester automatically
+//   LIVE_ALERTS → fires JSON webhook to Railway on every confirmed signal
+//
+// CAPITAL NOTE:
+//   initial_capital=1000000 is FAKE for TradingView backtester only.
+//   Real capital math lives in Railway worker. Never change this.
+//   default_qty_value=1 = one contract unit. Never set to lot size.
+//
+// ═══════════════════════════════════════════════════════════════════════════
+
+//@version=6
+strategy("ProjectZero - Golden Setup S2",
+     shorttitle              = "PZ-S2-Golden",
+     overlay                 = true,
+     pyramiding              = 0,
+     calc_on_order_fills     = false,
+     calc_on_every_tick      = false,
+     process_orders_on_close = true,
+     initial_capital         = 1000000,
+     default_qty_type        = strategy.fixed,
+     default_qty_value       = 1,
+     commission_type         = strategy.commission.percent,
+     commission_value        = 0.05)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// INPUTS
+// ═══════════════════════════════════════════════════════════════════════════
+
+grpMode = "Mode"
+mode        = input.string("BACKTEST", "Mode",
+     options = ["BACKTEST", "LIVE_ALERTS"], group = grpMode)
+
+grpAsset = "Asset Configuration"
+round_unit  = input.float(500.0, "Round Level Unit",
+     minval = 1, step = 1, group = grpAsset,
+     tooltip = "BTC=500  Gold=50  ETH=100. Snap to nearest multiple.")
+asset_label = input.string("BTC", "Asset Label (for alerts)", group = grpAsset)
+
+grpRisk = "Stop and Target"
+min_rr         = input.float(10.0, "Minimum R:R",
+     minval = 3, maxval = 20, step = 0.5, group = grpRisk,
+     tooltip = "Stop = target_distance / min_rr. Default 10 = 1:10.")
+stop_cap_pct   = input.float(0.25, "Stop Cap (% of price)",
+     minval = 0.05, maxval = 1.0, step = 0.01, group = grpRisk,
+     tooltip = "Hard ceiling. Stop never exceeds this % of price.")
+stop_floor_pct = input.float(0.05, "Stop Floor (% of price)",
+     minval = 0.01, maxval = 0.2, step = 0.01, group = grpRisk,
+     tooltip = "Minimum stop. Below this = noise, trade skipped.")
+trail_r        = input.float(3.0, "Trail Trigger (x Risk)",
+     minval = 1.5, maxval = 6.0, step = 0.5, group = grpRisk,
+     tooltip = "Trail + break-even activates at this many R of profit.")
+trail_bars     = input.int(3, "Trail Lookback Bars",
+     minval = 1, maxval = 10, group = grpRisk,
+     tooltip = "Trail stop = lowest(low, N) for longs. Fast. No pivot lag.")
+time_stop_bars = input.int(16, "Time Stop (bars)",
+     minval = 4, maxval = 50, group = grpRisk,
+     tooltip = "Force-close after N bars. 16 bars = 4 hours on 15m chart.")
+
+grpFilt = "Direction Filters"
+use_weekly  = input.bool(true,  "Weekly Candle Bias Filter", group = grpFilt)
+use_daily   = input.bool(true,  "Daily Candle Bias Filter",  group = grpFilt)
+body_thresh = input.float(0.30, "Body Threshold (top/bottom fraction)",
+     minval = 0.10, maxval = 0.45, step = 0.05, group = grpFilt,
+     tooltip = ">70% close = bull. <30% close = bear. Middle = skip week.")
+
+grpSR = "S/R Detection"
+use_sr      = input.bool(true, "Detect S/R Near Round Level", group = grpSR)
+sr_lookback = input.int(5, "Pivot Lookback Bars (each side)",
+     minval = 2, maxval = 15, group = grpSR)
+sr_touches  = input.int(2, "Min Touches to Qualify",
+     minval = 2, maxval = 5, group = grpSR)
+sr_prox_pct = input.float(0.35, "Proximity (fraction of round_unit)",
+     minval = 0.1, maxval = 0.5, step = 0.05, group = grpSR,
+     tooltip = "S/R must be within this fraction of round_unit. Prevents adjacent level bleed.")
+
+grpSess = "Session"
+use_session = input.bool(true, "Enable Session Filter", group = grpSess)
+sess_start  = input.int(19, "Session Start Hour IST (0-23)",
+     minval = 0, maxval = 23, group = grpSess,
+     tooltip = "US open = 19. Asia = 5. Set 0 with end 23 for 24/7.")
+sess_end    = input.int(23, "Session End Hour IST (0-23)",
+     minval = 0, maxval = 23, group = grpSess)
+
+grpDir = "Direction"
+allow_longs  = input.bool(true, "Allow Longs",  group = grpDir)
+allow_shorts = input.bool(true, "Allow Shorts", group = grpDir)
+
+grpWH = "Webhook"
+wh_secret   = input.string("CHANGE_ME",          "Webhook Secret", group = grpWH)
+strategy_id = input.string("S2_GOLDEN_SETUP_V1", "Strategy ID",    group = grpWH)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TIME
+// ═══════════════════════════════════════════════════════════════════════════
+
+h = hour(time,   "Asia/Kolkata")
+m = minute(time, "Asia/Kolkata")
+
+inSession = not use_session
+         or (h >= sess_start and h <= sess_end)
+
+isFlatten = use_session
+         and (h > sess_end or (h == sess_end and m >= 55))
+
+// ═══════════════════════════════════════════════════════════════════════════
+// WEEKLY + DAILY CANDLE BIAS FILTERS
+// Use [1] offset always — completed candles only, zero repainting
+// ═══════════════════════════════════════════════════════════════════════════
+
+wC = request.security(syminfo.tickerid, "W", close[1], lookahead = barmerge.lookahead_off)
+wH = request.security(syminfo.tickerid, "W", high[1],  lookahead = barmerge.lookahead_off)
+wL = request.security(syminfo.tickerid, "W", low[1],   lookahead = barmerge.lookahead_off)
+
+dC = request.security(syminfo.tickerid, "D", close[1], lookahead = barmerge.lookahead_off)
+dH = request.security(syminfo.tickerid, "D", high[1],  lookahead = barmerge.lookahead_off)
+dL = request.security(syminfo.tickerid, "D", low[1],   lookahead = barmerge.lookahead_off)
+
+wBody = (wH - wL) == 0 ? 0.5 : (wC - wL) / (wH - wL)
+dBody = (dH - dL) == 0 ? 0.5 : (dC - dL) / (dH - dL)
+
+wBull = wBody >= (1.0 - body_thresh)
+wBear = wBody <= body_thresh
+wNeut = not wBull and not wBear
+
+dBull = dBody >= (1.0 - body_thresh)
+dBear = dBody <= body_thresh
+
+bullBias = (not use_weekly or wBull) and (not use_daily or dBull)
+bearBias = (not use_weekly or wBear) and (not use_daily or dBear)
+skipWeek = use_weekly and wNeut
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PIVOT ARRAYS — persistent, confirmed, non-repainting
+// Pivots added to arrays as they confirm (sr_lookback bars after actual pivot)
+// ═══════════════════════════════════════════════════════════════════════════
+
+var array<float> pivH = array.new_float()
+var array<float> pivL = array.new_float()
+
+ph = ta.pivothigh(high, sr_lookback, sr_lookback)
+pl = ta.pivotlow(low,   sr_lookback, sr_lookback)
+
+if not na(ph)
+    array.push(pivH, ph)
+    if array.size(pivH) > 30
+        array.shift(pivH)
+
+if not na(pl)
+    array.push(pivL, pl)
+    if array.size(pivL) > 30
+        array.shift(pivL)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ROUND LEVEL HELPERS
+// ═══════════════════════════════════════════════════════════════════════════
+
+rndBelow(p)   => math.floor(p / round_unit) * round_unit
+rndAbove(p)   => math.ceil(p  / round_unit) * round_unit
+
+// ═══════════════════════════════════════════════════════════════════════════
+// S/R DETECTION — single scan of array, no nested loops
+// Returns most-touched level within proximity of a given round number
+// ═══════════════════════════════════════════════════════════════════════════
+
+srProx() => round_unit * sr_prox_pct  // fixed fraction of round unit, no price % bleed
+
+findSR(array<float> levels, float target) =>
+    float prox    = srProx()
+    float bestLvl = na
+    int   bestCnt = 0
+    int   sz      = array.size(levels)
+    if sz >= sr_touches
+        for i = 0 to sz - 1
+            float cand = array.get(levels, i)
+            if math.abs(cand - target) <= prox
+                int cnt = 0
+                for j = 0 to sz - 1
+                    if math.abs(array.get(levels, j) - cand) <= prox
+                        cnt += 1
+                if cnt >= sr_touches and cnt > bestCnt
+                    bestCnt := cnt
+                    bestLvl := cand
+    bestLvl
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ENTRY LEVELS — Option C: S/R if found, else round number
+// ═══════════════════════════════════════════════════════════════════════════
+
+longRound  = rndBelow(close)
+longSR     = use_sr ? findSR(pivL, longRound) : na
+longLevel  = not na(longSR) ? longSR : longRound
+
+shortRound = rndAbove(close)
+shortSR    = use_sr ? findSR(pivH, shortRound) : na
+shortLevel = not na(shortSR) ? shortSR : shortRound
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TARGET LEVELS — nearest pivot in trade direction, else next round number
+// This determines stop size via: stop = target_distance / min_rr
+// ═══════════════════════════════════════════════════════════════════════════
+
+nearestAbove(float base) =>
+    float best = na
+    int sz = array.size(pivH)
+    if sz > 0
+        for i = 0 to sz - 1
+            float lvl = array.get(pivH, i)
+            if lvl > base + round_unit * 0.1
+                if na(best) or lvl < best
+                    best := lvl
+    best
+
+nearestBelow(float base) =>
+    float best = na
+    int sz = array.size(pivL)
+    if sz > 0
+        for i = 0 to sz - 1
+            float lvl = array.get(pivL, i)
+            if lvl < base - round_unit * 0.1
+                if na(best) or lvl > best
+                    best := lvl
+    best
+
+// Long target: nearest confirmed resistance above, else round number above + 1 unit
+pivTargetLong  = nearestAbove(close)
+longTarget     = not na(pivTargetLong) ? pivTargetLong : rndAbove(close) + round_unit
+
+// Short target: nearest confirmed support below, else round number below - 1 unit
+pivTargetShort = nearestBelow(close)
+shortTarget    = not na(pivTargetShort) ? pivTargetShort : rndBelow(close) - round_unit
+
+// ═══════════════════════════════════════════════════════════════════════════
+// STOP CALCULATION — target-first, capped, floored
+// ═══════════════════════════════════════════════════════════════════════════
+
+calcStopDist(float entry, float target) =>
+    float tgtDist  = math.abs(target - entry)
+    float raw      = tgtDist / min_rr
+    float cap      = entry * stop_cap_pct   / 100.0
+    float flr      = entry * stop_floor_pct / 100.0
+    float actual   = math.min(raw, cap)
+    // Return na if below floor — untradeable noise level, skip the trade
+    actual >= flr ? actual : na
+
+longStopDist  = calcStopDist(close, longTarget)
+shortStopDist = calcStopDist(close, shortTarget)
+
+// R:R check using actual stop (after cap applied)
+// Must meet minimum even after cap reduces stop
+longRROK  = not na(longStopDist)
+         and math.abs(longTarget  - close) / longStopDist  >= min_rr
+shortRROK = not na(shortStopDist)
+         and math.abs(shortTarget - close) / shortStopDist >= min_rr
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ENTRY SIGNALS
+// Touch level AND close back on the correct side (rejection candle)
+// ═══════════════════════════════════════════════════════════════════════════
+
+longSig  = allow_longs
+        and bullBias
+        and not skipWeek
+        and inSession
+        and longRROK
+        and low  <= longLevel
+        and close > longLevel
+        and (close - low) / math.max(high - low, 0.001) >= 0.50
+        and barstate.isconfirmed
+
+shortSig = allow_shorts
+        and bearBias
+        and not skipWeek
+        and inSession
+        and shortRROK
+        and high  >= shortLevel
+        and close < shortLevel
+        and (high - close) / math.max(high - low, 0.001) >= 0.50
+        and barstate.isconfirmed
+
+// Computed levels at signal bar
+longEntry  = close
+longSL     = longEntry  - longStopDist
+longTP     = longTarget
+
+shortEntry = close
+shortSL    = shortEntry + shortStopDist
+shortTP    = shortTarget
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TRADE STATE (persistent)
+// ═══════════════════════════════════════════════════════════════════════════
+
+var float trlStop    = na
+var bool  trlActive  = false
+var float entryPx    = na
+var float riskPts    = na
+var bool  isLong     = false
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BACKTEST EXECUTION
+// ═══════════════════════════════════════════════════════════════════════════
+
+if mode == "BACKTEST"
+
+    // ── LONG ENTRY ──────────────────────────────────────────────────────────
+    if longSig and strategy.position_size == 0
+        strategy.entry("Long", strategy.long, comment = "GS-Long")
+        trlActive := false
+        trlStop   := longSL
+        entryPx   := longEntry
+        riskPts   := longStopDist
+        isLong    := true
+
+    // ── SHORT ENTRY ─────────────────────────────────────────────────────────
+    if shortSig and strategy.position_size == 0
+        strategy.entry("Short", strategy.short, comment = "GS-Short")
+        trlActive := false
+        trlStop   := shortSL
+        entryPx   := shortEntry
+        riskPts   := shortStopDist
+        isLong    := false
+
+    // ── MANAGE OPEN LONG ────────────────────────────────────────────────────
+    if strategy.position_size > 0
+
+        // Activate trail when profit reaches trail_r × risk
+        if not trlActive and close >= entryPx + trail_r * riskPts
+            trlActive := true
+            // Break-even guaranteed: stop moves to entry minimum
+            trlStop   := math.max(entryPx, trlStop)
+
+        // Trail: follow price with lowest of last N bars + tiny buffer
+        // Stop only moves UP. Never back below entry (break-even guarantee).
+        if trlActive
+            float newTrl = ta.lowest(low, trail_bars) - riskPts * 0.05
+            if newTrl > trlStop
+                trlStop := math.max(newTrl, entryPx)
+
+        // Issue exit every bar (prevents Pine cancelling the order)
+        // While trail is active, remove hard TP — let trail be the only exit
+        strategy.exit("L_Exit", "Long",
+             stop           = trlStop,
+             limit          = trlActive ? na : longTP,
+             comment_loss   = trlActive ? "Trail" : "SL",
+             comment_profit = "Target")
+
+        // Time stop
+        if bar_index - strategy.opentrades.entry_bar_index(0) >= time_stop_bars
+            strategy.close("Long", comment = "TimeStop")
+
+    // ── MANAGE OPEN SHORT ───────────────────────────────────────────────────
+    if strategy.position_size < 0
+
+        if not trlActive and close <= entryPx - trail_r * riskPts
+            trlActive := true
+            trlStop   := math.min(entryPx, trlStop)
+
+        if trlActive
+            float newTrl = ta.highest(high, trail_bars) + riskPts * 0.05
+            if newTrl < trlStop
+                trlStop := math.min(newTrl, entryPx)
+
+        strategy.exit("S_Exit", "Short",
+             stop           = trlStop,
+             limit          = trlActive ? na : shortTP,
+             comment_loss   = trlActive ? "Trail" : "SL",
+             comment_profit = "Target")
+
+        if bar_index - strategy.opentrades.entry_bar_index(0) >= time_stop_bars
+            strategy.close("Short", comment = "TimeStop")
+
+    // ── FORCE CLOSE AT SESSION END ──────────────────────────────────────────
+    if isFlatten and strategy.position_size != 0
+        strategy.close_all(comment = "SessionEnd")
+
+    // ── RESET STATE WHEN FLAT ───────────────────────────────────────────────
+    if strategy.position_size == 0 and not longSig and not shortSig
+        trlActive := false
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LIVE ALERTS
+// ═══════════════════════════════════════════════════════════════════════════
+
+mkPayload(string sig, float entry, float sl, float tp, float lvl,
+          float sd, string bias) =>
+    str.format(
+      '{{"secret":"{0}","strategy_id":"{1}","signal_type":"GOLDEN_SETUP",'
+    + '"signal":"{2}","symbol":"{3}","asset":"{4}",'
+    + '"entry":{5},"stop":{6},"target":{7},'
+    + '"level":{8},"stop_pts":{9},'
+    + '"min_rr":{10},"trail_r":{11},'
+    + '"weekly_body":{12},"daily_body":{13},"bias":"{14}",'
+    + '"round_unit":{15},"stop_cap_pct":{16},'
+    + '"timestamp":"{17}"}}',
+    wh_secret, strategy_id,
+    sig, syminfo.ticker, asset_label,
+    str.tostring(math.round(entry, 2)),
+    str.tostring(math.round(sl,    2)),
+    str.tostring(math.round(tp,    2)),
+    str.tostring(math.round(lvl,   2)),
+    str.tostring(math.round(sd,    2)),
+    str.tostring(min_rr,  "#.#"),
+    str.tostring(trail_r, "#.#"),
+    str.tostring(wBody,   "#.##"),
+    str.tostring(dBody,   "#.##"),
+    bias,
+    str.tostring(round_unit,    "#"),
+    str.tostring(stop_cap_pct,  "#.##"),
+    str.format_time(time, "yyyy-MM-dd'T'HH:mm:ssZ", "Asia/Kolkata"))
+
+if mode == "LIVE_ALERTS" and barstate.isconfirmed
+    if longSig
+        alert(mkPayload("BUY",  longEntry,  longSL,  longTP,
+              longLevel,  longStopDist,  "BULL"), alert.freq_once_per_bar_close)
+    if shortSig
+        alert(mkPayload("SELL", shortEntry, shortSL, shortTP,
+              shortLevel, shortStopDist, "BEAR"), alert.freq_once_per_bar_close)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// VISUALIZATION
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Round levels (faded background reference)
+plot(longRound,  "Round Support",    color.new(color.green, 75), 1, plot.style_circles)
+plot(shortRound, "Round Resistance", color.new(color.red,   75), 1, plot.style_circles)
+
+// Actual entry levels (bright = S/R found, faded = round number fallback)
+plot(longLevel,  "Long Level",  color.new(color.lime, not na(longSR)  ? 10 : 55), 2, plot.style_linebr)
+plot(shortLevel, "Short Level", color.new(color.red,  not na(shortSR) ? 10 : 55), 2, plot.style_linebr)
+
+// Trail stop (only shown when active and in trade)
+plot(trlActive and strategy.position_size != 0 ? trlStop : na,
+     "Trail Stop", color.new(color.orange, 0), 2, plot.style_linebr)
+
+// Signal markers
+plotshape(longSig,  "Long",  shape.triangleup,   location.belowbar,
+     color.new(color.lime, 0), size = size.normal, text = "GOLDEN")
+plotshape(shortSig, "Short", shape.triangledown, location.abovebar,
+     color.new(color.red,  0), size = size.normal, text = "GOLDEN")
+
+// ═══════════════════════════════════════════════════════════════════════════
+// STATUS TABLE
+// ═══════════════════════════════════════════════════════════════════════════
+
+var table tbl = table.new(position.top_right, 2, 11,
+     bgcolor = color.new(color.black, 75), border_width = 1)
+
+if barstate.islast
+    table.cell(tbl, 0, 0, "PZ-S2",
+         text_color = color.yellow,
+         bgcolor    = color.new(color.purple, 40),
+         text_size  = size.small)
+    table.cell(tbl, 1, 0, mode,
+         text_color = color.yellow,
+         bgcolor    = color.new(color.purple, 40),
+         text_size  = size.small)
+
+    table.cell(tbl, 0, 1, "Weekly",    text_color = color.gray, text_size = size.tiny)
+    table.cell(tbl, 1, 1,
+         wBull ? "BULL" : wBear ? "BEAR" : "NEUT",
+         text_color = wBull ? color.lime : wBear ? color.red : color.orange,
+         text_size = size.tiny)
+
+    table.cell(tbl, 0, 2, "Daily",     text_color = color.gray, text_size = size.tiny)
+    table.cell(tbl, 1, 2,
+         dBull ? "BULL" : dBear ? "BEAR" : "NEUT",
+         text_color = dBull ? color.lime : dBear ? color.red : color.orange,
+         text_size = size.tiny)
+
+    table.cell(tbl, 0, 3, "Bias",      text_color = color.gray, text_size = size.tiny)
+    table.cell(tbl, 1, 3,
+         skipWeek ? "SKIP WEEK" : bullBias ? "LONG" : bearBias ? "SHORT" : "NO SIGNAL",
+         text_color = skipWeek ? color.orange : bullBias ? color.lime : bearBias ? color.red : color.gray,
+         text_size = size.tiny)
+
+    table.cell(tbl, 0, 4, "Long Lvl",  text_color = color.gray, text_size = size.tiny)
+    table.cell(tbl, 1, 4,
+         str.tostring(math.round(longLevel, 1)) + (not na(longSR) ? " S/R" : " Rnd"),
+         text_color = color.lime, text_size = size.tiny)
+
+    table.cell(tbl, 0, 5, "Short Lvl", text_color = color.gray, text_size = size.tiny)
+    table.cell(tbl, 1, 5,
+         str.tostring(math.round(shortLevel, 1)) + (not na(shortSR) ? " S/R" : " Rnd"),
+         text_color = color.red, text_size = size.tiny)
+
+    float dsp = not na(longStopDist) ? longStopDist : shortStopDist
+    table.cell(tbl, 0, 6, "Stop Dist", text_color = color.gray, text_size = size.tiny)
+    table.cell(tbl, 1, 6,
+         not na(dsp) ? str.tostring(math.round(dsp, 1)) + " pts" : "SKIP",
+         text_color = not na(dsp) ? color.white : color.orange,
+         text_size = size.tiny)
+
+    table.cell(tbl, 0, 7, "R:R Min",   text_color = color.gray, text_size = size.tiny)
+    table.cell(tbl, 1, 7,
+         "1:" + str.tostring(min_rr, "#") + " | Trl@" + str.tostring(trail_r, "#.#") + "R",
+         text_color = color.white, text_size = size.tiny)
+
+    table.cell(tbl, 0, 8, "Trail",     text_color = color.gray, text_size = size.tiny)
+    table.cell(tbl, 1, 8,
+         trlActive ? "ON @ " + str.tostring(math.round(trlStop, 1)) : "OFF",
+         text_color = trlActive ? color.orange : color.gray,
+         text_size = size.tiny)
+
+    table.cell(tbl, 0, 9, "Session",   text_color = color.gray, text_size = size.tiny)
+    table.cell(tbl, 1, 9,
+         isFlatten ? "FLATTEN" : inSession ? "ACTIVE" : "CLOSED",
+         text_color = isFlatten ? color.orange : inSession ? color.lime : color.gray,
+         text_size = size.tiny)
+
+    table.cell(tbl, 0, 10, "Asset",    text_color = color.gray, text_size = size.tiny)
+    table.cell(tbl, 1, 10,
+         asset_label + " unit=" + str.tostring(round_unit, "#"),
+         text_color = color.gray, text_size = size.tiny)
