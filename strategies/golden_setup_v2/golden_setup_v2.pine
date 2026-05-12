@@ -1,0 +1,359 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// PROJECT ZERO — STRATEGY S3
+// GOLDEN SETUP V2 — Faithful to Subasish Pani (Power of Stocks)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// SOURCE: Subasish Pani session at Token IQ / Sark Exchange (transcript)
+//
+// HIS EXACT LOGIC:
+//   1. Note session opening price
+//   2. Find nearest $500 round level above AND below opening
+//   3. If open > nearest lower round → LONG planned at that lower level
+//      If open < nearest upper round → SHORT planned at that upper level
+//   4. Wait for price to TOUCH that round level
+//   5. Enter with fixed stop (200-250 pts for BTC intraday)
+//   6. Target 700-1000+ pts minimum
+//   7. Up to 4 attempts per session at same level
+//   8. One winner at 1:5 covers multiple losses
+//
+// NOTHING ADDED: No daily/weekly candle filter (not in his transcript).
+//               No S/R detection. No complex pivot analysis.
+//               Pure round number + opening price + fixed stop.
+//
+// POSITIONAL VARIANT:
+//   Round unit = 1000, stop = 300-500 pts, target = 2000+ pts
+//   (He says: "500 की जगह 1000 कर देना" for weekly holds)
+//
+// MODES:
+//   BACKTEST    → Strategy Tester (run on DELTA:BTCUSDT.P 15m or 1H)
+//   LIVE_ALERTS → fires JSON to Railway webhook
+//
+// CAPITAL NOTE: initial_capital=1000000 is fake (for TradingView only).
+//               Real math in Railway worker.
+//
+// ═══════════════════════════════════════════════════════════════════════════
+
+//@version=6
+strategy("ProjectZero - Golden Setup V2 (Subasish)",
+     shorttitle             = "PZ-S3-GoldenV2",
+     overlay                = true,
+     pyramiding             = 0,
+     calc_on_order_fills    = false,
+     calc_on_every_tick     = false,
+     process_orders_on_close = true,
+     initial_capital        = 1000000,
+     default_qty_type       = strategy.fixed,
+     default_qty_value      = 1,
+     commission_type        = strategy.commission.percent,
+     commission_value       = 0.05)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// INPUTS
+// ═══════════════════════════════════════════════════════════════════════════
+
+grpMode = "▶ Mode"
+i_mode = input.string("BACKTEST", "Mode",
+     options = ["BACKTEST", "LIVE_ALERTS"], group = grpMode)
+
+grpSetup = "◆ Strategy (match to Subasish transcript)"
+i_round_unit   = input.float(500.0,  "Round Level Unit  (BTC intraday=500, BTC positional=1000, Gold=50)",
+                  minval = 1, step = 1, group = grpSetup)
+i_stop_pts     = input.float(200.0,  "Fixed Stop Points (BTC=200-250, Gold=5-10)",
+                  minval = 10, maxval = 1000, step = 10, group = grpSetup,
+                  tooltip = "He says: 200-250 pts for BTC intraday. Fixed — not % based.")
+i_target_pts   = input.float(800.0,  "Minimum Target Points (BTC=700-1000+)",
+                  minval = 100, maxval = 5000, step = 50, group = grpSetup,
+                  tooltip = "He says: minimum ₹700-1000 target. Must be at least 1:3 vs stop.")
+i_max_attempts = input.int(4,        "Max Attempts Per Session (he says: 4)",
+                  minval = 1, maxval = 10, group = grpSetup,
+                  tooltip = "He tries same level up to 4 times per day if stopped out.")
+i_buffer_pts   = input.float(50.0,   "Entry Buffer Beyond Round Level (pts)",
+                  minval = 0, maxval = 200, step = 10, group = grpSetup,
+                  tooltip = "He adds ~100pt buffer above/below round level for confirmation. Set 0 for strict touch.")
+
+grpDir = "◆ Direction"
+i_longs  = input.bool(true, "Allow Longs",  group = grpDir)
+i_shorts = input.bool(true, "Allow Shorts", group = grpDir)
+
+grpSession = "◆ Session"
+i_use_session = input.bool(true,  "Enable Session Window", group = grpSession)
+i_sess_start  = input.int(13,     "Session Start Hour (UTC)  [US Open=13 UTC = 6:30 PM IST]",
+                 minval = 0, maxval = 23, group = grpSession,
+                 tooltip = "He says: enter around US open (6:30-7 PM IST = 13:00 UTC)")
+i_sess_end    = input.int(21,     "Session End Hour (UTC)    [21 UTC = 2:30 AM IST]",
+                 minval = 0, maxval = 23, group = grpSession)
+i_max_bars    = input.int(48,     "Max Bars Per Trade (time stop)",
+                 minval = 4, maxval = 200, group = grpSession,
+                 tooltip = "Force exit if trade unresolved in N bars. 48 bars = 12 hours on 15m.")
+
+grpWH = "◆ Webhook (LIVE_ALERTS mode)"
+i_secret      = input.string("CHANGE_ME",          "Webhook Secret",  group = grpWH)
+i_strategy_id = input.string("S3_GOLDEN_V2",       "Strategy ID",     group = grpWH)
+i_asset       = input.string("BTC",                "Asset Label",     group = grpWH)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ROUND LEVEL MATH
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Nearest round level ABOVE a given price
+_roundAbove(price) => math.ceil(price  / i_round_unit) * i_round_unit
+
+// Nearest round level BELOW a given price
+_roundBelow(price) => math.floor(price / i_round_unit) * i_round_unit
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SESSION OPENING PRICE
+// Captured ONCE at the start of each session and held for the whole session.
+// Non-repainting: we store it at session open bar and never change it.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// UTC hour check
+_utcH()  => hour(time,   "UTC")
+_utcM()  => minute(time, "UTC")
+
+// Is this the first bar of the session?
+_isSessionStart() =>
+    h = _utcH()
+    m = _utcM()
+    h == i_sess_start and m < 15  // within first 15 minutes of session start
+
+// Session window active?
+_inSession() =>
+    if not i_use_session
+        true
+    else
+        h = _utcH()
+        i_sess_start <= i_sess_end ? (h >= i_sess_start and h < i_sess_end) : (h >= i_sess_start or h < i_sess_end)
+
+// Capture opening price at session start
+var float sessionOpen = na
+var float roundAboveOpen = na
+var float roundBelowOpen = na
+var int   sessionAttempts = 0
+var bool  sessionFresh   = false
+
+// New session started → capture opening price and reset attempts
+if _isSessionStart() and barstate.isconfirmed
+    if na(sessionOpen) or ta.change(time("D")) != 0 or _utcH() == i_sess_start
+        sessionOpen     := open
+        roundAboveOpen  := _roundAbove(open)
+        roundBelowOpen  := _roundBelow(open)
+        sessionAttempts := 0
+        sessionFresh    := true
+
+// Reset fresh flag after first bar
+if sessionFresh and not _isSessionStart()
+    sessionFresh := false
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DIRECTION FROM OPENING PRICE
+// His logic: if open above lower round → plan LONG at lower round
+//            if open below upper round → plan SHORT at upper round
+// Both can fire in same session if price visits both levels.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Long is valid when opening was above the lower round level
+longValid  = i_longs and not na(sessionOpen) and sessionOpen > roundBelowOpen
+
+// Short is valid when opening was below the upper round level
+shortValid = i_shorts and not na(sessionOpen) and sessionOpen < roundAboveOpen
+
+// Entry levels
+longEntryLevel  = roundBelowOpen  + i_buffer_pts  // e.g. $80,500 + 50 = $80,550 (long)
+shortEntryLevel = roundAboveOpen  - i_buffer_pts  // e.g. $81,000 - 50 = $80,950 (short)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SIGNAL DETECTION
+// Touch + close at/below the long level (price visited support)
+// Touch + close at/above the short level (price visited resistance)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Long signal: price dipped to or below long entry level and bar confirmed
+longSignal = longValid
+longSignal := longSignal and _inSession()
+longSignal := longSignal and low <= longEntryLevel
+longSignal := longSignal and strategy.position_size == 0
+longSignal := longSignal and sessionAttempts < i_max_attempts
+longSignal := longSignal and barstate.isconfirmed
+
+// Short signal: price rose to or above short entry level
+shortSignal = shortValid
+shortSignal := shortSignal and _inSession()
+shortSignal := shortSignal and high >= shortEntryLevel
+shortSignal := shortSignal and strategy.position_size == 0
+shortSignal := shortSignal and sessionAttempts < i_max_attempts
+shortSignal := shortSignal and barstate.isconfirmed
+
+// Entry prices
+longEntry  = longEntryLevel   // enter AT the level
+shortEntry = shortEntryLevel
+
+// Stops and targets (FIXED POINTS — faithful to transcript)
+longStop    = longEntry  - i_stop_pts
+longTarget  = longEntry  + i_target_pts
+shortStop   = shortEntry + i_stop_pts
+shortTarget = shortEntry - i_target_pts
+
+// R:R check (safety — ensure target >= 1:3 vs stop)
+longRR  = i_target_pts / i_stop_pts
+shortRR = i_target_pts / i_stop_pts
+minRR   = 3.0
+
+longOk  = longRR  >= minRR
+shortOk = shortRR >= minRR
+
+longSignal  := longSignal  and longOk
+shortSignal := shortSignal and shortOk
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BACKTEST EXECUTION
+// ═══════════════════════════════════════════════════════════════════════════
+
+if i_mode == "BACKTEST"
+
+    if longSignal
+        sessionAttempts += 1
+        strategy.entry("Long", strategy.long, limit = longEntry, comment = "GoldenLong")
+        strategy.exit("Long_X", "Long",
+             stop    = longStop,
+             limit   = longTarget,
+             comment_loss   = "SL",
+             comment_profit = "Target")
+
+    if shortSignal
+        sessionAttempts += 1
+        strategy.entry("Short", strategy.short, limit = shortEntry, comment = "GoldenShort")
+        strategy.exit("Short_X", "Short",
+             stop    = shortStop,
+             limit   = shortTarget,
+             comment_loss   = "SL",
+             comment_profit = "Target")
+
+    // Time stop
+    if strategy.opentrades > 0
+        bars_held = bar_index - strategy.opentrades.entry_bar_index(0)
+        if bars_held >= i_max_bars
+            strategy.close_all(comment = "TimeStop")
+
+    // Session end — force close
+    if not _inSession() and strategy.position_size != 0
+        strategy.close_all(comment = "SessionEnd")
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LIVE ALERTS
+// ═══════════════════════════════════════════════════════════════════════════
+
+_payload(string sig, float entry, float sl, float tgt, float rr) =>
+    str.format(
+     '{{"secret":"{0}","strategy_id":"{1}","signal_type":"GOLDEN_SETUP_V2",' +
+     '"signal":"{2}","symbol":"{3}","asset":"{4}",' +
+     '"entry":{5},"stop":{6},"target":{7},' +
+     '"stop_pts":{8},"target_pts":{9},"rr":{10},' +
+     '"session_open":{11},"round_level_above":{12},"round_level_below":{13},' +
+     '"attempt_number":{14},"max_attempts":{15},' +
+     '"round_unit":{16},"timestamp":"{17}"}}',
+     i_secret, i_strategy_id, sig,
+     syminfo.ticker, i_asset,
+     str.tostring(entry, "#.##"),
+     str.tostring(sl, "#.##"),
+     str.tostring(tgt, "#.##"),
+     str.tostring(i_stop_pts, "#"),
+     str.tostring(i_target_pts, "#"),
+     str.tostring(rr, "#.##"),
+     str.tostring(sessionOpen, "#.##"),
+     str.tostring(roundAboveOpen, "#.##"),
+     str.tostring(roundBelowOpen, "#.##"),
+     str.tostring(sessionAttempts + 1, "#"),
+     str.tostring(i_max_attempts, "#"),
+     str.tostring(i_round_unit, "#"),
+     str.format_time(time, "yyyy-MM-dd'T'HH:mm:ssZ", "UTC"))
+
+if i_mode == "LIVE_ALERTS" and barstate.isconfirmed
+    if longSignal
+        alert(_payload("BUY",  longEntry,  longStop,  longTarget,  longRR),
+              alert.freq_once_per_bar_close)
+    if shortSignal
+        alert(_payload("SELL", shortEntry, shortStop, shortTarget, shortRR),
+              alert.freq_once_per_bar_close)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// VISUALIZATION
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Session round levels (the two levels that matter today)
+plot(roundAboveOpen, "Round Above Open",
+     color.new(color.red,   30), 2, plot.style_linebr)
+plot(roundBelowOpen, "Round Below Open",
+     color.new(color.green, 30), 2, plot.style_linebr)
+
+// Entry zones (with buffer)
+plot(longEntryLevel,  "Long Entry Zone",
+     color.new(color.lime,  20), 1, plot.style_circles)
+plot(shortEntryLevel, "Short Entry Zone",
+     color.new(color.red,   20), 1, plot.style_circles)
+
+// Session opening price
+plot(sessionOpen, "Session Open",
+     color.new(color.yellow, 40), 1, plot.style_linebr)
+
+// Active stop/target lines
+plot(strategy.position_size > 0 ? longStop   : na, "L Stop",   color.red,   1, plot.style_linebr)
+plot(strategy.position_size > 0 ? longTarget : na, "L Target", color.green, 1, plot.style_linebr)
+plot(strategy.position_size < 0 ? shortStop  : na, "S Stop",   color.red,   1, plot.style_linebr)
+plot(strategy.position_size < 0 ? shortTarget: na, "S Target", color.green, 1, plot.style_linebr)
+
+// Signal markers
+plotshape(longSignal,  "Long",  shape.triangleup,   location.belowbar,
+          color.new(color.lime, 0), size = size.normal, text = "🟢 GOLDEN")
+plotshape(shortSignal, "Short", shape.triangledown, location.abovebar,
+          color.new(color.red,  0), size = size.normal, text = "🔴 GOLDEN")
+
+// ═══════════════════════════════════════════════════════════════════════════
+// STATUS TABLE
+// ═══════════════════════════════════════════════════════════════════════════
+
+var table T = table.new(position.top_right, 2, 9,
+     bgcolor = color.new(color.black, 75), border_width = 1)
+
+if barstate.islast
+    table.cell(T, 0, 0, "PZ-S3 GoldenV2", text_color = color.yellow,
+               bgcolor = color.new(color.purple, 40), text_size = size.small)
+    table.cell(T, 1, 0, i_mode, text_color = color.yellow,
+               bgcolor = color.new(color.purple, 40), text_size = size.small)
+
+    table.cell(T, 0, 1, "Sess Open", text_color = color.gray, text_size = size.tiny)
+    table.cell(T, 1, 1, na(sessionOpen) ? "—" : str.tostring(sessionOpen, "#.##"),
+               text_color = color.yellow, text_size = size.tiny)
+
+    table.cell(T, 0, 2, "Round ▲", text_color = color.gray, text_size = size.tiny)
+    table.cell(T, 1, 2, na(roundAboveOpen) ? "—" : str.tostring(roundAboveOpen, "#.##"),
+               text_color = color.red, text_size = size.tiny)
+
+    table.cell(T, 0, 3, "Round ▼", text_color = color.gray, text_size = size.tiny)
+    table.cell(T, 1, 3, na(roundBelowOpen) ? "—" : str.tostring(roundBelowOpen, "#.##"),
+               text_color = color.lime, text_size = size.tiny)
+
+    table.cell(T, 0, 4, "Long Level", text_color = color.gray, text_size = size.tiny)
+    table.cell(T, 1, 4, longValid ? str.tostring(longEntryLevel, "#.##") : "N/A",
+               text_color = longValid ? color.lime : color.gray, text_size = size.tiny)
+
+    table.cell(T, 0, 5, "Short Level", text_color = color.gray, text_size = size.tiny)
+    table.cell(T, 1, 5, shortValid ? str.tostring(shortEntryLevel, "#.##") : "N/A",
+               text_color = shortValid ? color.red : color.gray, text_size = size.tiny)
+
+    table.cell(T, 0, 6, "Attempts", text_color = color.gray, text_size = size.tiny)
+    table.cell(T, 1, 6,
+               str.tostring(sessionAttempts) + "/" + str.tostring(i_max_attempts),
+               text_color = sessionAttempts >= i_max_attempts ? color.red : color.white,
+               text_size = size.tiny)
+
+    table.cell(T, 0, 7, "Stop / Tgt", text_color = color.gray, text_size = size.tiny)
+    table.cell(T, 1, 7,
+               str.tostring(i_stop_pts, "#") + " / " + str.tostring(i_target_pts, "#") +
+               " pts  (1:" + str.tostring(longRR, "#.#") + ")",
+               text_color = longRR >= minRR ? color.lime : color.red, text_size = size.tiny)
+
+    table.cell(T, 0, 8, "Session", text_color = color.gray, text_size = size.tiny)
+    table.cell(T, 1, 8,
+               _inSession() ? "ACTIVE" : "CLOSED",
+               text_color = _inSession() ? color.lime : color.gray, text_size = size.tiny)
