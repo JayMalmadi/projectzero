@@ -277,34 +277,34 @@ shortStopDist = calcStopDist(close, shortTarget)
 // R:R check using actual stop (after cap applied)
 // Must meet minimum even after cap reduces stop
 longRROK  = not na(longStopDist)
-         and math.abs(longTarget  - close) / longStopDist  >= min_rr
+longRROK  := longRROK and math.abs(longTarget  - close) / longStopDist  >= min_rr
 shortRROK = not na(shortStopDist)
-         and math.abs(shortTarget - close) / shortStopDist >= min_rr
+shortRROK := shortRROK and math.abs(shortTarget - close) / shortStopDist >= min_rr
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ENTRY SIGNALS
 // Touch level AND close back on the correct side (rejection candle)
 // ═══════════════════════════════════════════════════════════════════════════
 
-longSig  = allow_longs
-        and bullBias
-        and not skipWeek
-        and inSession
-        and longRROK
-        and low  <= longLevel
-        and close > longLevel
-        and (close - low) / math.max(high - low, 0.001) >= 0.50
-        and barstate.isconfirmed
+longSig = allow_longs
+longSig := longSig and bullBias
+longSig := longSig and not skipWeek
+longSig := longSig and inSession
+longSig := longSig and longRROK
+longSig := longSig and low  <= longLevel
+longSig := longSig and close > longLevel
+longSig := longSig and (close - low) / math.max(high - low, 0.001) >= 0.50
+longSig := longSig and barstate.isconfirmed
 
 shortSig = allow_shorts
-        and bearBias
-        and not skipWeek
-        and inSession
-        and shortRROK
-        and high  >= shortLevel
-        and close < shortLevel
-        and (high - close) / math.max(high - low, 0.001) >= 0.50
-        and barstate.isconfirmed
+shortSig := shortSig and bearBias
+shortSig := shortSig and not skipWeek
+shortSig := shortSig and inSession
+shortSig := shortSig and shortRROK
+shortSig := shortSig and high  >= shortLevel
+shortSig := shortSig and close < shortLevel
+shortSig := shortSig and (high - close) / math.max(high - low, 0.001) >= 0.50
+shortSig := shortSig and barstate.isconfirmed
 
 // Computed levels at signal bar
 longEntry  = close
